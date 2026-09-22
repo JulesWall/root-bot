@@ -292,8 +292,24 @@ CREATE TABLE IF NOT EXISTS economy_reports (
     PRIMARY KEY (period_hours)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 11. Table des journaux de récoltes journaliers (/claim) pour modération & anti-triche
+CREATE TABLE IF NOT EXISTS daily_claim_logs (
+    id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id          BIGINT UNSIGNED NOT NULL,
+    claimed_at          DATETIME(6)     NOT NULL,
+    interval_seconds    INT UNSIGNED    NULL     DEFAULT NULL,
+    amount              DECIMAL(30, 5)  NOT NULL DEFAULT 0.00000,
+    INDEX idx_daily_claims_user (discord_id, claimed_at),
+    INDEX idx_daily_claims_time (claimed_at),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ====================================================================
 -- MIGRATION (installations existantes) : suivi économique.
 -- Appliquer migrations/001_economy_reports.sql sur une base déjà déployée.
 -- ====================================================================
+-- MIGRATION (installations existantes) : suivi journalier des claims.
+-- Appliquer migrations/002_daily_claim_logs.sql sur une base déjà déployée.
+-- ====================================================================
+
 

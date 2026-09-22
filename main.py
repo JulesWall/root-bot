@@ -40,6 +40,64 @@ async def get_prefix_for_bot(bot: commands.Bot, message: discord.Message):
     return commands.when_mentioned_or(prefix)(bot, message)
 
 
+async def assign_official_player_role(member: discord.Member) -> bool:
+    """
+    Attribue automatiquement le rôle 'player' à un membre rejoignant le serveur Discord officiel.
+    
+    Retourne True si le rôle a été attribué (ou était déjà présent), False sinon.
+    """
+    if member is None or getattr(member, "guild", None) is None:
+        return False
+
+    if member.guild.id != data.OFFICIAL_GUILD_ID:
+        return False
+
+    if getattr(member, "bot", False):
+        return False
+
+    # Si le membre possède déjà le rôle, aucune action requise
+    if any(getattr(r, "id", None) == data.PLAYER_ROLE_ID for r in getattr(member, "roles", [])):
+        return True
+
+    role = member.guild.get_role(data.PLAYER_ROLE_ID)
+    role_to_add = role if role is not None else discord.Object(id=data.PLAYER_ROLE_ID)
+
+    try:
+        await member.add_roles(
+            role_to_add,
+            reason="Attribution automatique du rôle player aux nouveaux membres du serveur officiel",
+        )
+        logger.info(
+            "Rôle player (%s) attribué automatiquement à %s (%s) sur le serveur officiel (%s).",
+            data.PLAYER_ROLE_ID,
+            member,
+            getattr(member, "id", "inconnu"),
+            member.guild.id,
+        )
+        return True
+    except discord.Forbidden:
+        logger.warning(
+            "Permissions insuffisantes pour attribuer le rôle player (%s) à %s sur le serveur officiel (%s).",
+            data.PLAYER_ROLE_ID,
+            member,
+            member.guild.id,
+        )
+        return False
+    except discord.HTTPException as exc:
+        logger.warning(
+            "Erreur HTTP lors de l'attribution du rôle player à %s: %s",
+            member,
+            exc,
+        )
+        return False
+    except Exception:
+        logger.exception(
+            "Erreur inattendue lors de l'attribution du rôle player à %s",
+            member,
+        )
+        return False
+
+
 def create_bot() -> commands.Bot:
     """
     Fabrique et configure l'instance complète du bot Root.
@@ -86,10 +144,12 @@ def create_bot() -> commands.Bot:
         if ctx.guild is None:
             return False
 
+        command_name = getattr(ctx.command, "name", "") or ""
         command_module = getattr(ctx.command, "module", "") or ""
         is_admin_command = command_module.startswith("commands.admin.")
         is_game_command = command_module.startswith("commands.game.")
-        is_network_command = is_game_command and getattr(ctx.command, "name", "") in ("network", "n")
+        is_network_command = is_game_command and command_name in ("network", "n")
+        is_help_command = command_name == "help"
 
         # 2. Vérification des bannissements locaux (data/banned.json)
         if not is_admin_command and checks.is_banned(ctx.author.id):
@@ -102,7 +162,10 @@ def create_bot() -> commands.Bot:
         # 4. Accuser réception (defer) immédiatement avant tout appel distant (BDD / rôles Discord)
         interaction = getattr(ctx, "interaction", None)
         if interaction and not interaction.response.is_done():
-            await ctx.defer()
+            if is_help_command:
+                await ctx.defer(ephemeral=True)
+            else:
+                await ctx.defer()
 
         # Préchargement de la préférence de langue du joueur vers le cache mémoire
         user = getattr(ctx, "author", None) or getattr(ctx, "user", None)
@@ -115,10 +178,10 @@ def create_bot() -> commands.Bot:
 
         # 5. Vérification du mode Bêta
         # Seuls les joueurs autorisés (beta access.json ou rôle OP) peuvent jouer.
-        # Exception : /network (ou !n) reste accessible pour créer son profil et recevoir de la réputation.
+        # Exception : /network (ou !n) et /help restent accessibles pour créer son profil ou consulter l'aide.
         if checks.beta_enabled() and not is_admin_command:
             has_access = await checks.has_beta_access(bot, ctx.author.id)
-            if not has_access and not is_network_command:
+            if not has_access and not is_network_command and not is_help_command:
                 raise GameError('beta_access_required')
 
         # 6. Vérification du compte joueur (seul /network permet d'initialiser sans être inscrit)
@@ -180,6 +243,14 @@ def create_bot() -> commands.Bot:
         """Déclenché lorsque le bot est retiré d'un serveur Discord."""
         logger.info("Serveur quitté : %s (ID: %s) | Total: %d", guild.name, guild.id, len(bot.guilds))
         await discord_logger.log_guild_remove(guild, len(bot.guilds))
+
+    @bot.event
+    async def on_member_join(member: discord.Member):
+        """
+        Déclenché lorsqu'un utilisateur rejoint un serveur Discord où le bot est présent.
+        Attribue automatiquement le rôle 'player' sur le serveur officiel de Root.
+        """
+        await assign_official_player_role(member)
 
     async def report_command_error(ctx, error):
         """

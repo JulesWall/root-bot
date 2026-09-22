@@ -30,6 +30,7 @@ LOG_CHANNELS = {
     "guild_events": "LOG_MODERATION_JOIN_GUILD",
     "blockchain": "LOG_BLOCKCHAIN_CHANNEL_ID",
     "moderation_trade": "LOG_MODERATION_TRADE_CHANNEL_ID",
+    "moderation_claim_stats": "LOG_MODERATION_CLAIM_STATS_CHANNEL_ID",
 }
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,8 @@ class Logger:
                     raw = os.getenv('LOG_MODERATION_CHANNEL_ID')
                 elif log_key == 'guild_events':
                     raw = os.getenv('LOG_PUBLIC_CHANNEL_ID')
+                elif log_key == 'moderation_claim_stats':
+                    raw = os.getenv('LOG_MODERATION_EVENT_STATS_CHANNEL_ID') or os.getenv('LOG_MODERATION_CLAIM_CHANNEL_ID') or os.getenv('LOG_MODERATION_CHANNEL_ID')
             value = int(raw or 0)
             return value if value > 0 else None
         except ValueError:
@@ -437,6 +440,150 @@ class Logger:
 
             # Si l'envoi échoue, l'exception est levée et non absorbée
             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
+    async def log_daily_claim_report(self, summary: list[dict]):
+        """
+        Envoie le rapport quotidien de modération des récoltes (claims 24h) dans le salon dédié.
+        Conformément aux consignes :
+        - Analyse statistique par joueur (moyenne, écart-type, régularité, streak suspect, 24/24h).
+        - Affiche jusqu'à 50 joueurs ordonnés par nombre de claims décroissant.
+        - Découpe en plusieurs messages si la longueur du texte le nécessite.
+        - Propage toute exception en cas d'échec pour empêcher la réinitialisation des logs.
+        """
+        channel_id = self.channel_id("moderation_claim_stats")
+        if channel_id is None:
+            logger.warning("Salon de logs de modération claim non configuré : aucun rapport 24h envoyé.")
+            raise RuntimeError("LOG_MODERATION_CLAIM_STATS_CHANNEL_ID (ou repli) non configuré.")
+
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception as e:
+                raise RuntimeError(f"Impossible de récupérer le salon {channel_id}: {e}") from e
+
+        if not channel or not callable(getattr(channel, "send", None)):
+            raise RuntimeError(f"Salon invalide ou inaccessible pour le rapport quotidien ({channel_id}).")
+
+        from utils.claim_analysis import calculate_player_claim_metrics
+        from utils.text import format_rtm
+        from utils.time_format import format_duration
+
+        header = "⛏️ **Bilan d'activité et régularité des récoltes (claims 24h)**\n\n"
+        players = summary[:50] if summary else []
+
+        if not players:
+            embed = discord.Embed(
+                title="⛏️ Rapport Quotidien des Récoltes (/claim 24h)",
+                description=header + "*Aucune activité de claim enregistrée sur cette période.*",
+                color=discord.Color.dark_teal(),
+                timestamp=discord.utils.utcnow(),
+            )
+            embed.set_footer(text="Root OS • Surveillance Claims 24h")
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            return
+
+        has_high_risk = False
+        player_blocks = []
+        for idx, row in enumerate(players, 1):
+            user_id = row["discord_id"]
+            claim_count = row["claim_count"]
+            claims = row.get("claims", [])
+            analysis = calculate_player_claim_metrics(claims)
+
+            if analysis["risk_level"] == "HIGH":
+                has_high_risk = True
+
+            user = self.bot.get_user(user_id)
+            if not user:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                except Exception:
+                    user = None
+
+            user_str = _format_user_compact(user) if user else f"<@{user_id}> (`{user_id}`)"
+            badge = analysis["risk_badge"]
+            total_rtm = format_rtm(analysis["total_amount"])
+
+            mean_str = format_duration(analysis["mean_interval_sec"]) if analysis["mean_interval_sec"] is not None else "N/A"
+            reg_pct = analysis["regularity_pct"]
+            reg_str = f"{reg_pct:.1f}%" if reg_pct is not None else "N/A"
+            std_str = f"± {format_duration(analysis['std_dev_sec'])}" if analysis["std_dev_sec"] is not None else ""
+
+            lines = [
+                f"**{idx}.** {badge} {user_str}",
+                f"   ├ ⛏️ Claims : `{claim_count}` · Total : `{total_rtm} RTM`",
+                f"   ├ ⏱️ Intervalle moyen : `{mean_str}` · Régularité : `{reg_str}` {f'(`{std_str}`)' if std_str else ''}",
+            ]
+
+            if analysis.get("active_24h"):
+                lines.append("   ├ ⚠️ **Absence de pause sommeil** : actif 24h/24 sans pause > 3h30")
+
+            streak = analysis.get("suspicious_streak")
+            alerts = analysis.get("alerts", [])
+            if "CRITICAL_MACRO_STREAK" in alerts and streak:
+                s_mean = format_duration(streak["mean_sec"])
+                s_std = format_duration(streak["std_dev_sec"])
+                s_reg = f"{streak['regularity_pct']:.1f}%"
+                lines.append(
+                    f"   └ 🚨 **Phase automatisée (Macro)** : {streak['count']} claims consécutifs "
+                    f"à `{s_mean}` (± `{s_std}`) · Régularité locale : `{s_reg}`"
+                )
+            elif "SUSPECT_LOCAL_STREAK" in alerts and streak:
+                s_mean = format_duration(streak["mean_sec"])
+                s_reg = f"{streak['regularity_pct']:.1f}%"
+                lines.append(
+                    f"   └ ⚠️ **Séquence suspecte** : {streak['count']} claims consécutifs "
+                    f"à `{s_mean}` · Régularité locale : `{s_reg}`"
+                )
+            elif "VARIANCE_DROP_BURST" in alerts and streak:
+                s_mean = format_duration(streak["mean_sec"])
+                lines.append(
+                    f"   └ 🚨 **Rupture de régime** : chute brutale de variation sur {streak['count']} claims "
+                    f"à `{s_mean}`"
+                )
+            elif "GLOBAL_EXTREME_CONSTANCY" in alerts:
+                lines.append("   └ 🚨 **Constance globale extrême** : intervalles quasi invariables sur 24h")
+            else:
+                lines.append("   └ 🟢 Comportement d'apparence humaine normale")
+
+            player_blocks.append("\n".join(lines))
+
+        max_desc_len = 3500
+        pages = []
+        current_page_blocks = []
+        current_len = len(header)
+
+        for block in player_blocks:
+            block_len = len(block) + 2  # +2 pour séparateur
+            if current_page_blocks and (current_len + block_len > max_desc_len):
+                pages.append(current_page_blocks)
+                current_page_blocks = [block]
+                current_len = len(header) + block_len
+            else:
+                current_page_blocks.append(block)
+                current_len += block_len
+
+        if current_page_blocks:
+            pages.append(current_page_blocks)
+
+        total_pages = len(pages)
+        report_color = discord.Color.red() if has_high_risk else discord.Color.dark_teal()
+
+        for page_idx, page_blocks in enumerate(pages, 1):
+            embed = discord.Embed(
+                title="⛏️ Rapport Quotidien des Récoltes (/claim 24h)",
+                description=header + "\n\n".join(page_blocks),
+                color=report_color,
+                timestamp=discord.utils.utcnow(),
+            )
+            if total_pages > 1:
+                embed.set_footer(text=f"Root OS • Surveillance Claims 24h • Page {page_idx}/{total_pages}")
+            else:
+                embed.set_footer(text="Root OS • Surveillance Claims 24h")
+
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
 
     async def log_blockchain_ready(self):
         """Envoie le message d'initialisation lore-friendly dans le salon #blockchain à chaque démarrage."""
