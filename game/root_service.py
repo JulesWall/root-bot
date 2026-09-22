@@ -1,0 +1,270 @@
+"""
+Façade de service du jeu Root pour les commandes Discord, sans SQL direct.
+
+Pattern Architectural : Façade & Dispatcher
+- Isole complètement la couche Discord (Cogs) des détails d'accès à la base de données.
+- Toute action de jeu passe impérativement par RootService.execute().
+- Exécute chaque action au sein d'une transaction MySQL unifiée, sérialisée
+  par un verrou applicatif **par joueur** (GET_LOCK player:<id>).
+  Les actions à deux comptes (trade, réputation) prennent les deux verrous
+  dans l'ordre croissant des identifiants pour éviter les deadlocks.
+- Vérifie l'existence préalable du joueur pour toutes les commandes autres que l'initialisation 'network'.
+"""
+
+from game.db.database import Database, player_lock_name
+from game.db.economy_stats import EconomyStatsDB
+from game.db.hack import HackDB
+from game.db.players import Player, PlayerData
+from game.db.pvp import PvpDB
+from game.db.secret_ids import rotate_all_if_due
+from game.db.upgrades import UpgradesDB
+from game.game_error import GameError
+from game.hash_manager import HashManager
+from game.pin_manager import PinManager
+from game.decode_manager import DecodeManager
+from game.anomaly_manager import AnomalyManager
+from game.buffer_manager import BufferManager
+from game.signal_manager import SignalManager
+from game.packet_manager import PacketManager
+from game.events_manager import EventsManager
+
+
+class RootService:
+    """Façade centrale orchestrant toutes les opérations de jeu côté serveur."""
+
+    ACTIONS = {
+        'network', 'buy', 'upgrade', 'reputation', 'top', 'set_language',
+        'hash', 'pin', 'event', 'decode', 'anomaly', 'buffer', 'signal',
+        'packet', 'trade', 'claim', 'convert', 'compile', 'scan', 'hack',
+    }
+
+    def __init__(self, database=None):
+        import os
+        self.database = database or Database()
+        # Activation du suivi économique (lire explicitement, bool("false") vaut True)
+        raw = os.getenv('ECONOMY_REPORTS_ENABLED', 'false').strip().lower()
+        self.economy_enabled: bool = raw == 'true'
+        self.economy_tracking_start = None
+
+    async def init_economy(self) -> None:
+        """
+        Initialise les tables de suivi économique et mémorise tracking_start.
+        À appeler une fois au démarrage si ECONOMY_REPORTS_ENABLED=true.
+        Lève RuntimeError si les tables sont absentes (migration non appliquée).
+        """
+        if not self.economy_enabled:
+            return
+        tracking_start = await self.database.run(
+            EconomyStatsDB.initialize,
+            locks=['economy-init'],
+        )
+        self.economy_tracking_start = tracking_start
+        import logging
+        logging.getLogger(__name__).info(
+            "[EconomyStats] Suivi actif. tracking_start=%s", tracking_start
+        )
+
+
+    async def deliver_expired_upgrades(self) -> list[dict]:
+        """
+        Scanne et livre les améliorations arrivées à échéance,
+        met à jour le niveau de pare-feu et supprime les lignes de la table SQL.
+        """
+        return await self.database.run(
+            UpgradesDB.complete_and_delete_expired,
+            locks=['upgrades'],
+        )
+
+    async def rotate_secret_ids_if_due(self) -> dict:
+        """Régénère tous les identifiants secrets si la frontière UTC de 12 h est échue."""
+        return await self.database.run(
+            rotate_all_if_due,
+            locks=['secret_rotation'],
+        )
+
+    async def deliver_expired_hacks(self) -> list[dict]:
+        """Livre les productions d'ATK arrivées à échéance et supprime les lignes `hack`."""
+        return await self.database.run(
+            HackDB.complete_and_delete_expired,
+            locks=['hack'],
+        )
+
+    async def deliver_expired_scans(self) -> list[dict]:
+        """Récupère et supprime les jobs de scan arrivés à échéance pour livraison."""
+        return await self.database.run(
+            HackDB.complete_and_delete_expired_scans,
+            locks=['hack'],
+        )
+
+    async def purge_expired_consequences(self) -> int:
+        """Supprime les droits de représailles expirés."""
+        from game.db.consequence import ConsequenceDB
+        return await self.database.run(
+            ConsequenceDB.purge_expired,
+            locks=['consequence'],
+        )
+
+    async def deliver_expired_pvp_attacks(self) -> list[dict]:
+        """Résout les attaques PvP arrivées à échéance et supprime les lignes `pvp_attacks`."""
+        return await self.database.run(
+            PvpDB.complete_and_delete_expired,
+            locks=['pvp'],
+        )
+
+    async def execute(self, actor: int, guild: int | None, method: str, **args):
+        """
+        Point d'entrée asynchrone universel pour l'exécution d'une action de jeu.
+        
+        Args:
+            actor (int): Identifiant Discord de l'auteur de l'action.
+            guild (int | None): Identifiant du serveur Discord d'origine.
+            method (str): Nom de l'action demandée (doit figurer dans ACTIONS).
+            **args: Paramètres spécifiques à l'action.
+        """
+        if method not in self.ACTIONS:
+            raise GameError('invalid_selection')
+        # 'top' et 'event' sont des lectures pures : exécution concurrente sans verrou applicatif
+        readonly = (method in ('top', 'event'))
+        manager = self._get_challenge_manager(method)
+        resource = None
+        if manager:
+            from game.challenge_utils import ChallengeResource
+            resource = ChallengeResource(manager)
+
+        # Construit la closure avec les valeurs actuelles de economy_enabled et tracking_start
+        economy_enabled = self.economy_enabled
+        economy_tracking_start = self.economy_tracking_start
+
+        def dispatch_and_track(tx):
+            result = self._dispatch(tx, actor, method, args, resource=resource)
+            if (
+                economy_enabled
+                and not readonly
+                and economy_tracking_start is not None
+                and tx.now >= economy_tracking_start
+            ):
+                try:
+                    increments = EconomyStatsDB.build_increments(method, actor, result)
+                    if increments:
+                        bucket = tx.now.replace(minute=0, second=0, microsecond=0)
+                        EconomyStatsDB.add(tx, bucket, increments)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception(
+                        "[EconomyStats] Erreur lors de l'enregistrement des compteurs "
+                        "(method=%s, actor=%s). La transaction sera annulée.", method, actor
+                    )
+                    raise
+            return result
+
+        return await self.database.run(
+            dispatch_and_track,
+            resource=resource,
+            readonly=readonly,
+            locks=self._locks_for(method, actor, args),
+        )
+
+
+    @staticmethod
+    def _locks_for(method: str, actor: int, args: dict) -> list[str]:
+        """Calcule les verrous applicatifs requis par l'action.
+
+        Une action mono-joueur (network, buy, claim, mini-jeux…) verrouille
+        uniquement le compte de l'acteur. Trade et réputation verrouillent
+        les deux comptes, triés, pour rester sans deadlock.
+        """
+        if method in ('top', 'event'):
+            return []
+        ids = {int(actor)}
+        if method in ('reputation', 'trade', 'scan'):
+            try:
+                target = int(args.get('target') or 0)
+            except (TypeError, ValueError):
+                target = 0
+            if target:
+                ids.add(target)
+        elif method == 'hack':
+            try:
+                target_id = int(args.get('target_id') or 0)
+            except (TypeError, ValueError):
+                target_id = 0
+            if target_id:
+                ids.add(target_id)
+        return [player_lock_name(uid) for uid in sorted(ids)]
+
+    # Table de dispatch : méthode → gestionnaire de défi en mémoire vive.
+    # Les managers sont déjà importés au niveau module ; pas besoin de les réimporter ici.
+    _CHALLENGE_MANAGERS = {
+        'hash':    HashManager,
+        'pin':     PinManager,
+        'decode':  DecodeManager,
+        'anomaly': AnomalyManager,
+        'buffer':  BufferManager,
+        'signal':  SignalManager,
+        'packet':  PacketManager,
+    }
+
+    @staticmethod
+    def _get_challenge_manager(method: str):
+        """Retourne la classe du gestionnaire de défi en mémoire pour la méthode demandée."""
+        return RootService._CHALLENGE_MANAGERS.get(method)
+
+    def _dispatch(self, tx, actor: int, method: str, args: dict, resource=None):
+        """
+        Aiguillage interne des actions au sein de la transaction SQL active.
+        """
+        # Seule l'action 'network' permet à un nouvel utilisateur de s'inscrire
+        if method == 'network':
+            return Player.network(tx, actor)
+
+        # Vérification d'existence préalable du joueur en base pour toute autre action
+        PlayerData.get(tx, actor)
+
+        # 1. Opérations Joueur & Économie
+        if method == 'buy':
+            return Player.buy(tx, actor, **args)
+        elif method == 'upgrade':
+            return Player.upgrade(tx, actor, **args)
+        elif method == 'claim':
+            return Player.claim(tx, actor)
+        elif method == 'convert':
+            return Player.convert(tx, actor, **args)
+        elif method == 'compile':
+            return Player.compile(tx, actor, **args)
+        elif method == 'scan':
+            return Player.scan(tx, actor, **args)
+        elif method == 'hack':
+            return Player.hack(tx, actor, **args)
+        elif method == 'reputation':
+            return Player.give_reputation(
+                tx,
+                actor,
+                args.get('target', 0),
+                bypass_cooldown=bool(args.get('bypass_cooldown', False)),
+            )
+        elif method == 'trade':
+            return Player.trade(
+                tx,
+                actor,
+                args.get('target', 0),
+                send_usd=args.get('send_usd', 0),
+                send_rtm=args.get('send_rtm', 0),
+                receive_usd=args.get('receive_usd', 0),
+                receive_rtm=args.get('receive_rtm', 0),
+            )
+        elif method == 'top':
+            return Player.top(tx, args.get('category', 'reputation'))
+
+        # 2. Préférences de langue du joueur
+        elif method == 'set_language':
+            return Player.set_language(tx, actor, lang=args.get('lang'))
+
+        # 3. Mini-jeux Réseau (avec gestionnaire de ressource 2-phase)
+        elif method == 'event':
+            return EventsManager.get_all_events_status(tx)
+        elif manager := self._CHALLENGE_MANAGERS.get(method):
+            return manager.process(tx, actor, args.get('guild_name'), args.get('guess'), resource=resource)
+
+        # Ne devrait jamais être atteint si ACTIONS et _dispatch sont synchronisés
+        raise GameError('invalid_selection')
+

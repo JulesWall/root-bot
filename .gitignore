@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+desktop.ini
+# Configuration locale des serveurs et bannissements.
+data/prefix.json
+data/banned.json
+data/timers.json
+data/timers.pending.json
+data/timers.tmp
+data/timers.pending.tmp
+data/events.json
+data/operations.json
+data/offers.json
