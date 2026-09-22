@@ -10,7 +10,7 @@ Ce module fournit des statistiques globales sur le bot :
 import discord
 from discord.ext import commands
 
-from data import BOT_NAME, GUILD_WHITELIST, INVITE_URL
+from data import BOT_NAME, GUILD_WHITELIST, INVITE_URL, OFFICIAL_SERVER_URL
 from lang.descslash import desc, desc_loc
 from utils import text
 
@@ -96,11 +96,19 @@ class BotInfo(commands.Cog):
         embed.add_field(
             name=text.get(ctx, "botinfo_invite"),
             value=text.get(ctx, "botinfo_invite_link", bot_name=BOT_NAME, invite_url=INVITE_URL),
-            inline=False,
+            inline=True,
         )
 
-        # Bouton d'invitation directe
+        # Lien du serveur Discord officiel
+        embed.add_field(
+            name=text.get(ctx, "botinfo_server"),
+            value=text.get(ctx, "botinfo_server_link", server_url=OFFICIAL_SERVER_URL),
+            inline=True,
+        )
+
+        # Boutons d'invitation et de serveur officiel
         btn_label = text.get(ctx, "invite_button_label", bot_name=BOT_NAME)
+        server_btn_label = text.get(ctx, "server_button_label")
         view = discord.ui.View()
         view.add_item(
             discord.ui.Button(
@@ -108,6 +116,14 @@ class BotInfo(commands.Cog):
                 url=INVITE_URL,
                 style=discord.ButtonStyle.link,
                 emoji="🔗",
+            )
+        )
+        view.add_item(
+            discord.ui.Button(
+                label=server_btn_label,
+                url=OFFICIAL_SERVER_URL,
+                style=discord.ButtonStyle.link,
+                emoji="💬",
             )
         )
 

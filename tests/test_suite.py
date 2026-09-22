@@ -5596,9 +5596,9 @@ class TestInviteAndBotinfo(unittest.IsolatedAsyncioTestCase):
         button = view.children[0]
         self.assertEqual(button.url, INVITE_URL)
 
-    async def test_botinfo_embed_contains_invite_url(self):
+    async def test_botinfo_embed_contains_invite_and_server_url(self):
         from commands.utility.botinfo import BotInfo
-        from data import INVITE_URL
+        from data import INVITE_URL, OFFICIAL_SERVER_URL
         bot = MagicMock()
         bot.user = MagicMock()
         bot.user.display_avatar.url = "https://example.com/avatar.png"
@@ -5621,6 +5621,14 @@ class TestInviteAndBotinfo(unittest.IsolatedAsyncioTestCase):
         field_values = [f.value for f in embed.fields]
         has_invite = any(INVITE_URL in val for val in field_values)
         self.assertTrue(has_invite, f"L'URL d'invitation {INVITE_URL} doit être présente dans les champs de l'embed")
+        has_server = any(OFFICIAL_SERVER_URL in val for val in field_values)
+        self.assertTrue(has_server, f"L'URL du serveur officiel {OFFICIAL_SERVER_URL} doit être présente dans les champs de l'embed")
+
+        view = kwargs.get("view")
+        self.assertIsNotNone(view)
+        button_urls = [btn.url for btn in view.children if hasattr(btn, "url")]
+        self.assertIn(INVITE_URL, button_urls)
+        self.assertIn(OFFICIAL_SERVER_URL, button_urls)
 
 
 class TestDecodeWinLogKwargs(unittest.IsolatedAsyncioTestCase):
@@ -6990,6 +6998,28 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         self.assertIn("hack", results_ha)
         self.assertIn("hash", results_ha)
         self.assertNotIn("buy", results_ha)
+
+    async def test_help_official_server_presence(self):
+        """Vérifie la présence du lien et bouton du serveur officiel dans le système d'aide."""
+        from commands.utility.help import HelpView, render_help_embed
+        from data import OFFICIAL_SERVER_URL
+        from lang import help_fr, help_en
+
+        self.assertIn("btn_server", help_fr.UI)
+        self.assertIn("btn_server", help_en.UI)
+
+        # Vérifie le bouton dans HelpView
+        view = HelpView(author_id=12345, locale="fr", prefix="+r")
+        button_urls = [btn.url for btn in view.children if hasattr(btn, "url")]
+        self.assertIn(OFFICIAL_SERVER_URL, button_urls)
+
+        # Vérifie la présence du lien dans les embeds Home et Info (FR et EN)
+        for loc in ("fr", "en"):
+            home_embed = render_help_embed(locale=loc, prefix="+r", mode="slash", category="home")
+            self.assertIn(OFFICIAL_SERVER_URL, home_embed.description)
+
+            info_embed = render_help_embed(locale=loc, prefix="+r", mode="slash", category="info")
+            self.assertIn(OFFICIAL_SERVER_URL, info_embed.description)
 
 
 if __name__ == '__main__':

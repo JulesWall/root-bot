@@ -314,6 +314,15 @@ class HelpView(discord.ui.View):
         if self.current_command is not None or self.unknown_query is not None:
             self.add_item(HelpBackCategoryButton(self))
         self.add_item(HelpSyntaxToggleButton(self))
+        self.add_item(
+            discord.ui.Button(
+                label=lang.UI["btn_server"],
+                url=data.OFFICIAL_SERVER_URL,
+                style=discord.ButtonStyle.link,
+                emoji="💬",
+                row=2,
+            )
+        )
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Vérifie que seul l'auteur de la commande peut interagir."""

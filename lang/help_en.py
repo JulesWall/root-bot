@@ -10,6 +10,7 @@ UI = {
     "btn_back_category": "Back to category",
     "btn_view_text": "View as text",
     "btn_view_slash": "View as slash",
+    "btn_server": "Official Server",
     "mode_slash": "Slash Mode",
     "mode_text": "Text Mode",
     "footer_slash": "Root OS • Help • Slash Mode",
@@ -106,6 +107,7 @@ PAGES = {
             "• **USD ($)**: Currency for mining, defense, and firewall upgrades.\n"
             "• **RTM**: Mined Rootium, required for attacks, compilation, and scans.\n"
             "• **ATK**: Attack points produced with `/compile`.\n\n"
+            "💬 **Community & Support:** [Join the official server](https://discord.gg/FtfGuyb6mv)\n\n"
             "👉 *Use the menu below to browse categories or jump directly with `/help command:buy`.*"
         ),
         "body_text": (
@@ -126,6 +128,7 @@ PAGES = {
             "• **USD ($)**: Currency for mining, defense, and firewall upgrades.\n"
             "• **RTM**: Mined Rootium, required for attacks, compilation, and scans.\n"
             "• **ATK**: Attack points produced with `{prefix}compile`.\n\n"
+            "💬 **Community & Support:** [Join the official server](https://discord.gg/FtfGuyb6mv)\n\n"
             "👉 *Use the menu below to browse categories or jump directly with `{prefix}help buy`.*"
         ),
     },
@@ -293,14 +296,16 @@ PAGES = {
             "• **/lang**: Set or check your display language (French or English).\n"
             "• **/ping**: Measure bot latency and Discord Gateway responsiveness.\n"
             "• **/botinfo**: View general bot stats, uptime, and system status.\n"
-            "• **/invite**: Get the official link to invite Root to your Discord server."
+            "• **/invite**: Get the official link to invite Root to your Discord server.\n\n"
+            "💬 **Official Server:** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
         ),
         "body_text": (
             "Set your preferred language and check Root bot statistics.\n\n"
             "• **{prefix}lang** (alias `{prefix}language`): Set language (fr/en).\n"
             "• **{prefix}ping**: Check bot latency.\n"
             "• **{prefix}botinfo**: System stats and uptime.\n"
-            "• **{prefix}invite**: Official Root bot invite link."
+            "• **{prefix}invite**: Official Root bot invite link.\n\n"
+            "💬 **Official Server:** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
         ),
     },
     "syntax": {
@@ -722,7 +727,7 @@ COMMANDS = {
         "name": "botinfo",
         "category": "info",
         "title": "ℹ️ `/botinfo` — Root Bot Info",
-        "description": "Displays Root bot overview statistics: system uptime, connected servers, and version.",
+        "description": "Displays Root general statistics: uptime, server count, latency and official links (invite and Discord server).",
         "slash_syntax": "/botinfo",
         "text_syntax": "{prefix}botinfo",
         "parameters": "None.",
