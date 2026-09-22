@@ -98,7 +98,7 @@ text = {
     'g_net_claim_toast': 'Successfully extracted **{amount} RTM**!',
     'g_net_footer': 'Root OS • Node #{discord_id}',
     'g_welcome_lang_pick': '🌐 **Welcome to Root.** Choose your language:',
-    'g_welcome_onboarding': '> 👋 **Network created.** Earn your first dollars by playing the server **events** (`{prefix}event`).\n> Once you have USD, you can buy your first modules with `{prefix}buy`.',
+    'g_welcome_onboarding': '> 👋 **Network created.** Start by buying a **tier 1 miner** with `{prefix}buy`!\n> You can then mine with `{prefix}claim` and earn new USD with **events** (`{prefix}event`).',
     'g_shop_title': '🛒 Network Components Market',
     'g_shop_description': 'Upgrade your server racks and expand your infrastructure through three specialized branches.\nSelect a category below to browse the available components.',
     'g_shop_field_mining': '🪙 Mining Branch — USD',
