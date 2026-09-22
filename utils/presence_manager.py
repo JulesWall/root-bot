@@ -25,6 +25,7 @@ import logging
 import math
 import os
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -138,7 +139,12 @@ def get_beta_launch_target() -> datetime | None:
         return _target_datetime
 
     # Rechargement dynamique de .env en production pour prendre en compte les modifications à chaud
-    if "PYTEST_CURRENT_TEST" not in os.environ:
+    is_testing = (
+        "PYTEST_CURRENT_TEST" in os.environ
+        or "unittest" in sys.modules
+        or any("test" in arg.lower() for arg in sys.argv)
+    )
+    if not is_testing:
         try:
             from dotenv import load_dotenv
             load_dotenv(data.BASE_DIR / ".env", override=True)
