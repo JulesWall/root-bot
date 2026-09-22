@@ -119,6 +119,13 @@ class SingleTargetChallengeManager(BaseChallengeManager):
         for k in ("line", "digit", "target", "winning_letter", "missing_packet"):
             if k in challenge:
                 res[k] = challenge[k]
+        if "sequence_str" in challenge:
+            res["sequence"] = challenge["sequence_str"]
+            res["sequence_str"] = challenge["sequence_str"]
+        elif "sequence" in challenge:
+            seq_val = challenge["sequence"]
+            res["sequence"] = " · ".join(seq_val) if isinstance(seq_val, (list, tuple)) else str(seq_val)
+            res["sequence_str"] = res["sequence"]
         return res
 
     @classmethod

@@ -603,7 +603,38 @@ class TestInviteAndBotinfo(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(has_invite, f"L'URL d'invitation {INVITE_URL} doit être présente dans les champs de l'embed")
 
 
+class TestDecodeWinLogKwargs(unittest.IsolatedAsyncioTestCase):
+    """Vérifie que la victoire au mini-jeu Decode contient la séquence et s'enregistre sans KeyError."""
+
+    def test_decode_win_contains_sequence_and_resolves_log_kwargs(self):
+        from commands.game.game_config import GAMES
+        from game.base_challenge_manager import SingleTargetChallengeManager
+
+        settlement = {
+            "final_reward": Decimal("2.50"),
+            "base_reward": Decimal("2.50"),
+            "multiplier": Decimal("1.0"),
+            "next_at": None,
+            "server_name": "TestServer",
+        }
+        challenge = {
+            "target": "TEST",
+            "sequence": ["A1", "B2", "C3", "D4"],
+            "sequence_str": "A1 · B2 · C3 · D4",
+        }
+        won_result = SingleTargetChallengeManager._format_won(settlement, challenge, actor=12345)
+        self.assertIn("sequence", won_result)
+        self.assertEqual(won_result["sequence"], "A1 · B2 · C3 · D4")
+
+        # Vérifier que log_kwargs de GAMES["decode"] résout sans KeyError
+        decode_config = GAMES["decode"]
+        kwargs = decode_config.log_kwargs(won_result)
+        self.assertEqual(kwargs["sequence"], "A1 · B2 · C3 · D4")
+        self.assertEqual(kwargs["target"], "TEST")
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 

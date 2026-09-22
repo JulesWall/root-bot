@@ -66,7 +66,7 @@ GAMES: dict[str, GameConfig] = {
         shape="binary",
         active_info_mode="embed",
         log_method="log_decode_won",
-        log_kwargs=lambda r: {"sequence": r["sequence"], "target": r["target"]},
+        log_kwargs=lambda r: {"sequence": r.get("sequence", r.get("sequence_str", "")), "target": r.get("target", "")},
     ),
     "anomaly": GameConfig(
         key="anomaly",
@@ -77,7 +77,7 @@ GAMES: dict[str, GameConfig] = {
         shape="binary",
         active_info_mode="embed",
         log_method="log_anomaly_won",
-        log_kwargs=lambda r: {"line": r["line"], "digit": r["digit"]},
+        log_kwargs=lambda r: {"line": r.get("line", 0), "digit": r.get("digit", "")},
     ),
     "buffer": GameConfig(
         key="buffer",
@@ -87,7 +87,7 @@ GAMES: dict[str, GameConfig] = {
         shape="binary",
         active_info_mode="embed",
         log_method="log_buffer_won",
-        log_kwargs=lambda r: {"target": r["target"]},
+        log_kwargs=lambda r: {"target": r.get("target", "")},
     ),
     "signal": GameConfig(
         key="signal",
@@ -97,7 +97,7 @@ GAMES: dict[str, GameConfig] = {
         shape="binary",
         active_info_mode="embed",
         log_method="log_signal_won",
-        log_kwargs=lambda r: {"winning_letter": r["winning_letter"]},
+        log_kwargs=lambda r: {"winning_letter": r.get("winning_letter", "")},
     ),
     "packet": GameConfig(
         key="packet",
@@ -108,7 +108,7 @@ GAMES: dict[str, GameConfig] = {
         shape="binary",
         active_info_mode="embed",
         log_method="log_packet_won",
-        log_kwargs=lambda r: {"missing_packet": r["missing_packet"]},
+        log_kwargs=lambda r: {"missing_packet": r.get("missing_packet", 0)},
     ),
 }
 
