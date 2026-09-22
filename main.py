@@ -22,6 +22,7 @@ from utils.logger import Logger
 from utils.check import Check
 from utils.prefix_manager import get_prefix_async
 from utils.language_manager import fetch_user_language
+from utils.presence_manager import get_presence_activity, update_bot_presence, start_presence_loop
 from utils import text
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ def create_bot() -> commands.Bot:
         command_prefix=get_prefix_for_bot,
         intents=intents,
         help_command=None,  # Désactivation de l'aide par défaut de discord.py
-        activity=discord.Game(name=data.BOT_NAME),
+        activity=get_presence_activity(),
         # Statut Ne pas déranger (dnd) si le mode maintenance est actif, En ligne (online) sinon
         status=discord.Status.dnd if checks.maintenance_enabled() else discord.Status.online,
     )
@@ -157,10 +158,8 @@ def create_bot() -> commands.Bot:
         Déclenché lorsque le bot est connecté à Discord et le cache synchronisé.
         Régule le statut de présence.
         """
-        await bot.change_presence(
-            status=discord.Status.dnd if checks.maintenance_enabled() else discord.Status.online,
-            activity=discord.Game(name=data.BOT_NAME),
-        )
+        await update_bot_presence(bot)
+        start_presence_loop(bot)
         logger.info("%s connecte : %s (maintenance=%s)", data.BOT_NAME, bot.user, checks.maintenance_enabled())
         await discord_logger.log_blockchain_ready()
         # Initialisation du suivi économique (no-op si ECONOMY_REPORTS_ENABLED=false)
