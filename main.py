@@ -40,6 +40,64 @@ async def get_prefix_for_bot(bot: commands.Bot, message: discord.Message):
     return commands.when_mentioned_or(prefix)(bot, message)
 
 
+async def assign_official_player_role(member: discord.Member) -> bool:
+    """
+    Attribue automatiquement le rôle 'player' à un membre rejoignant le serveur Discord officiel.
+    
+    Retourne True si le rôle a été attribué (ou était déjà présent), False sinon.
+    """
+    if member is None or getattr(member, "guild", None) is None:
+        return False
+
+    if member.guild.id != data.OFFICIAL_GUILD_ID:
+        return False
+
+    if getattr(member, "bot", False):
+        return False
+
+    # Si le membre possède déjà le rôle, aucune action requise
+    if any(getattr(r, "id", None) == data.PLAYER_ROLE_ID for r in getattr(member, "roles", [])):
+        return True
+
+    role = member.guild.get_role(data.PLAYER_ROLE_ID)
+    role_to_add = role if role is not None else discord.Object(id=data.PLAYER_ROLE_ID)
+
+    try:
+        await member.add_roles(
+            role_to_add,
+            reason="Attribution automatique du rôle player aux nouveaux membres du serveur officiel",
+        )
+        logger.info(
+            "Rôle player (%s) attribué automatiquement à %s (%s) sur le serveur officiel (%s).",
+            data.PLAYER_ROLE_ID,
+            member,
+            getattr(member, "id", "inconnu"),
+            member.guild.id,
+        )
+        return True
+    except discord.Forbidden:
+        logger.warning(
+            "Permissions insuffisantes pour attribuer le rôle player (%s) à %s sur le serveur officiel (%s).",
+            data.PLAYER_ROLE_ID,
+            member,
+            member.guild.id,
+        )
+        return False
+    except discord.HTTPException as exc:
+        logger.warning(
+            "Erreur HTTP lors de l'attribution du rôle player à %s: %s",
+            member,
+            exc,
+        )
+        return False
+    except Exception:
+        logger.exception(
+            "Erreur inattendue lors de l'attribution du rôle player à %s",
+            member,
+        )
+        return False
+
+
 def create_bot() -> commands.Bot:
     """
     Fabrique et configure l'instance complète du bot Root.
@@ -185,6 +243,14 @@ def create_bot() -> commands.Bot:
         """Déclenché lorsque le bot est retiré d'un serveur Discord."""
         logger.info("Serveur quitté : %s (ID: %s) | Total: %d", guild.name, guild.id, len(bot.guilds))
         await discord_logger.log_guild_remove(guild, len(bot.guilds))
+
+    @bot.event
+    async def on_member_join(member: discord.Member):
+        """
+        Déclenché lorsqu'un utilisateur rejoint un serveur Discord où le bot est présent.
+        Attribue automatiquement le rôle 'player' sur le serveur officiel de Root.
+        """
+        await assign_official_player_role(member)
 
     async def report_command_error(ctx, error):
         """

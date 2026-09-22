@@ -7022,6 +7022,140 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
             self.assertIn(OFFICIAL_SERVER_URL, info_embed.description)
 
 
+
+class TestOfficialServerAutoRole(unittest.IsolatedAsyncioTestCase):
+    """Vérifie l'attribution automatique du rôle player lors de l'arrivée sur le serveur officiel."""
+
+    async def test_assign_role_success(self):
+        from main import assign_official_player_role
+        from data import OFFICIAL_GUILD_ID, PLAYER_ROLE_ID
+
+        member = MagicMock()
+        member.id = 123456789
+        member.bot = False
+        member.roles = []
+        member.guild = MagicMock()
+        member.guild.id = OFFICIAL_GUILD_ID
+
+        mock_role = MagicMock()
+        mock_role.id = PLAYER_ROLE_ID
+        member.guild.get_role.return_value = mock_role
+        member.add_roles = AsyncMock()
+
+        result = await assign_official_player_role(member)
+        self.assertTrue(result)
+        member.add_roles.assert_awaited_once_with(
+            mock_role,
+            reason="Attribution automatique du rôle player aux nouveaux membres du serveur officiel",
+        )
+
+    async def test_assign_role_fallback_object(self):
+        from main import assign_official_player_role
+        from data import OFFICIAL_GUILD_ID, PLAYER_ROLE_ID
+
+        member = MagicMock()
+        member.id = 123456789
+        member.bot = False
+        member.roles = []
+        member.guild = MagicMock()
+        member.guild.id = OFFICIAL_GUILD_ID
+        member.guild.get_role.return_value = None
+        member.add_roles = AsyncMock()
+
+        result = await assign_official_player_role(member)
+        self.assertTrue(result)
+        member.add_roles.assert_awaited_once()
+        added_role = member.add_roles.call_args[0][0]
+        self.assertEqual(added_role.id, PLAYER_ROLE_ID)
+
+    async def test_ignore_other_guild(self):
+        from main import assign_official_player_role
+
+        member = MagicMock()
+        member.id = 123456789
+        member.bot = False
+        member.guild = MagicMock()
+        member.guild.id = 999999999999  # Serveur tiers
+        member.add_roles = AsyncMock()
+
+        result = await assign_official_player_role(member)
+        self.assertFalse(result)
+        member.add_roles.assert_not_awaited()
+
+    async def test_ignore_bot(self):
+        from main import assign_official_player_role
+        from data import OFFICIAL_GUILD_ID
+
+        member = MagicMock()
+        member.id = 123456789
+        member.bot = True
+        member.guild = MagicMock()
+        member.guild.id = OFFICIAL_GUILD_ID
+        member.add_roles = AsyncMock()
+
+        result = await assign_official_player_role(member)
+        self.assertFalse(result)
+        member.add_roles.assert_not_awaited()
+
+    async def test_already_has_role(self):
+        from main import assign_official_player_role
+        from data import OFFICIAL_GUILD_ID, PLAYER_ROLE_ID
+
+        mock_role = MagicMock()
+        mock_role.id = PLAYER_ROLE_ID
+
+        member = MagicMock()
+        member.id = 123456789
+        member.bot = False
+        member.roles = [mock_role]
+        member.guild = MagicMock()
+        member.guild.id = OFFICIAL_GUILD_ID
+        member.add_roles = AsyncMock()
+
+        result = await assign_official_player_role(member)
+        self.assertTrue(result)
+        member.add_roles.assert_not_awaited()
+
+    async def test_forbidden_handled_gracefully(self):
+        from main import assign_official_player_role
+        from data import OFFICIAL_GUILD_ID
+
+        member = MagicMock()
+        member.id = 123456789
+        member.bot = False
+        member.roles = []
+        member.guild = MagicMock()
+        member.guild.id = OFFICIAL_GUILD_ID
+
+        mock_resp = MagicMock()
+        mock_resp.status = 403
+        member.add_roles = AsyncMock(side_effect=discord.Forbidden(mock_resp, "Missing Permissions"))
+
+        result = await assign_official_player_role(member)
+        self.assertFalse(result)
+
+    async def test_on_member_join_event_in_bot(self):
+        from main import create_bot
+        from data import OFFICIAL_GUILD_ID, PLAYER_ROLE_ID
+
+        bot = create_bot()
+        self.assertTrue(hasattr(bot, "on_member_join"))
+
+        member = MagicMock()
+        member.id = 123456789
+        member.bot = False
+        member.roles = []
+        member.guild = MagicMock()
+        member.guild.id = OFFICIAL_GUILD_ID
+        mock_role = MagicMock()
+        mock_role.id = PLAYER_ROLE_ID
+        member.guild.get_role.return_value = mock_role
+        member.add_roles = AsyncMock()
+
+        await bot.on_member_join(member)
+        member.add_roles.assert_awaited_once()
+
+
 if __name__ == '__main__':
     unittest.main()
 

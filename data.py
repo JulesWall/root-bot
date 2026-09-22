@@ -49,6 +49,12 @@ INVITE_URL = "https://discord.com/oauth2/authorize?client_id=659013189136285708&
 # Lien du serveur Discord officiel de Root
 OFFICIAL_SERVER_URL = "https://discord.gg/FtfGuyb6mv"
 
+# Identifiant du serveur Discord officiel de Root
+OFFICIAL_GUILD_ID = int(os.getenv("OFFICIAL_GUILD_ID") or os.getenv("ACCESS_GUILD_ID") or 1550799995375190137)
+
+# Identifiant du rôle 'player' attribué automatiquement aux nouveaux membres du serveur officiel
+PLAYER_ROLE_ID = int(os.getenv("PLAYER_ROLE_ID", "1550876233200443472").strip() or 1550876233200443472)
+
 # Whitelist optionnelle de serveurs (Guild IDs) pour la publication instantanée des Slash Commands.
 # Si la liste est vide, les commandes sont publiées globalement sur Discord (délai de propagation possible).
 GUILD_WHITELIST = env_ids("GUILD_WHITELIST")
