@@ -2271,6 +2271,92 @@ class TestPrefixAndLanguageCacheTTL(unittest.IsolatedAsyncioTestCase):
 
         invalidate_language_cache()
 
+    async def test_language_restart_persistence_in_logic(self):
+        """Vérifie que /lang sans argument recharge la langue depuis la BDD après un redémarrage (cache vide)."""
+        from utils.language_manager import invalidate_language_cache, get_user_language
+        import utils.language_manager as lm
+        from commands.utility.language import Language
+
+        invalidate_language_cache()
+        user_id = 123456789
+        mock_ctx = MagicMock()
+        mock_ctx.author.id = user_id
+        mock_ctx.guild = None
+        mock_ctx.respond = AsyncMock()
+        mock_bot = MagicMock()
+
+        cog = Language(mock_bot)
+
+        # Simulation du redémarrage : cache vide, BDD contient 'fr'
+        with patch.object(lm._db, "run", new=AsyncMock(return_value="fr")) as mock_db_run:
+            await cog._language_logic(mock_ctx, choice=None)
+            self.assertEqual(mock_db_run.call_count, 1)
+            self.assertEqual(get_user_language(user_id), "fr")
+            mock_ctx.respond.assert_called_once()
+            sent_msg = mock_ctx.respond.call_args[0][0]
+            self.assertIn("fr (personnalisée / custom)", sent_msg)
+            # Vérifie que le texte du template est en français
+            self.assertIn("Langue actuelle", sent_msg)
+
+        invalidate_language_cache()
+
+    async def test_language_restart_persistence_in_global_check(self):
+        """Vérifie que global_check charge immédiatement la langue en cache pour toute commande."""
+        from utils.language_manager import invalidate_language_cache, get_user_language
+        import utils.language_manager as lm
+        from main import create_bot
+
+        invalidate_language_cache()
+        user_id = 998877665
+        mock_bot = create_bot()
+        check_fn = mock_bot._checks[0]
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = MagicMock()
+        mock_ctx.guild.id = 111
+        mock_ctx.author.id = user_id
+        mock_ctx.interaction = None
+        mock_ctx.command.module = "commands.utility.ping"
+        mock_ctx.command.name = "ping"
+
+        with patch.object(lm._db, "run", new=AsyncMock(return_value="fr")) as mock_db_run:
+            with patch("utils.check.Check.is_banned", return_value=False):
+                with patch("utils.check.Check.maintenance_enabled", return_value=False):
+                    with patch("utils.check.Check.beta_enabled", return_value=False):
+                        res = await check_fn(mock_ctx)
+                        self.assertTrue(res)
+                        self.assertEqual(mock_db_run.call_count, 1)
+                        self.assertEqual(get_user_language(user_id), "fr")
+
+        invalidate_language_cache()
+
+    async def test_language_restart_persistence_in_error_reporting(self):
+        """Vérifie que report_command_error répond dans la langue de l'utilisateur même si le cache est vide."""
+        from utils.language_manager import invalidate_language_cache, get_user_language
+        import utils.language_manager as lm
+        from main import create_bot
+        from game.game_error import GameError
+
+        invalidate_language_cache()
+        user_id = 554433221
+        mock_bot = create_bot()
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = MagicMock()
+        mock_ctx.author.id = user_id
+        mock_ctx.interaction = None
+        mock_ctx.send = AsyncMock()
+
+        with patch.object(lm._db, "run", new=AsyncMock(return_value="fr")) as mock_db_run:
+            await mock_bot.on_command_error(mock_ctx, GameError("beta_access_required"))
+            self.assertEqual(get_user_language(user_id), "fr")
+            mock_ctx.send.assert_called_once()
+            sent_text = mock_ctx.send.call_args[0][0]
+            # Le message doit être en français
+            self.assertIn("Accès Bêta restreint", sent_text)
+
+        invalidate_language_cache()
+
 
 class TestBlockchainLogs(unittest.IsolatedAsyncioTestCase):
     """Teste les logs lore-friendly dans le salon #blockchain."""

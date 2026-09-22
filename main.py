@@ -21,6 +21,7 @@ from game.root_service import RootService
 from utils.logger import Logger
 from utils.check import Check
 from utils.prefix_manager import get_prefix_async
+from utils.language_manager import fetch_user_language
 from utils import text
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,15 @@ def create_bot() -> commands.Bot:
         interaction = getattr(ctx, "interaction", None)
         if interaction and not interaction.response.is_done():
             await ctx.defer()
+
+        # Préchargement de la préférence de langue du joueur vers le cache mémoire
+        user = getattr(ctx, "author", None) or getattr(ctx, "user", None)
+        user_id = getattr(user, "id", None)
+        if user_id:
+            try:
+                await fetch_user_language(user_id)
+            except Exception:
+                pass
 
         # 5. Vérification du mode Bêta
         # Seuls les joueurs autorisés (beta access.json ou rôle OP) peuvent jouer.
@@ -211,6 +221,13 @@ def create_bot() -> commands.Bot:
             )
 
         try:
+            user = getattr(ctx, "author", None) or getattr(ctx, "user", None)
+            user_id = getattr(user, "id", None)
+            if user_id:
+                try:
+                    await fetch_user_language(user_id)
+                except Exception:
+                    pass
             values = original.values if isinstance(original, GameError) else {}
             # Répondre soit via interaction Discord (slash), soit par message ordinaire (préfixe)
             if getattr(ctx, "interaction", None):

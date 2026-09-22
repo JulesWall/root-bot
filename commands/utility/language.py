@@ -25,7 +25,12 @@ from discord.ext import commands
 from data import GUILD_WHITELIST, SUPPORTED_LANGS, DEFAULT_PREFIX
 from lang.descslash import desc, desc_loc
 from utils import text
-from utils.language_manager import get_user_language, set_user_language, reset_user_language
+from utils.language_manager import (
+    fetch_user_language,
+    get_user_language,
+    set_user_language,
+    reset_user_language,
+)
 from utils.logger import Logger
 from utils.prefix_manager import get_prefix_async
 
@@ -64,6 +69,11 @@ class Language(commands.Cog):
         prefix = await get_prefix_async(guild.id) if guild else DEFAULT_PREFIX
         user = getattr(ctx, "author", None) or getattr(ctx, "user", None)
         user_id = getattr(user, "id", None)
+        if user_id:
+            try:
+                await fetch_user_language(user_id)
+            except Exception:
+                pass
 
         # ── 1. Aucun choix fourni : consultation de la langue actuelle ─────────────
         if not choice or not choice.strip():
