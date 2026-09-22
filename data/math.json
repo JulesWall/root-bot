@@ -19,28 +19,6 @@
     "claim_cooldown_seconds": 30,
     "reputation_bonus_per_point": 0.005
   },
-  "ram_rewards": {
-    "_comment": "Regles de bonus RAM a implementer. Ces champs servent de memoire et de specification pour les simulations ; ils n'activent pas les votes ou le parrainage dans le bot.",
-    "_comment_gameplay": "Bonus de capacite de RAM uniquement, sans bonus de hashrate. Conserver les claims frequents et les durees de base de 8, 12, 35, 50 et 75 minutes sans reputation.",
-    "stacking": "additive",
-    "max_total_ram_bonus_percent": 50,
-    "_comment_cumul": "Tous les bonus sont comptabilises (vote, parrain et filleul), puis le total est plafonne a +50 % de RAM. Exemple : 3 filleuls (+30 %) et son propre bonus de filleul (+10 %) donnent +40 % ; avec le vote (+20 %), le resultat reste plafonne a +50 %.",
-    "vote": {
-      "_comment": "Un vote confirme donne +20 % de RAM pendant 6 heures. Hypothese de cumul : un nouveau vote renouvelle les 6 heures, sans empiler plusieurs bonus de vote, meme sur plusieurs sites.",
-      "ram_bonus_percent": 20,
-      "duration_seconds": 21600,
-      "max_active_bonuses": 1
-    },
-    "referral": {
-      "_comment": "Au premier passage du filleul au pare-feu de niveau 1, le parrain ET ce filleul recoivent chacun +10 % de RAM pendant 7 jours a partir de cet instant. Le parrain peut cumuler les bonus de 3 filleuls simultanement ; chaque bonus a sa propre expiration. Un meme filleul ne declenche pas plusieurs fois la recompense.",
-      "ram_bonus_percent_per_referral": 10,
-      "duration_seconds": 604800,
-      "required_referee_firewall_level": 1,
-      "max_active_referees": 3,
-      "max_referrers_per_referee": 1
-    },
-    "_comment_precision": "Le stockage actuel est arrondi a 5 decimales RTM : de petits bonus peuvent etre effaces ou deformes au T1. Avant implementation, conserver les fractions de production puis les transferer hors RAM lors du claim, avec reliquat de conversion, pour que le bonus soit reellement recuperable."
-  },
   "conversion": {
     "rtm_to_usd": 43567
   },
@@ -220,7 +198,7 @@
     "night_interval_max_minutes": 60
   },
   "pvp": {
-    "delay_seconds": 105,
+    "delay_seconds": 2700,
     "check_interval_seconds": 15,
     "retaliation_window_hours": 72
   }
