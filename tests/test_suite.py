@@ -67,6 +67,7 @@ class MockTransaction:
         self.upgrades = []
         self.hacks = []
         self.daily_stats = {}
+        self.daily_claim_logs = []
         self.prefixes = {}
         self.executed_queries = []
         self.acquired_locks = []
@@ -132,6 +133,10 @@ class MockTransaction:
             row = self.events.get("daily_moderation_report")
             return {"last_found_on": row.get("last_found_on")} if row else None
 
+        if "SELECT LAST_FOUND_ON FROM EVENTS WHERE EVENT = 'DAILY_CLAIM_REPORT'" in q:
+            row = self.events.get("daily_claim_report")
+            return {"last_found_on": row.get("last_found_on")} if row else None
+
         return None
 
     def all(self, query: str, params=()):
@@ -181,6 +186,33 @@ class MockTransaction:
         if "SELECT * FROM HACK WHERE EXPIRES_AT <=" in q:
             cutoff = params[0]
             return [dict(h) for h in self.hacks if h["expires_at"] <= cutoff]
+
+        if "GROUP BY DISCORD_ID" in q and "DAILY_CLAIM_LOGS" in q:
+            from collections import defaultdict
+            user_counts = defaultdict(lambda: {"claim_count": 0, "total_amount": Decimal("0")})
+            for c in self.daily_claim_logs:
+                uid = c["discord_id"]
+                user_counts[uid]["claim_count"] += 1
+                user_counts[uid]["total_amount"] += c.get("amount", Decimal("0"))
+            rows = [
+                {"discord_id": uid, "claim_count": data["claim_count"], "total_amount": data["total_amount"]}
+                for uid, data in user_counts.items()
+            ]
+            rows.sort(key=lambda r: r["claim_count"], reverse=True)
+            limit = params[0] if params else 50
+            return rows[:limit]
+
+        if "FROM DAILY_CLAIM_LOGS WHERE DISCORD_ID =" in q:
+            uid = params[0]
+            matched = [dict(c) for c in self.daily_claim_logs if c["discord_id"] == uid]
+            matched.sort(key=lambda r: r["claimed_at"])
+            return matched
+
+        if "FROM DAILY_CLAIM_LOGS WHERE DISCORD_ID IN" in q:
+            uids = set(params)
+            matched = [dict(c) for c in self.daily_claim_logs if c["discord_id"] in uids]
+            matched.sort(key=lambda r: r["claimed_at"])
+            return matched
 
         return []
 
@@ -258,6 +290,15 @@ class MockTransaction:
                     "last_reward": Decimal("0.00"),
                 }
                 return 1
+            if "DAILY_CLAIM_REPORT" in q:
+                self.events["daily_claim_report"] = {
+                    "event": "daily_claim_report",
+                    "next_at": params[0],
+                    "last_found_by": None,
+                    "last_found_on": params[1] if len(params) > 1 else None,
+                    "last_reward": Decimal("0.00"),
+                }
+                return 1
             ev_name = params[0]
             next_at = params[1]
             last_found_by = params[2] if len(params) > 2 else None
@@ -284,6 +325,19 @@ class MockTransaction:
 
         if "DELETE FROM DAILY_EVENT_STATS" in q:
             self.daily_stats.clear()
+            return 1
+
+        if "INSERT INTO DAILY_CLAIM_LOGS" in q:
+            self.daily_claim_logs.append({
+                "discord_id": params[0],
+                "claimed_at": params[1],
+                "interval_seconds": params[2],
+                "amount": params[3],
+            })
+            return 1
+
+        if "DELETE FROM DAILY_CLAIM_LOGS" in q:
+            self.daily_claim_logs.clear()
             return 1
 
         if "INSERT INTO UPGRADES" in q:
@@ -1737,6 +1791,7 @@ class MockDatabase:
         self.players = {}
         self.events = {}
         self.daily_stats = {}
+        self.daily_claim_logs = []
         self.prefixes = {}
         self.upgrades = []
         self.hacks = []
@@ -1753,6 +1808,7 @@ class MockDatabase:
             tx.players = self.players
             tx.events = self.events
             tx.daily_stats = self.daily_stats
+            tx.daily_claim_logs = self.daily_claim_logs
             tx.prefixes = self.prefixes
             tx.upgrades = self.upgrades
             tx.hacks = self.hacks
@@ -1763,6 +1819,7 @@ class MockDatabase:
             tx.players = copy.deepcopy(self.players)
             tx.events = copy.deepcopy(self.events)
             tx.daily_stats = copy.deepcopy(self.daily_stats)
+            tx.daily_claim_logs = copy.deepcopy(self.daily_claim_logs)
             tx.prefixes = copy.deepcopy(self.prefixes)
             tx.upgrades = copy.deepcopy(self.upgrades)
             tx.hacks = copy.deepcopy(self.hacks)
@@ -1782,6 +1839,7 @@ class MockDatabase:
                 self.players = tx.players
                 self.events = tx.events
                 self.daily_stats = tx.daily_stats
+                self.daily_claim_logs = tx.daily_claim_logs
                 self.prefixes = tx.prefixes
                 self.upgrades = tx.upgrades
                 self.hacks = tx.hacks

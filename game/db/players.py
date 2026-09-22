@@ -13,6 +13,7 @@ from datetime import timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from game.db.consequence import ConsequenceDB
+from game.db.daily_claim_stats import DailyClaimStatsDB
 from game.db.database import Database, player_lock_name
 from game.db.hack import HackDB
 from game.db.pvp import PvpDB
@@ -430,6 +431,13 @@ class Player:
             mining_buffer=Decimal('0'),
             mining_last_update_at=tx.now,
             mining_last_claim_at=tx.now,
+        )
+        DailyClaimStatsDB.record_claim(
+            tx,
+            discord_id=actor,
+            claimed_at=tx.now,
+            interval_seconds=seconds_since_last_claim,
+            amount=claimed,
         )
         result.update({'claimed': True, 'amount': claimed, 'new_rootium': new_rootium, 'ram_was_full': ram_was_full})
         return result
