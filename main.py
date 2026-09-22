@@ -86,10 +86,12 @@ def create_bot() -> commands.Bot:
         if ctx.guild is None:
             return False
 
+        command_name = getattr(ctx.command, "name", "") or ""
         command_module = getattr(ctx.command, "module", "") or ""
         is_admin_command = command_module.startswith("commands.admin.")
         is_game_command = command_module.startswith("commands.game.")
-        is_network_command = is_game_command and getattr(ctx.command, "name", "") in ("network", "n")
+        is_network_command = is_game_command and command_name in ("network", "n")
+        is_help_command = command_name == "help"
 
         # 2. Vérification des bannissements locaux (data/banned.json)
         if not is_admin_command and checks.is_banned(ctx.author.id):
@@ -102,7 +104,10 @@ def create_bot() -> commands.Bot:
         # 4. Accuser réception (defer) immédiatement avant tout appel distant (BDD / rôles Discord)
         interaction = getattr(ctx, "interaction", None)
         if interaction and not interaction.response.is_done():
-            await ctx.defer()
+            if is_help_command:
+                await ctx.defer(ephemeral=True)
+            else:
+                await ctx.defer()
 
         # Préchargement de la préférence de langue du joueur vers le cache mémoire
         user = getattr(ctx, "author", None) or getattr(ctx, "user", None)
@@ -115,10 +120,10 @@ def create_bot() -> commands.Bot:
 
         # 5. Vérification du mode Bêta
         # Seuls les joueurs autorisés (beta access.json ou rôle OP) peuvent jouer.
-        # Exception : /network (ou !n) reste accessible pour créer son profil et recevoir de la réputation.
+        # Exception : /network (ou !n) et /help restent accessibles pour créer son profil ou consulter l'aide.
         if checks.beta_enabled() and not is_admin_command:
             has_access = await checks.has_beta_access(bot, ctx.author.id)
-            if not has_access and not is_network_command:
+            if not has_access and not is_network_command and not is_help_command:
                 raise GameError('beta_access_required')
 
         # 6. Vérification du compte joueur (seul /network permet d'initialiser sans être inscrit)

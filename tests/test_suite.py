@@ -6672,5 +6672,326 @@ class TestBalanceSimulation(unittest.TestCase):
 
 
 
+# ============================================================================
+# SECTION : Système d'aide (/help, {prefix}help, CONCEPTION_HELP.md)
+# ============================================================================
+
+class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
+    """Vérifie l'intégralité du système d'aide (/help, pages, fiches et navigation)."""
+
+    def setUp(self):
+        from commands.utility.help import HelpCog
+        self.bot = MagicMock()
+        self.cog = HelpCog(self.bot)
+
+    def test_help_catalogs_consistency(self):
+        """Vérifie que les catalogues FR et EN sont exhaustifs et cohérents avec CONCEPTION_HELP."""
+        from lang import help_fr, help_en
+        from commands.utility.help import PUBLIC_COMMANDS
+
+        # 24 commandes publiques
+        self.assertEqual(len(PUBLIC_COMMANDS), 24)
+        self.assertEqual(len(help_fr.COMMANDS), 24)
+        self.assertEqual(len(help_en.COMMANDS), 24)
+
+        for cmd_name in PUBLIC_COMMANDS:
+            self.assertIn(cmd_name, help_fr.COMMANDS)
+            self.assertIn(cmd_name, help_en.COMMANDS)
+
+            fr_cmd = help_fr.COMMANDS[cmd_name]
+            en_cmd = help_en.COMMANDS[cmd_name]
+
+            # Vérification des champs requis
+            for field in ("name", "category", "title", "description", "slash_syntax", "text_syntax", "slash_example", "text_example"):
+                self.assertIn(field, fr_cmd)
+                self.assertIn(field, en_cmd)
+                self.assertTrue(fr_cmd[field], f"Champ {field} vide pour {cmd_name} en FR")
+                self.assertTrue(en_cmd[field], f"Champ {field} vide pour {cmd_name} en EN")
+
+        # Vérification des 8 rubriques
+        self.assertEqual(len(help_fr.CATEGORIES), 8)
+        self.assertEqual(len(help_en.CATEGORIES), 8)
+        expected_cat_ids = {"home", "all", "network", "combat", "events", "trade", "info", "syntax"}
+        self.assertEqual({c["id"] for c in help_fr.CATEGORIES}, expected_cat_ids)
+        self.assertEqual({c["id"] for c in help_en.CATEGORIES}, expected_cat_ids)
+
+        # Vérification des 8 pages
+        self.assertEqual(set(help_fr.PAGES.keys()), expected_cat_ids)
+        self.assertEqual(set(help_en.PAGES.keys()), expected_cat_ids)
+
+        # Vérification des alias
+        self.assertEqual(help_fr.COMMAND_ALIASES, help_en.COMMAND_ALIASES)
+        for alias, target in help_fr.COMMAND_ALIASES.items():
+            self.assertIn(target, PUBLIC_COMMANDS, f"L'alias {alias} pointe vers {target} qui n'est pas dans PUBLIC_COMMANDS")
+
+    async def test_all_commands_page(self):
+        """Vérifie que la page 'Toutes les commandes' liste les 24 commandes et alimente le menu déroulant."""
+        from commands.utility.help import HelpView, HelpCommandSelect, PUBLIC_COMMANDS, render_help_embed
+
+        view = HelpView(author_id=12345, locale="fr", prefix="+r", initial_category="all")
+        self.assertEqual(view.current_category, "all")
+
+        # Vérifie que le sélecteur de commandes contient bien les 24 commandes
+        cmd_select = next(item for item in view.children if isinstance(item, HelpCommandSelect))
+        self.assertEqual(len(cmd_select.options), 24)
+        option_values = {opt.value for opt in cmd_select.options}
+        self.assertEqual(option_values, set(PUBLIC_COMMANDS))
+
+        # Vérifie que l'embed de la page liste toutes les 24 commandes
+        embed = render_help_embed(locale="fr", prefix="+r", mode="slash", category="all")
+        self.assertIn("Toutes les commandes", embed.title)
+        for cmd_name in PUBLIC_COMMANDS:
+            self.assertIn(f"/{cmd_name}", embed.description)
+
+    async def test_slash_help_home(self):
+        """Vérifie l'affichage de l'accueil en slash command (éphémère)."""
+        ctx = MagicMock()
+        ctx.author.id = 12345
+        ctx.guild = MagicMock()
+        ctx.guild.id = 999
+        ctx.interaction = MagicMock()
+        ctx.respond = AsyncMock()
+
+        with patch("commands.utility.help.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                    await self.cog.slash_help.callback(self.cog, ctx, command=None)
+
+        ctx.respond.assert_called_once()
+        call_kwargs = ctx.respond.call_args[1]
+        self.assertTrue(call_kwargs.get("ephemeral"))
+        embed = call_kwargs["embed"]
+        self.assertIn("Centre d'aide", embed.title)
+        self.assertIn("Crée ton réseau", embed.description)
+        self.assertIn("`/network`", embed.description)
+        self.assertIn("Mode Slash", embed.footer.text)
+        view = call_kwargs["view"]
+        self.assertEqual(view.mode, "slash")
+        self.assertEqual(view.current_category, "home")
+
+    async def test_prefix_help_home(self):
+        """Vérifie l'affichage de l'accueil avec préfixe (public)."""
+        ctx = MagicMock()
+        ctx.author.id = 12345
+        ctx.guild = MagicMock()
+        ctx.guild.id = 999
+        ctx.interaction = None
+        ctx.send = AsyncMock()
+
+        with patch("commands.utility.help.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="!")):
+                with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                    await self.cog.prefix_help(ctx, command_name=None)
+
+        ctx.send.assert_called_once()
+        call_kwargs = ctx.send.call_args[1]
+        embed = call_kwargs["embed"]
+        self.assertIn("!network", embed.description)
+        self.assertIn("Préfixe : !", embed.footer.text)
+        view = call_kwargs["view"]
+        self.assertEqual(view.mode, "text")
+
+    async def test_direct_command_access(self):
+        """Vérifie l'accès direct via /help command:buy et {prefix}help buy."""
+        ctx = MagicMock()
+        ctx.author.id = 12345
+        ctx.guild = MagicMock()
+        ctx.guild.id = 999
+        ctx.interaction = MagicMock()
+        ctx.respond = AsyncMock()
+
+        with patch("commands.utility.help.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                    await self.cog.slash_help.callback(self.cog, ctx, command="buy")
+
+        ctx.respond.assert_called_once()
+        embed = ctx.respond.call_args[1]["embed"]
+        self.assertIn("/buy", embed.title)
+        self.assertIn("/buy [kind:<mining|attack|defense>]", embed.description)
+        self.assertIn("Avant d'utiliser", embed.description)
+        view = ctx.respond.call_args[1]["view"]
+        self.assertEqual(view.current_category, "network")
+        self.assertEqual(view.current_command, "buy")
+
+    async def test_text_alias_resolution(self):
+        """Vérifie la résolution des alias texte (ex: !help n -> network, !help sell -> convert)."""
+        ctx = MagicMock()
+        ctx.author.id = 12345
+        ctx.guild = MagicMock()
+        ctx.guild.id = 999
+        ctx.interaction = None
+        ctx.send = AsyncMock()
+
+        # 1. Alias 'n' -> network
+        with patch("commands.utility.help.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                    await self.cog.prefix_help(ctx, command_name="n")
+        embed1 = ctx.send.call_args[1]["embed"]
+        self.assertIn("network", embed1.title.lower())
+
+        # 2. Alias 'sell' -> convert
+        ctx.send.reset_mock()
+        with patch("commands.utility.help.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                    await self.cog.prefix_help(ctx, command_name="sell")
+        embed2 = ctx.send.call_args[1]["embed"]
+        self.assertIn("convert", embed2.title.lower())
+
+    async def test_unknown_or_admin_command_lookup(self):
+        """Vérifie qu'une commande inconnue ou d'administration affiche l'embed générique sans rien révéler."""
+        ctx = MagicMock()
+        ctx.author.id = 12345
+        ctx.guild = MagicMock()
+        ctx.guild.id = 999
+        ctx.interaction = MagicMock()
+        ctx.respond = AsyncMock()
+
+        for query in ("prefix", "op", "beta_launch", "inconnue123", "/ban"):
+            ctx.respond.reset_mock()
+            with patch("commands.utility.help.get_locale", return_value="fr"):
+                with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                    with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                        await self.cog.slash_help.callback(self.cog, ctx, command=query)
+
+            embed = ctx.respond.call_args[1]["embed"]
+            self.assertIn("Commande non trouvée", embed.title)
+            self.assertIn("Cette commande n’est pas disponible", embed.description)
+
+    async def test_beta_access_and_note(self):
+        """Vérifie que /help est accessible en mode bêta et affiche la note pour les non-bêta testeurs."""
+        from main import create_bot
+        mock_bot = create_bot()
+        check_fn = mock_bot._checks[0]
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = MagicMock()
+        mock_ctx.guild.id = 111
+        mock_ctx.author.id = 777888
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.interaction.response.is_done.return_value = False
+        mock_ctx.defer = AsyncMock()
+        mock_ctx.command.module = "commands.utility.help"
+        mock_ctx.command.name = "help"
+
+        # Le joueur n'a PAS d'accès bêta : global_check doit autoriser quand même /help
+        with patch("utils.check.Check.is_banned", return_value=False):
+            with patch("utils.check.Check.maintenance_enabled", return_value=False):
+                with patch("utils.check.Check.beta_enabled", return_value=True):
+                    with patch("utils.check.Check.has_beta_access", new=AsyncMock(return_value=False)):
+                        allowed = await check_fn(mock_ctx)
+                        self.assertTrue(allowed)
+                        mock_ctx.defer.assert_awaited_once_with(ephemeral=True)
+
+        # Vérifie la présence de la note bêta dans l'accueil
+        mock_ctx.respond = AsyncMock()
+        mock_ctx.interaction.locale = "fr"
+        with patch("utils.text.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_locale", return_value="fr"):
+                with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                    with patch.object(self.cog.check, "beta_enabled", return_value=True):
+                        with patch.object(self.cog.check, "has_beta_access", new=AsyncMock(return_value=False)):
+                            await self.cog.slash_help.callback(self.cog, mock_ctx, command=None)
+        embed = mock_ctx.respond.call_args[1]["embed"]
+        self.assertIn("Le jeu est actuellement en bêta", embed.description)
+
+    async def test_help_view_author_lock(self):
+        """Vérifie que seul l'auteur de l'aide peut manipuler les composants."""
+        from commands.utility.help import HelpView
+
+        view = HelpView(author_id=12345, locale="fr", prefix="+r")
+
+        # 1. Même utilisateur -> autorisé
+        author_interaction = MagicMock()
+        author_interaction.user.id = 12345
+        self.assertTrue(await view.interaction_check(author_interaction))
+
+        # 2. Utilisateur tiers -> rejeté avec message éphémère
+        intruder_interaction = MagicMock()
+        intruder_interaction.user.id = 99999
+        intruder_interaction.response.send_message = AsyncMock()
+        self.assertFalse(await view.interaction_check(intruder_interaction))
+        intruder_interaction.response.send_message.assert_called_once()
+        self.assertTrue(intruder_interaction.response.send_message.call_args[1].get("ephemeral"))
+        self.assertIn("propre guide", intruder_interaction.response.send_message.call_args[0][0])
+
+    async def test_help_view_syntax_toggle(self):
+        """Vérifie la bascule entre mode Slash et mode Texte."""
+        from commands.utility.help import HelpView
+
+        view = HelpView(author_id=12345, locale="fr", prefix="+r", mode="slash")
+        self.assertEqual(view.mode, "slash")
+
+        # Recherche du bouton de bascule
+        toggle_btn = next(item for item in view.children if isinstance(item, discord.ui.Button) and "texte" in item.label.lower())
+        mock_interaction = MagicMock()
+        mock_interaction.response.edit_message = AsyncMock()
+
+        await toggle_btn.callback(mock_interaction)
+        self.assertEqual(view.mode, "text")
+        mock_interaction.response.edit_message.assert_called_once()
+        embed = mock_interaction.response.edit_message.call_args[1]["embed"]
+        self.assertIn("Mode Texte", embed.footer.text)
+
+    async def test_help_view_category_navigation(self):
+        """Vérifie la navigation vers une catégorie puis vers une commande."""
+        from commands.utility.help import HelpView, HelpCategorySelect, HelpCommandSelect
+
+        view = HelpView(author_id=12345, locale="fr", prefix="+r", mode="slash")
+        cat_select = next(item for item in view.children if isinstance(item, HelpCategorySelect))
+
+        mock_interaction = MagicMock()
+        mock_interaction.response.edit_message = AsyncMock()
+
+        # Sélection de la catégorie "combat"
+        cat_select._selected_values = ["combat"]
+        await cat_select.callback(mock_interaction)
+        self.assertEqual(view.current_category, "combat")
+        self.assertIsNone(view.current_command)
+
+        # Sélection de la commande "hack"
+        cmd_select = next(item for item in view.children if isinstance(item, HelpCommandSelect))
+        cmd_select._selected_values = ["hack"]
+        await cmd_select.callback(mock_interaction)
+        self.assertEqual(view.current_command, "hack")
+        embed = mock_interaction.response.edit_message.call_args[1]["embed"]
+        self.assertIn("/hack", embed.title)
+
+    async def test_help_view_timeout(self):
+        """Vérifie la désactivation des composants à l'expiration du timeout."""
+        from commands.utility.help import HelpView
+
+        view = HelpView(author_id=12345, locale="fr", prefix="+r")
+        mock_msg = MagicMock()
+        mock_msg.embeds = [discord.Embed(title="Aide", description="Contenu")]
+        mock_msg.edit = AsyncMock()
+        view.message = mock_msg
+
+        await view.on_timeout()
+        for child in view.children:
+            self.assertTrue(child.disabled)
+        mock_msg.edit.assert_awaited_once()
+        edited_embed = mock_msg.edit.call_args[1]["embed"]
+        self.assertIn("Navigation expirée", edited_embed.description)
+
+    async def test_help_autocomplete(self):
+        """Vérifie que l'autocomplétion propose les 24 commandes et filtre la saisie."""
+        from commands.utility.help import help_command_autocomplete
+
+        ctx = MagicMock()
+        ctx.value = ""
+        results = await help_command_autocomplete(ctx)
+        self.assertEqual(len(results), 24)
+
+        ctx.value = "ha"
+        results_ha = await help_command_autocomplete(ctx)
+        self.assertIn("hack", results_ha)
+        self.assertIn("hash", results_ha)
+        self.assertNotIn("buy", results_ha)
+
+
 if __name__ == '__main__':
     unittest.main()
+
