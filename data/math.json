@@ -220,7 +220,7 @@
     "night_interval_max_minutes": 60
   },
   "pvp": {
-    "delay_seconds": 105,
+    "delay_seconds": 2700,
     "check_interval_seconds": 15,
     "retaliation_window_hours": 72
   }
