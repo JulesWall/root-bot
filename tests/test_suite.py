@@ -2870,6 +2870,10 @@ class TestMiningClaimAndWelcome(unittest.TestCase):
         self.assertIn("{prefix}", game_en.text["g_welcome_onboarding"])
         self.assertIn("event", game_fr.text["g_welcome_onboarding"].lower())
         self.assertIn("buy", game_en.text["g_welcome_onboarding"].lower())
+        self.assertIn("claim", game_fr.text["g_welcome_onboarding"].lower())
+        self.assertIn("claim", game_en.text["g_welcome_onboarding"].lower())
+        self.assertIn("mineur de tiers 1", game_fr.text["g_welcome_onboarding"].lower())
+        self.assertIn("tier 1 miner", game_en.text["g_welcome_onboarding"].lower())
 
 
 class TestWelcomeLanguageView(unittest.IsolatedAsyncioTestCase):
