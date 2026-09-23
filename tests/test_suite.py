@@ -7500,6 +7500,95 @@ class TestAutoclaimFeature(unittest.IsolatedAsyncioTestCase):
             cog.cog_unload()
 
 
+class TestPrefixCaseInsensitiveHandling(unittest.IsolatedAsyncioTestCase):
+    """Vérifie la normalisation en minuscules des commandes commençant par un préfixe custom."""
+
+    async def test_on_message_lowers_custom_prefix_command(self):
+        from main import create_bot
+        bot = create_bot()
+        bot.process_commands = AsyncMock()
+
+        msg = MagicMock(spec=discord.Message)
+        msg.author.bot = False
+        msg.guild = MagicMock(id=123)
+        msg.content = "!NETWORK"
+
+        with patch("main.get_prefix_async", new=AsyncMock(return_value="!")):
+            await bot.on_message(msg)
+
+        self.assertEqual(msg.content, "!network")
+        bot.process_commands.assert_awaited_once_with(msg)
+
+    async def test_on_message_lowers_mixed_case_arguments(self):
+        from main import create_bot
+        bot = create_bot()
+        bot.process_commands = AsyncMock()
+
+        msg = MagicMock(spec=discord.Message)
+        msg.author.bot = False
+        msg.guild = MagicMock(id=123)
+        msg.content = "!BUY MINING 1"
+
+        with patch("main.get_prefix_async", new=AsyncMock(return_value="!")):
+            await bot.on_message(msg)
+
+        self.assertEqual(msg.content, "!buy mining 1")
+        bot.process_commands.assert_awaited_once_with(msg)
+
+    async def test_on_message_handles_uppercase_prefix_itself(self):
+        from main import create_bot
+        bot = create_bot()
+        bot.process_commands = AsyncMock()
+
+        msg = MagicMock(spec=discord.Message)
+        msg.author.bot = False
+        msg.guild = MagicMock(id=123)
+        msg.content = "+R NETWORK"
+
+        with patch("main.get_prefix_async", new=AsyncMock(return_value="+r")):
+            await bot.on_message(msg)
+
+        self.assertEqual(msg.content, "+r network")
+        bot.process_commands.assert_awaited_once_with(msg)
+
+    async def test_on_message_ignores_non_prefix_messages(self):
+        from main import create_bot
+        bot = create_bot()
+        bot.process_commands = AsyncMock()
+
+        msg = MagicMock(spec=discord.Message)
+        msg.author.bot = False
+        msg.guild = MagicMock(id=123)
+        msg.content = "HELLO WORLD"
+
+        with patch("main.get_prefix_async", new=AsyncMock(return_value="!")):
+            await bot.on_message(msg)
+
+        self.assertEqual(msg.content, "HELLO WORLD")
+        bot.process_commands.assert_awaited_once_with(msg)
+
+    async def test_on_message_edit_lowers_custom_prefix_command(self):
+        from main import create_bot
+        bot = create_bot()
+        bot.process_commands = AsyncMock()
+
+        before = MagicMock(spec=discord.Message)
+        before.author.bot = False
+        before.guild = MagicMock(id=123)
+        before.content = "hello"
+
+        after = MagicMock(spec=discord.Message)
+        after.author.bot = False
+        after.guild = MagicMock(id=123)
+        after.content = "!HELP"
+
+        with patch("main.get_prefix_async", new=AsyncMock(return_value="!")):
+            await bot.on_message_edit(before, after)
+
+        self.assertEqual(after.content, "!help")
+        bot.process_commands.assert_awaited_once_with(after)
+
+
 if __name__ == '__main__':
     unittest.main()
 

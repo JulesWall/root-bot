@@ -119,6 +119,8 @@ def create_bot() -> commands.Bot:
         activity=get_presence_activity(),
         # Statut Ne pas déranger (dnd) si le mode maintenance est actif, En ligne (online) sinon
         status=discord.Status.dnd if checks.maintenance_enabled() else discord.Status.online,
+        case_insensitive=True,
+        strip_after_prefix=True,
     )
     
     # Injection des dépendances centrales attachées à l'instance du bot
@@ -199,9 +201,14 @@ def create_bot() -> commands.Bot:
         """
         Écouteur de messages textuels.
         Ignore systématiquement les bots et TOUT message reçu en MP (politique zéro MP).
+        Normalise en minuscules le texte commençant par un préfixe custom pour tolérer les majuscules.
         """
         if message.author.bot or message.guild is None:
             return
+        if message.content:
+            prefix = await get_prefix_async(message.guild.id)
+            if message.content.lower().startswith(prefix.lower()):
+                message.content = prefix + message.content[len(prefix):].lower()
         await bot.process_commands(message)
 
     @bot.event
@@ -209,10 +216,15 @@ def create_bot() -> commands.Bot:
         """
         Permet de re-déclencher une commande si l'utilisateur modifie son message avec préfixe.
         Ignore les MP et les messages de bots.
+        Normalise en minuscules le texte commençant par un préfixe custom pour tolérer les majuscules.
         """
         if after.author.bot or after.guild is None:
             return
         if before.content != after.content:
+            if after.content:
+                prefix = await get_prefix_async(after.guild.id)
+                if after.content.lower().startswith(prefix.lower()):
+                    after.content = prefix + after.content[len(prefix):].lower()
             await bot.process_commands(after)
 
     @bot.event
