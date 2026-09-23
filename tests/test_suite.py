@@ -63,52 +63,20 @@ from decimal import Decimal as D
 from utils.text import format_usd
 import tempfile
 import discord
-from game.db.consequence import ConsequenceDB
-from game.db.pvp import PvpDB
-from commands.game.hack import Hack, HackConfirmView
-from commands.game.buy import Buy, _get_shop_options, _get_purchasable_options, ShopCatalogView, ShopSelectView
-from commands.game.network import Network, NetworkActionView
-from commands.admin.beta_launch import BetaLaunch
-from utils.presence_manager import (
-    calculate_remaining_hours,
-    clear_beta_launch_target,
-    get_beta_launch_target,
-    get_presence_activity,
-    get_presence_text,
-    parse_target_datetime,
-    set_beta_launch_target,
-    update_bot_presence,
-)
-from commands.admin.claim_moderation import ClaimModeration
-from game.db.daily_claim_stats import DailyClaimStatsDB
-from utils.claim_analysis import calculate_player_claim_metrics, extract_claim_intervals
-from game.db.economy_stats import EconomyStatsDB, _PERIODS
-from tools.simulate_balance import DAY, PROFILES, STRESS_PROFILE, Profile, Simulation, aggregate, price
-
-
-
-# Imports additionnels pour les modules spécialisés
 from decimal import Decimal as D
 import tempfile
 import time
-import discord
 import utils.check
 from utils.language_manager import _cache
 from game.root_service import RootService
 from game.db.consequence import ConsequenceDB
 from game.db.pvp import PvpDB
-from commands.game.hack import Hack, HackConfirmView
-from commands.game.buy import Buy, _get_shop_options, _get_purchasable_options, ShopCatalogView, ShopSelectView
+from commands.game.hack import Hack
+from commands.game.buy import Buy, _get_shop_options, _get_purchasable_options, ShopCatalogView
 from commands.game.network import Network, NetworkActionView
-from commands.admin.beta_launch import BetaLaunch
 from utils.presence_manager import (
-    calculate_remaining_hours,
-    clear_beta_launch_target,
-    get_beta_launch_target,
     get_presence_activity,
     get_presence_text,
-    parse_target_datetime,
-    set_beta_launch_target,
     update_bot_presence,
 )
 from commands.admin.claim_moderation import ClaimModeration
@@ -116,6 +84,7 @@ from game.db.daily_claim_stats import DailyClaimStatsDB
 from utils.claim_analysis import calculate_player_claim_metrics, extract_claim_intervals
 from game.db.economy_stats import EconomyStatsDB, _PERIODS
 from tools.simulate_balance import DAY, PROFILES, STRESS_PROFILE, Profile, Simulation, aggregate, price
+
 
 
 class MockTransaction:
@@ -4895,146 +4864,41 @@ class TestReputationInviteAndOpBypass(unittest.IsolatedAsyncioTestCase):
                         sent_content = ctx.send.call_args[0][0]
                         self.assertIn("1234", sent_content)
 
-class TestBetaCountdownAndPresence(unittest.IsolatedAsyncioTestCase):
-    """Vérifie tous les aspects du compte à rebours de la bêta et de la présence Discord."""
+class TestBotPresence(unittest.IsolatedAsyncioTestCase):
+    """Vérifie la gestion de la présence Discord et du statut de maintenance."""
 
-    def setUp(self):
-        clear_beta_launch_target()
-        self._orig_env = {
-            k: os.environ.get(k)
-            for k in ("BETA_LAUNCH_AT", "BETA_LAUNCH_TIME", "BETA_LAUNCH_HOURS")
-        }
-        for k in ("BETA_LAUNCH_AT", "BETA_LAUNCH_TIME", "BETA_LAUNCH_HOURS"):
-            os.environ.pop(k, None)
+    def test_get_presence_text_from_env(self):
+        """Vérifie que la présence est récupérée depuis BOT_PRESENCE dans l'environnement."""
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Root Bot Beta"}):
+            self.assertEqual(get_presence_text(), "Root Bot Beta")
 
-    def tearDown(self):
-        clear_beta_launch_target()
-        for k, v in self._orig_env.items():
-            if v is not None:
-                os.environ[k] = v
-            else:
-                os.environ.pop(k, None)
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Custom Presence"}):
+            self.assertEqual(get_presence_text(), "Custom Presence")
 
-    def test_parse_target_datetime_relative(self):
-        """Vérifie le parsing des formats relatifs (+24h, 12h, 5 heures)."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        target24 = parse_target_datetime("24h", now=now)
-        self.assertEqual(target24, now + timedelta(hours=24))
-
-        target12 = parse_target_datetime("+12h", now=now)
-        self.assertEqual(target12, now + timedelta(hours=12))
-
-        target5 = parse_target_datetime("5 heures", now=now)
-        self.assertEqual(target5, now + timedelta(hours=5))
-
-    def test_parse_target_datetime_time_of_day(self):
-        """Vérifie le parsing d'une heure de la journée (ex: 18:00 ou 18h30)."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        target = parse_target_datetime("18:00", now=now)
-        self.assertEqual(target, datetime(2026, 9, 22, 18, 0, 0, tzinfo=timezone.utc))
-
-        # Si l'heure est déjà passée aujourd'hui, elle bascule sur le lendemain
-        target_past = parse_target_datetime("10:00", now=now)
-        self.assertEqual(target_past, datetime(2026, 9, 23, 10, 0, 0, tzinfo=timezone.utc))
-
-    def test_parse_target_datetime_iso_and_dates(self):
-        """Vérifie le parsing des formats ISO et dates classiques."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        target = parse_target_datetime("2026-09-25T15:30:00", now=now)
-        self.assertEqual(target.year, 2026)
-        self.assertEqual(target.month, 9)
-        self.assertEqual(target.day, 25)
-        self.assertEqual(target.hour, 15)
-        self.assertEqual(target.minute, 30)
-
-        # Invalide
-        self.assertIsNone(parse_target_datetime("invalide_date"))
-        self.assertIsNone(parse_target_datetime(None))
-
-    def test_calculate_remaining_hours(self):
-        """Vérifie le calcul des heures restantes avec arrondi supérieur."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-
-        # 5h 30min d'attente -> 6 heures
-        t1 = now + timedelta(hours=5, minutes=30)
-        self.assertEqual(calculate_remaining_hours(target=t1, now=now), 6)
-
-        # Exactement 5 heures -> 5 heures
-        t2 = now + timedelta(hours=5)
-        self.assertEqual(calculate_remaining_hours(target=t2, now=now), 5)
-
-        # 45 minutes restantes -> 1 heure
-        t3 = now + timedelta(minutes=45)
-        self.assertEqual(calculate_remaining_hours(target=t3, now=now), 1)
-
-        # Date dépassée (0s ou négatif) -> 0
-        t4 = now - timedelta(minutes=5)
-        self.assertEqual(calculate_remaining_hours(target=t4, now=now), 0)
-
-    def test_get_presence_text_formatting(self):
-        """Vérifie le texte exact selon la spécification heure par heure."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-
-        with patch("utils.check.Check.beta_enabled", return_value=True):
-            # Plus de 1 heure
-            t_multi = now + timedelta(hours=4, minutes=10)
-            self.assertEqual(get_presence_text(target=t_multi, now=now), "Ouverture de la beta dans 5 heures")
-
-            # Exactement 1 heure
-            t_single = now + timedelta(minutes=50)
-            self.assertEqual(get_presence_text(target=t_single, now=now), "Ouverture de la beta dans 1 heure")
-
-            # Déjà ouvert
-            t_past = now - timedelta(seconds=10)
-            self.assertEqual(get_presence_text(target=t_past, now=now), "Beta ouverte !")
-
-        with patch("utils.check.Check.beta_enabled", return_value=False):
-            self.assertEqual(get_presence_text(target=t_multi, now=now), data.BOT_NAME)
+        with patch.dict(os.environ, {"BOT_PRESENCE": ""}):
+            with patch("utils.check.Check.beta_enabled", return_value=False):
+                self.assertEqual(get_presence_text(), data.BOT_NAME)
 
     def test_get_presence_activity_type(self):
-        """Vérifie que get_presence_activity retourne un CustomActivity avec le bon texte."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        with patch("utils.check.Check.beta_enabled", return_value=True):
-            t = now + timedelta(hours=3)
-            act = get_presence_activity(target=t, now=now)
+        """Vérifie que get_presence_activity configure correctement l'activité avec le texte de présence."""
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Root Bot Beta"}):
+            act = get_presence_activity()
             self.assertIsInstance(act, discord.CustomActivity)
-            self.assertEqual(act.name, "Ouverture de la beta dans 3 heures")
-
-        with patch("utils.check.Check.beta_enabled", return_value=False):
-            act_default = get_presence_activity(target=t, now=now)
-            self.assertIsInstance(act_default, discord.Game)
-            self.assertEqual(act_default.name, data.BOT_NAME)
-
-    def test_target_persistence_in_file(self):
-        """Vérifie la persistance de la date cible via set_beta_launch_target."""
-        import os
-        with patch.dict(os.environ, {"BETA_LAUNCH_AT": "", "BETA_LAUNCH_TIME": "", "BETA_LAUNCH_HOURS": ""}):
-            now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-            target = now + timedelta(hours=48)
-
-            set_beta_launch_target(target)
-            loaded = get_beta_launch_target()
-            self.assertIsNotNone(loaded)
-            self.assertEqual(int(loaded.timestamp()), int(target.timestamp()))
-
-            clear_beta_launch_target()
-            self.assertIsNone(get_beta_launch_target())
+            self.assertEqual(act.name, "Root Bot Beta")
 
     async def test_update_bot_presence_status_and_activity(self):
         """Vérifie que update_bot_presence respecte le mode maintenance et applique l'activité."""
         mock_bot = MagicMock()
         mock_bot.change_presence = AsyncMock()
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        set_beta_launch_target(now + timedelta(hours=10))
 
-        with patch("utils.check.Check.beta_enabled", return_value=True):
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Root Bot Beta"}):
             # 1. Hors maintenance -> Status.online
             with patch("utils.check.Check.maintenance_enabled", return_value=False):
                 await update_bot_presence(mock_bot)
                 mock_bot.change_presence.assert_called_once()
                 call_kwargs = mock_bot.change_presence.call_args[1]
                 self.assertEqual(call_kwargs["status"], discord.Status.online)
-                self.assertIn("Ouverture de la beta", call_kwargs["activity"].name)
+                self.assertEqual(call_kwargs["activity"].name, "Root Bot Beta")
 
             # 2. Même appel sans changement -> pas de flood gateway
             mock_bot.change_presence.reset_mock()
@@ -5048,46 +4912,8 @@ class TestBetaCountdownAndPresence(unittest.IsolatedAsyncioTestCase):
                 mock_bot.change_presence.assert_called_once()
                 call_kwargs = mock_bot.change_presence.call_args[1]
                 self.assertEqual(call_kwargs["status"], discord.Status.dnd)
+                self.assertEqual(call_kwargs["activity"].name, "Root Bot Beta")
 
-    async def test_admin_beta_launch_commands(self):
-        """Vérifie la commande d'administration /beta_launch (status, set, clear)."""
-        import os
-        with patch.dict(os.environ, {"BETA_LAUNCH_AT": "", "BETA_LAUNCH_TIME": "", "BETA_LAUNCH_HOURS": ""}):
-            mock_bot = MagicMock()
-            mock_bot.change_presence = AsyncMock()
-            cog = BetaLaunch(mock_bot)
-
-            mock_ctx = MagicMock()
-            mock_ctx.author.id = 12345
-            mock_ctx.respond = AsyncMock()
-            mock_ctx.send = AsyncMock()
-
-            # 1. Non-OP refusé
-            with patch("utils.check.Check.is_op", new=AsyncMock(return_value=False)):
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="status")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("Accès refusé", mock_ctx.respond.call_args[0][0])
-
-            # 2. OP autorisé : set
-            mock_ctx.respond.reset_mock()
-            with patch("utils.check.Check.is_op", new=AsyncMock(return_value=True)):
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="set", cible="24h")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("Lancement de la Bêta programmé", mock_ctx.respond.call_args[0][0])
-                self.assertIsNotNone(get_beta_launch_target())
-
-                # 3. OP autorisé : status
-                mock_ctx.respond.reset_mock()
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="status")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("Compte à rebours Bêta actif", mock_ctx.respond.call_args[0][0])
-
-                # 4. OP autorisé : clear
-                mock_ctx.respond.reset_mock()
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="clear")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("réinitialisé", mock_ctx.respond.call_args[0][0])
-                self.assertIsNone(get_beta_launch_target())
 
 # ── 3. Améliorations QoL & Interface ───────────────────────────────────────
 
@@ -6521,7 +6347,7 @@ class TestEconomyEmbed(unittest.IsolatedAsyncioTestCase):
 
     def test_period_colors(self):
         """Vérifie la différenciation en couleur des embeds selon la durée."""
-        from commands.admin.economy_reports import _build_embed, _PERIOD_COLORS
+        from commands.admin.economy_reports import _build_embed
         start = datetime(2026, 9, 21, 14, 0, 0)
         end_1h = datetime(2026, 9, 21, 15, 0, 0)
         end_24h = datetime(2026, 9, 22, 14, 0, 0)
@@ -7115,7 +6941,7 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         ctx.interaction = MagicMock()
         ctx.respond = AsyncMock()
 
-        for query in ("prefix", "op", "beta_launch", "inconnue123", "/ban"):
+        for query in ("prefix", "op", "guildinfo", "inconnue123", "/ban"):
             ctx.respond.reset_mock()
             with patch("commands.utility.help.get_locale", return_value="fr"):
                 with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):

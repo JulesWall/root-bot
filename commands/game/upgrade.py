@@ -12,7 +12,6 @@ Ce module permet d'accroître le niveau de protection général du réseau d'un 
 """
 
 import logging
-from decimal import Decimal
 
 import discord
 from discord.ext import commands, tasks

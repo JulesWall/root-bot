@@ -13,7 +13,6 @@ Ce module gère le cycle de vie complet d'une attaque /hack :
 
 import logging
 from datetime import datetime
-from decimal import Decimal
 
 from game.db.consequence import ConsequenceDB
 from game.db.database import player_lock_name

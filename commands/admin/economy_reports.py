@@ -6,7 +6,6 @@ Séparation stricte transaction SQL / envoi Discord.
 """
 
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone

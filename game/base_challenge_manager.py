@@ -9,7 +9,6 @@ Ce module factorise le cycle de vie transactionnel et métier :
 - Gestion des défis à réponse exacte unique via SingleTargetChallengeManager.
 """
 
-from decimal import Decimal
 import threading
 from typing import Any
 

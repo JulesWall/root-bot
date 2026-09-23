@@ -26,7 +26,6 @@ from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
 from utils.check import Check
-from utils.root_embed import RootEmbed
 from utils.trade_view import TradeView
 
 # Regex pour parser les jetons signés (+/-), avec espaces éventuels entre le signe, le montant et l'unité

@@ -12,7 +12,6 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import copy
 import random
-import threading
 
 from game.db.daily_event_stats import DailyEventStatsDB
 from game.db.events import EventsDB

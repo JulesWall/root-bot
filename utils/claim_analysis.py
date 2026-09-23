@@ -8,7 +8,7 @@ Fonctionnalités :
 4. Détection d'activité 24/24 sans interruption de sommeil.
 """
 
-from datetime import datetime, timezone
+from datetime import timezone
 import math
 from typing import Any
 

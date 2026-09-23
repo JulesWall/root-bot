@@ -27,7 +27,6 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import discord
 from discord.ext import tasks
@@ -261,12 +260,17 @@ def calculate_remaining_hours(target: datetime | None = None, now: datetime | No
 def get_presence_text(target: datetime | None = None, now: datetime | None = None) -> str:
     """
     Formate le message de présence pour le bot Root :
+    - Si BOT_PRESENCE est défini dans l'environnement, utilise cette valeur.
     - Si le mode bêta est désactivé : data.BOT_NAME ('Root')
     - x > 1 : 'Ouverture de la beta dans {x} heures'
     - x == 1 : 'Ouverture de la beta dans 1 heure'
     - x <= 0 : 'Beta ouverte !'
     - Si aucune date n'est configurée : data.BOT_NAME ('Root')
     """
+    env_presence = os.getenv("BOT_PRESENCE")
+    if env_presence and env_presence.strip():
+        return env_presence.strip()
+
     checks = Check()
     if not checks.beta_enabled():
         return data.BOT_NAME
@@ -280,6 +284,7 @@ def get_presence_text(target: datetime | None = None, now: datetime | None = Non
     if hours == 1:
         return "Ouverture de la beta dans 1 heure"
     return f"Ouverture de la beta dans {hours} heures"
+
 
 
 def get_presence_activity(target: datetime | None = None, now: datetime | None = None) -> discord.BaseActivity:
