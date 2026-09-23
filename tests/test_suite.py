@@ -7589,6 +7589,164 @@ class TestPrefixCaseInsensitiveHandling(unittest.IsolatedAsyncioTestCase):
         bot.process_commands.assert_awaited_once_with(after)
 
 
+class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
+    """Teste le tri chronologique d'apparition et les timestamps dynamiques de /event."""
+
+    def setUp(self):
+        self.tx = MockTransaction()
+
+    def test_events_manager_chronological_sorting_and_next_at(self):
+        t0 = self.tx.now
+        past_20m = t0 - timedelta(minutes=20)
+        past_5m = t0 - timedelta(minutes=5)
+        future_10m = t0 + timedelta(minutes=10)
+        future_30m = t0 + timedelta(minutes=30)
+
+        EventsDB.save(self.tx, "hash", future_30m, last_found_by=1, last_found_on="Alpha")
+        EventsDB.save(self.tx, "pin", past_20m, last_found_by=2, last_found_on="Beta")
+        EventsDB.save(self.tx, "decode", past_5m, last_found_by=3, last_found_on="Gamma")
+        EventsDB.save(self.tx, "anomaly", future_10m, last_found_by=4, last_found_on="Delta")
+
+        status = EventsManager.get_all_events_status(self.tx)
+        events_dict = status["events"]
+
+        # Vérifier que les événements actifs conservent next_at
+        self.assertEqual(events_dict["pin"]["status"], "active")
+        self.assertEqual(events_dict["pin"]["next_at"], past_20m)
+        self.assertEqual(events_dict["decode"]["status"], "active")
+        self.assertEqual(events_dict["decode"]["next_at"], past_5m)
+        self.assertIsNone(events_dict["buffer"]["next_at"])
+        self.assertEqual(events_dict["anomaly"]["status"], "cooldown")
+        self.assertEqual(events_dict["hash"]["status"], "cooldown")
+
+        keys = list(events_dict.keys())
+        active_keys = [k for k, v in events_dict.items() if v["status"] == "active"]
+        cooldown_keys = [k for k, v in events_dict.items() if v["status"] == "cooldown"]
+
+        # Tous les actifs sont placés avant les cooldowns
+        self.assertEqual(keys[:len(active_keys)], active_keys)
+        self.assertEqual(keys[len(active_keys):], cooldown_keys)
+
+        # Parmi les cooldowns, anomaly (+10m) est avant hash (+30m)
+        self.assertEqual(cooldown_keys, ["anomaly", "hash"])
+        # Parmi les actifs datés, pin (-20m) est avant decode (-5m)
+        self.assertLess(keys.index("pin"), keys.index("decode"))
+
+    def test_sort_events_helper(self):
+        from commands.game.event import Event
+        now = datetime(2026, 9, 23, 12, 0, 0, tzinfo=timezone.utc)
+        events_data = {
+            "packet": {"status": "cooldown", "next_at": now + timedelta(minutes=45)},
+            "hash": {"status": "active", "next_at": now - timedelta(minutes=30)},
+            "signal": {"status": "cooldown", "next_at": now + timedelta(minutes=15)},
+            "buffer": {"status": "active", "next_at": None},
+        }
+        sorted_ev = Event._sort_events(events_data)
+        sorted_keys = [k for k, _ in sorted_ev]
+        self.assertEqual(sorted_keys, ["buffer", "hash", "signal", "packet"])
+
+    async def test_event_send_rendering_discord_dynamic_timestamp(self):
+        from commands.game.event import Event
+        bot = MagicMock()
+        cog = Event(bot)
+        bot.get_user.return_value = None
+        bot.fetch_user = AsyncMock(return_value=None)
+
+        ctx = MagicMock()
+        ctx.interaction = None
+        ctx.clean_prefix = "+r"
+        ctx.prefix = "+r"
+        ctx.author = MagicMock(id=999)
+
+        future_ts = 1790186400
+        future_dt = datetime.fromtimestamp(future_ts, tz=timezone.utc)
+        result = {
+            "events": {
+                "hash": {
+                    "status": "cooldown",
+                    "next_at": future_dt,
+                    "remaining_seconds": 600,
+                    "last_found_by": 12345,
+                    "last_found_on": "RootServer",
+                },
+                "pin": {
+                    "status": "active",
+                    "next_at": None,
+                    "remaining_seconds": 0,
+                },
+            }
+        }
+
+        sent_embeds = []
+        async def mock_send_embed(c, action, content, view=None):
+            sent_embeds.append((action, content))
+
+        cog._send_embed = mock_send_embed
+        await cog._send(ctx, "event", result)
+
+        self.assertEqual(len(sent_embeds), 1)
+        action, content = sent_embeds[0]
+        self.assertEqual(action, "event")
+
+        pin_pos = content.find("PIN Code") if "PIN Code" in content else content.find("Code PIN")
+        hash_pos = content.find("Hash Challenge")
+        self.assertNotEqual(pin_pos, -1)
+        self.assertNotEqual(hash_pos, -1)
+        self.assertLess(pin_pos, hash_pos)
+
+        expected_tag = f"<t:{future_ts}:R>"
+        self.assertIn(expected_tag, content)
+        self.assertNotIn("dans dans", content)
+        self.assertNotIn("in in", content)
+
+    async def test_event_send_rendering_discord_dynamic_timestamp_french(self):
+        from commands.game.event import Event
+        bot = MagicMock()
+        cog = Event(bot)
+        bot.get_user.return_value = None
+        bot.fetch_user = AsyncMock(return_value=None)
+
+        ctx = MagicMock()
+        interaction = MagicMock()
+        interaction.locale = "fr"
+        ctx.interaction = interaction
+        ctx.clean_prefix = "/"
+        ctx.prefix = "/"
+        ctx.author = MagicMock(id=888)
+
+        future_ts = 1790186400
+        future_dt = datetime.fromtimestamp(future_ts, tz=timezone.utc)
+        result = {
+            "events": {
+                "hash": {
+                    "status": "cooldown",
+                    "next_at": future_dt,
+                    "remaining_seconds": 600,
+                    "last_found_by": 12345,
+                    "last_found_on": "RootServer",
+                },
+                "pin": {
+                    "status": "active",
+                    "next_at": None,
+                    "remaining_seconds": 0,
+                },
+            }
+        }
+
+        sent_embeds = []
+        async def mock_send_embed(c, action, content, view=None):
+            sent_embeds.append((action, content))
+
+        cog._send_embed = mock_send_embed
+        await cog._send(ctx, "event", result)
+
+        self.assertEqual(len(sent_embeds), 1)
+        _, content = sent_embeds[0]
+        self.assertIn("Code PIN", content)
+        self.assertIn("• Statut : ⏳ Disponible <t:1790186400:R>", content)
+        self.assertNotIn("dans dans", content)
+
+
 if __name__ == '__main__':
     unittest.main()
 

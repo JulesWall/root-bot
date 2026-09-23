@@ -6,15 +6,16 @@ pour l'ensemble des défis et événements communautaires de Root :
 - Code PIN (/pin)
 """
 
+from datetime import datetime, timezone
 import discord
 from discord.ext import commands
 
 import data
 from commands.game.commandgame import BaseGameCog
+from game.events_manager import EventsManager
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
-from utils.time_format import format_duration
 
 
 class Event(BaseGameCog):
@@ -40,6 +41,29 @@ class Event(BaseGameCog):
         """Commande préfixe !event (alias !events, !e)."""
         await self._invoke(ctx, "event")
 
+    @staticmethod
+    def _sort_events(events_dict: dict) -> list[tuple[str, dict]]:
+        """
+        Trie les mini-jeux par ordre chronologique d'apparition :
+        - Événements actifs en premier (du plus ancien au plus récent).
+        - Événements en cooldown ensuite (du plus proche au plus lointain).
+        """
+        def _sort_key(item):
+            name, data = item
+            is_active = data.get("status") == "active"
+            nxt = data.get("next_at")
+            if nxt is not None and getattr(nxt, "tzinfo", None) is not None:
+                dt = nxt.astimezone(timezone.utc).replace(tzinfo=None)
+            else:
+                dt = nxt
+            idx = EventsManager.SUPPORTED_EVENTS.index(name) if name in EventsManager.SUPPORTED_EVENTS else 999
+            if is_active:
+                return (0, dt or datetime.min, idx)
+            else:
+                return (1, dt or datetime.max, idx)
+
+        return sorted(events_dict.items(), key=_sort_key)
+
     # ── Rendu & Affichage ────────────────────────────────────────────────────
     async def _send(self, ctx, method, result):
         """Formate et expédie le rapport d'état des événements dans un RootEmbed."""
@@ -48,162 +72,44 @@ class Event(BaseGameCog):
 
         # Le service renvoie {'events': {hash: {...}, pin: {...}, ...}}
         events_data = (result or {}).get("events", {})
+        sorted_events = self._sort_events(events_data)
 
-        lines = []
+        blocks = []
+        for event_key, event_info in sorted_events:
+            lines = []
+            lines.append(text.get(ctx, f"g_event_{event_key}_name", prefix=prefix))
 
-        # 1. 🧩 Hash Challenge
-        hash_info = events_data.get("hash", {})
-        lines.append(text.get(ctx, "g_event_hash_name", prefix=prefix))
-        if hash_info.get("status") == "active":
-            desc = text.get(ctx, "g_event_hash_desc")
-            lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd="hash"))
-        else:
-            remaining_str = format_duration(hash_info.get("remaining_seconds", 0))
-            lines.append(text.get(ctx, "g_event_status_cooldown", remaining=remaining_str))
+            if event_info.get("status") == "active":
+                desc = text.get(ctx, f"g_event_{event_key}_desc")
+                lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd=event_key))
+            else:
+                next_at = event_info.get("next_at")
+                if next_at and hasattr(next_at, "timestamp"):
+                    if getattr(next_at, "tzinfo", None) is None:
+                        next_at_utc = next_at.replace(tzinfo=timezone.utc)
+                    else:
+                        next_at_utc = next_at
+                    ts = int(next_at_utc.timestamp())
+                else:
+                    rem_sec = event_info.get("remaining_seconds", 0)
+                    ts = int(discord.utils.utcnow().timestamp()) + rem_sec
 
-            if hash_info.get("last_found_by"):
-                user_id = hash_info["last_found_by"]
-                winner_display = await self._format_user_display(user_id)
-                lines.append(text.get(
-                    ctx,
-                    "g_event_last_winner",
-                    winner=winner_display,
-                    server=hash_info.get("last_found_on", "Inconnu"),
-                ))
+                time_display = f"<t:{ts}:R>"
+                lines.append(text.get(ctx, "g_event_status_cooldown", timestamp=ts, remaining=time_display))
 
-        lines.append("")
+                if event_info.get("last_found_by"):
+                    user_id = event_info["last_found_by"]
+                    winner_display = await self._format_user_display(user_id)
+                    lines.append(text.get(
+                        ctx,
+                        "g_event_last_winner",
+                        winner=winner_display,
+                        server=event_info.get("last_found_on", "Inconnu"),
+                    ))
 
-        # 2. 🔐 Code PIN
-        pin_info = events_data.get("pin", {})
-        lines.append(text.get(ctx, "g_event_pin_name", prefix=prefix))
-        if pin_info.get("status") == "active":
-            desc = text.get(ctx, "g_event_pin_desc")
-            lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd="pin"))
-        else:
-            remaining_str = format_duration(pin_info.get("remaining_seconds", 0))
-            lines.append(text.get(ctx, "g_event_status_cooldown", remaining=remaining_str))
+            blocks.append("\n".join(lines))
 
-            if pin_info.get("last_found_by"):
-                user_id = pin_info["last_found_by"]
-                winner_display = await self._format_user_display(user_id)
-                lines.append(text.get(
-                    ctx,
-                    "g_event_last_winner",
-                    winner=winner_display,
-                    server=pin_info.get("last_found_on", "Inconnu"),
-                ))
-
-        lines.append("")
-
-        # 3. 🔍 Décryptage
-        decode_info = events_data.get("decode", {})
-        lines.append(text.get(ctx, "g_event_decode_name", prefix=prefix))
-        if decode_info.get("status") == "active":
-            desc = text.get(ctx, "g_event_decode_desc")
-            lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd="decode"))
-        else:
-            remaining_str = format_duration(decode_info.get("remaining_seconds", 0))
-            lines.append(text.get(ctx, "g_event_status_cooldown", remaining=remaining_str))
-
-            if decode_info.get("last_found_by"):
-                user_id = decode_info["last_found_by"]
-                winner_display = await self._format_user_display(user_id)
-                lines.append(text.get(
-                    ctx,
-                    "g_event_last_winner",
-                    winner=winner_display,
-                    server=decode_info.get("last_found_on", "Inconnu"),
-                ))
-
-        lines.append("")
-
-        # 4. ⚠️ Anomaly
-        anomaly_info = events_data.get("anomaly", {})
-        lines.append(text.get(ctx, "g_event_anomaly_name", prefix=prefix))
-        if anomaly_info.get("status") == "active":
-            desc = text.get(ctx, "g_event_anomaly_desc")
-            lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd="anomaly"))
-        else:
-            remaining_str = format_duration(anomaly_info.get("remaining_seconds", 0))
-            lines.append(text.get(ctx, "g_event_status_cooldown", remaining=remaining_str))
-
-            if anomaly_info.get("last_found_by"):
-                user_id = anomaly_info["last_found_by"]
-                winner_display = await self._format_user_display(user_id)
-                lines.append(text.get(
-                    ctx,
-                    "g_event_last_winner",
-                    winner=winner_display,
-                    server=anomaly_info.get("last_found_on", "Inconnu"),
-                ))
-
-        lines.append("")
-
-        # 5. 📦 Buffer
-        buffer_info = events_data.get("buffer", {})
-        lines.append(text.get(ctx, "g_event_buffer_name", prefix=prefix))
-        if buffer_info.get("status") == "active":
-            desc = text.get(ctx, "g_event_buffer_desc")
-            lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd="buffer"))
-        else:
-            remaining_str = format_duration(buffer_info.get("remaining_seconds", 0))
-            lines.append(text.get(ctx, "g_event_status_cooldown", remaining=remaining_str))
-
-            if buffer_info.get("last_found_by"):
-                user_id = buffer_info["last_found_by"]
-                winner_display = await self._format_user_display(user_id)
-                lines.append(text.get(
-                    ctx,
-                    "g_event_last_winner",
-                    winner=winner_display,
-                    server=buffer_info.get("last_found_on", "Inconnu"),
-                ))
-
-        lines.append("")
-
-        # 6. 📡 Signal
-        signal_info = events_data.get("signal", {})
-        lines.append(text.get(ctx, "g_event_signal_name", prefix=prefix))
-        if signal_info.get("status") == "active":
-            desc = text.get(ctx, "g_event_signal_desc")
-            lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd="signal"))
-        else:
-            remaining_str = format_duration(signal_info.get("remaining_seconds", 0))
-            lines.append(text.get(ctx, "g_event_status_cooldown", remaining=remaining_str))
-
-            if signal_info.get("last_found_by"):
-                user_id = signal_info["last_found_by"]
-                winner_display = await self._format_user_display(user_id)
-                lines.append(text.get(
-                    ctx,
-                    "g_event_last_winner",
-                    winner=winner_display,
-                    server=signal_info.get("last_found_on", "Inconnu"),
-                ))
-
-        lines.append("")
-
-        # 7. 🛰️ Packet
-        packet_info = events_data.get("packet", {})
-        lines.append(text.get(ctx, "g_event_packet_name", prefix=prefix))
-        if packet_info.get("status") == "active":
-            desc = text.get(ctx, "g_event_packet_desc")
-            lines.append(text.get(ctx, "g_event_status_active", desc=desc, prefix=prefix, cmd="packet"))
-        else:
-            remaining_str = format_duration(packet_info.get("remaining_seconds", 0))
-            lines.append(text.get(ctx, "g_event_status_cooldown", remaining=remaining_str))
-
-            if packet_info.get("last_found_by"):
-                user_id = packet_info["last_found_by"]
-                winner_display = await self._format_user_display(user_id)
-                lines.append(text.get(
-                    ctx,
-                    "g_event_last_winner",
-                    winner=winner_display,
-                    server=packet_info.get("last_found_on", "Inconnu"),
-                ))
-
-        content = "\n".join(lines)
+        content = "\n\n".join(blocks)
         await self._send_embed(ctx, "event", content)
 
     async def _format_user_display(self, user_id: int) -> str:
