@@ -18,8 +18,15 @@ import data
 from commands.game.commandgame import BaseGameCog
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
-from utils.root_embed import RootEmbed
 from utils.text import format_usd, get as text_get
+
+
+def _pct(value) -> str:
+    """Affiche un pourcentage sans décimale inutile."""
+    amount = Decimal(str(value or 0))
+    if amount == amount.to_integral_value():
+        return str(int(amount))
+    return f"{amount:.1f}"
 
 
 class Hourly(BaseGameCog):
@@ -51,7 +58,6 @@ class Hourly(BaseGameCog):
         base_usd = result["base_usd"]
         bonus_pct = result["bonus_pct"]
         step_bonus_pct = result["step_bonus_pct"]
-        bonus_usd = result["bonus_usd"]
         total_usd = result["total_usd"]
         new_dollars = result["new_dollars"]
         streak = result["streak"]
@@ -61,40 +67,30 @@ class Hourly(BaseGameCog):
         combo_ts = result["combo_deadline_ts"]
         interval_seconds = result.get("interval_seconds")
 
+        values = {
+            "total": format_usd(total_usd),
+            "balance": format_usd(new_dollars),
+            "bonus": _pct(bonus_pct),
+            "step": _pct(step_bonus_pct),
+            "streak": streak,
+            "next_ts": next_ts,
+            "combo_ts": combo_ts,
+        }
         if is_first:
-            status = text_get(ctx, "g_hourly_status_first")
+            key = "g_hourly_first"
         elif combo_lost:
-            status = text_get(ctx, "g_hourly_status_broken")
+            key = "g_hourly_broken"
+        elif step_bonus_pct > 0:
+            key = "g_hourly_combo"
         else:
-            status = text_get(ctx, "g_hourly_status_combo", step=f"{step_bonus_pct:.0f}")
-
-        lines = [
-            status,
-            "",
-            text_get(ctx, "g_hourly_base", base=format_usd(base_usd)),
-        ]
-        if bonus_pct > Decimal("0"):
-            lines.append(text_get(
-                ctx,
-                "g_hourly_bonus",
-                bonus=f"{bonus_pct:.1f}",
-                bonus_usd=format_usd(bonus_usd),
-            ))
-        lines.extend([
-            text_get(ctx, "g_hourly_total", total=format_usd(total_usd)),
-            text_get(ctx, "g_hourly_balance", balance=format_usd(new_dollars)),
-            text_get(ctx, "g_hourly_streak", streak=streak),
-            "",
-            text_get(ctx, "g_hourly_next", next_ts=next_ts),
-            text_get(ctx, "g_hourly_window", combo_ts=combo_ts),
-        ])
-
-        embed = RootEmbed(ctx, "hourly", "\n".join(lines))
+            key = "g_hourly_held"
+        content = text_get(ctx, key, **values)
+        mentions = discord.AllowedMentions.none()
 
         if getattr(ctx, "interaction", None):
-            await ctx.respond(embed=embed)
+            await ctx.respond(content, allowed_mentions=mentions)
         else:
-            await ctx.send(embed=embed)
+            await ctx.send(content, allowed_mentions=mentions)
 
         # Journalisation Discord asynchrone
         try:

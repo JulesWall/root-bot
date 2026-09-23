@@ -7961,8 +7961,10 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
 
         await hourly_cog.prefix_hourly.callback(hourly_cog, mock_ctx)
         mock_ctx.send.assert_called_once()
-        sent_embed = mock_ctx.send.call_args[1]['embed']
-        self.assertIn("Base reward", sent_embed.description)
+        self.assertNotIn("embed", mock_ctx.send.call_args.kwargs)
+        content = mock_ctx.send.call_args.args[0]
+        self.assertIn("first claim", content)
+        self.assertIn("USD", content)
         mock_bot.discord_logger.log_hourly.assert_called_once()
         logged = mock_bot.discord_logger.log_hourly.await_args.kwargs
         self.assertEqual(logged["streak"], 1)
