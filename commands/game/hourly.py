@@ -64,26 +64,20 @@ class Hourly(BaseGameCog):
         combo_lost = result["combo_lost"]
         is_first = result["is_first"]
         next_ts = result["next_available_ts"]
-        combo_ts = result["combo_deadline_ts"]
         interval_seconds = result.get("interval_seconds")
 
         values = {
             "total": format_usd(total_usd),
-            "balance": format_usd(new_dollars),
             "bonus": _pct(bonus_pct),
-            "step": _pct(step_bonus_pct),
             "streak": streak,
             "next_ts": next_ts,
-            "combo_ts": combo_ts,
         }
         if is_first:
             key = "g_hourly_first"
         elif combo_lost:
             key = "g_hourly_broken"
-        elif step_bonus_pct > 0:
-            key = "g_hourly_combo"
         else:
-            key = "g_hourly_held"
+            key = "g_hourly_combo"
         content = text_get(ctx, key, **values)
         mentions = discord.AllowedMentions.none()
 
