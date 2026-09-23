@@ -87,7 +87,7 @@ class EconomyStatsDB:
 
         Lève une RuntimeError si une table est absente (migration non appliquée).
         """
-        # Vérification de l'existence des tables
+        # Vérification de l'existence des tables obligatoires
         for table in ('economy_hourly', 'economy_reports'):
             row = tx.one(
                 "SELECT COUNT(*) AS cnt FROM information_schema.tables "
@@ -98,6 +98,26 @@ class EconomyStatsDB:
                 raise RuntimeError(
                     f"Table '{table}' absente. Appliquer migrations/001_economy_reports.sql avant d'activer le suivi."
                 )
+
+        # Création automatique de event_availability_logs si permissions accordées
+        try:
+            tx.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_availability_logs (
+                    id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    event               VARCHAR(32)     NOT NULL,
+                    opened_at           DATETIME(6)     NOT NULL,
+                    solved_at           DATETIME(6)     NOT NULL,
+                    duration_seconds    INT UNSIGNED    NOT NULL,
+                    winner_id           BIGINT UNSIGNED NULL,
+                    reward              DECIMAL(30, 2)  NOT NULL DEFAULT 0.00,
+                    INDEX idx_event_solved (event, solved_at),
+                    INDEX idx_solved_at (solved_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """
+            )
+        except Exception:
+            pass
 
         # Lecture de l'état existant
         rows = tx.all('SELECT * FROM economy_reports ORDER BY period_hours')
@@ -379,22 +399,101 @@ class EconomyStatsDB:
         """
         row = tx.one(sql, (start, end))
         if not row:
-            return EconomyStatsDB._empty_aggregate()
+            result = EconomyStatsDB._empty_aggregate()
+        else:
+            result = {}
+            for key, val in row.items():
+                if key == 'active_players':
+                    result[key] = int(val or 0)
+                elif key in _INT_COLUMNS or key == 'new_players':
+                    result[key] = int(val or 0)
+                else:
+                    result[key] = _to_decimal(val or 0)
 
-        result = {}
-        for key, val in row.items():
-            if key == 'active_players':
-                result[key] = int(val or 0)
-            elif key in _INT_COLUMNS or key == 'new_players':
-                result[key] = int(val or 0)
-            else:
-                result[key] = _to_decimal(val or 0)
+        # Calcul du taux de rejoueurs de la période précédente
+        prev_start = start - (end - start)
+        retention_sql = """
+            SELECT
+                COUNT(DISTINCT p.player_id) AS prev_active_players,
+                COUNT(DISTINCT r.player_id) AS retained_players
+            FROM (
+                SELECT DISTINCT player_id
+                FROM economy_hourly
+                WHERE bucket_start >= %s AND bucket_start < %s
+            ) p
+            LEFT JOIN (
+                SELECT DISTINCT player_id
+                FROM economy_hourly
+                WHERE bucket_start >= %s AND bucket_start < %s
+            ) r ON p.player_id = r.player_id
+        """
+        try:
+            row_ret = tx.one(retention_sql, (prev_start, start, start, end))
+            result['prev_active_players'] = int(row_ret['prev_active_players'] or 0) if row_ret else 0
+            result['retained_players'] = int(row_ret['retained_players'] or 0) if row_ret else 0
+        except Exception:
+            result['prev_active_players'] = 0
+            result['retained_players'] = 0
 
+        # Suivi de la disponibilité des mini-jeux / événements
+        event_avail = {}
+        try:
+            avail_sql = """
+                SELECT
+                    event,
+                    COUNT(*) AS wins,
+                    COALESCE(SUM(duration_seconds), 0) AS total_seconds,
+                    COALESCE(AVG(duration_seconds), 0) AS avg_seconds
+                FROM event_availability_logs
+                WHERE solved_at >= %s AND solved_at < %s
+                GROUP BY event
+            """
+            event_rows = tx.all(avail_sql, (start, end))
+            for erow in (event_rows or []):
+                ev = erow['event']
+                event_avail[ev] = {
+                    'wins': int(erow.get('wins') or 0),
+                    'total_seconds': int(erow.get('total_seconds') or 0),
+                    'avg_seconds': int(round(float(erow.get('avg_seconds') or 0))),
+                    'ongoing': False,
+                }
+        except Exception:
+            pass
+
+        # Vérification des événements actuellement disponibles (non résolus dans la période)
+        for ev in _EVENT_COLUMNS.keys():
+            if ev not in event_avail:
+                try:
+                    db_ev = tx.one("SELECT * FROM events WHERE event = %s", (ev,))
+                    if db_ev and db_ev.get('next_at'):
+                        nxt = db_ev['next_at']
+                        nxt_clean = nxt.replace(tzinfo=None) if getattr(nxt, 'tzinfo', None) else nxt
+                        end_clean = end.replace(tzinfo=None) if getattr(end, 'tzinfo', None) else end
+                        start_clean = start.replace(tzinfo=None) if getattr(start, 'tzinfo', None) else start
+                        if nxt_clean < end_clean:
+                            open_from = max(start_clean, nxt_clean)
+                            dur = max(0, int((end_clean - open_from).total_seconds()))
+                            if dur > 0:
+                                event_avail[ev] = {
+                                    'wins': 0,
+                                    'total_seconds': dur,
+                                    'avg_seconds': dur,
+                                    'ongoing': True,
+                                }
+                except Exception:
+                    pass
+
+        result['event_availability'] = event_avail
         return result
 
     @staticmethod
     def _empty_aggregate() -> dict:
-        result = {'active_players': 0}
+        result = {
+            'active_players': 0,
+            'prev_active_players': 0,
+            'retained_players': 0,
+            'event_availability': {},
+        }
         for col in _INT_COLUMNS:
             result[col] = 0
         for col in _DECIMAL_COLUMNS:

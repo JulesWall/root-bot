@@ -5906,6 +5906,8 @@ class MockTx:
         self.now = now or datetime(2026, 9, 21, 14, 30, 0)
         self.economy_hourly: dict[tuple, dict] = {}
         self.economy_reports: dict[int, dict] = {}
+        self.event_availability_logs: list[dict] = []
+        self.events: dict[str, dict] = {}
         self.tables_exist = True  # simule information_schema
         self.acquired_locks = []
         self._queries = []
@@ -5931,6 +5933,12 @@ class MockTx:
             row = self.economy_reports.get(period)
             return dict(row) if row else None
 
+        # events SELECT * ... WHERE event = %s
+        if 'FROM EVENTS WHERE EVENT' in q:
+            ev = args[0]
+            row = self.events.get(ev)
+            return dict(row) if row else None
+
         # economy_hourly EXISTS (returning check)
         if 'FROM ECONOMY_HOURLY' in q and 'WHERE PLAYER_ID' in q and 'BUCKET_START <' in q:
             player_id = args[0]
@@ -5939,6 +5947,17 @@ class MockTx:
                 if pid == player_id and b < bucket_limit:
                     return {'1': 1}
             return None
+
+        # Previous period retention query
+        if 'PREV_ACTIVE_PLAYERS' in q:
+            prev_start, p_end, curr_start, curr_end = args
+            prev_pids = {pid for (b, pid) in self.economy_hourly if prev_start <= b < p_end}
+            curr_pids = {pid for (b, pid) in self.economy_hourly if curr_start <= b < curr_end}
+            retained = prev_pids & curr_pids
+            return {
+                'prev_active_players': len(prev_pids),
+                'retained_players': len(retained),
+            }
 
         # economy_hourly aggregate
         if 'FROM ECONOMY_HOURLY' in q and 'COUNT(DISTINCT' in q:
@@ -5973,11 +5992,62 @@ class MockTx:
         if 'FROM ECONOMY_REPORTS ORDER BY PERIOD_HOURS' in q:
             return sorted(self.economy_reports.values(), key=lambda r: r['period_hours'])
 
+        if 'FROM EVENT_AVAILABILITY_LOGS' in q:
+            start, end = args
+            matching = [
+                log for log in self.event_availability_logs
+                if start <= log['solved_at'] < end
+            ]
+            by_event = {}
+            for m in matching:
+                ev = m['event']
+                if ev not in by_event:
+                    by_event[ev] = {'event': ev, 'wins': 0, 'total_seconds': 0}
+                by_event[ev]['wins'] += 1
+                by_event[ev]['total_seconds'] += m['duration_seconds']
+            rows = []
+            for ev, edata in by_event.items():
+                avg = edata['total_seconds'] / edata['wins'] if edata['wins'] else 0
+                rows.append({
+                    'event': ev,
+                    'wins': edata['wins'],
+                    'total_seconds': edata['total_seconds'],
+                    'avg_seconds': avg,
+                })
+            return rows
+
         return []
 
     def execute(self, sql: str, args=()):
         self._queries.append((sql, args))
         q = ' '.join(sql.split()).upper()
+
+        if 'CREATE TABLE IF NOT EXISTS' in q:
+            return 0
+
+        # INSERT INTO event_availability_logs
+        if 'INSERT INTO EVENT_AVAILABILITY_LOGS' in q:
+            self.event_availability_logs.append({
+                'event': args[0],
+                'opened_at': args[1],
+                'solved_at': args[2],
+                'duration_seconds': args[3],
+                'winner_id': args[4],
+                'reward': args[5],
+            })
+            return 1
+
+        # INSERT INTO events ... ON DUPLICATE KEY UPDATE
+        if 'INSERT INTO EVENTS' in q:
+            ev = args[0]
+            self.events[ev] = {
+                'event': args[0],
+                'next_at': args[1],
+                'last_found_by': args[2],
+                'last_found_on': args[3],
+                'last_reward': args[4],
+            }
+            return 1
 
         # INSERT INTO economy_reports
         if 'INSERT INTO ECONOMY_REPORTS' in q:
@@ -6357,6 +6427,190 @@ class TestAggregate(unittest.TestCase):
         self.assertEqual(returning, 1)
         rate = returning / active
         self.assertAlmostEqual(rate, 0.5)
+
+    def test_prev_period_retention(self):
+        """Calcul de la rétention des joueurs actifs de la période précédente."""
+        tx = MockTx()
+        bucket_13h = datetime(2026, 9, 21, 13, 0, 0)
+        # Période précédente (13h-14h) : joueurs 100, 200, 300
+        for pid in (100, 200, 300):
+            tx.economy_hourly[(bucket_13h, pid)] = {
+                'bucket_start': bucket_13h, 'player_id': pid, 'claims': 1,
+            }
+        # Période courante (14h-15h) : joueurs 200, 300, 400
+        for pid in (200, 300, 400):
+            tx.economy_hourly[(BUCKET_14H, pid)] = {
+                'bucket_start': BUCKET_14H, 'player_id': pid, 'claims': 1,
+            }
+
+        result = EconomyStatsDB.aggregate(tx, BUCKET_14H, BUCKET_15H)
+        self.assertEqual(result['active_players'], 3)
+        self.assertEqual(result['prev_active_players'], 3)
+        self.assertEqual(result['retained_players'], 2)  # 200 et 300 ont rejoué
+
+    def test_event_availability_aggregation(self):
+        """Agrégation des journaux de disponibilité d'événements résolus."""
+        tx = MockTx()
+        # Deux résolutions pour hash et une pour pin dans [14h, 15h)
+        tx.event_availability_logs.append({
+            'event': 'hash',
+            'opened_at': datetime(2026, 9, 21, 14, 10, 0),
+            'solved_at': datetime(2026, 9, 21, 14, 13, 0),
+            'duration_seconds': 180,
+            'winner_id': 123,
+            'reward': Decimal('10.00'),
+        })
+        tx.event_availability_logs.append({
+            'event': 'hash',
+            'opened_at': datetime(2026, 9, 21, 14, 30, 0),
+            'solved_at': datetime(2026, 9, 21, 14, 34, 0),
+            'duration_seconds': 240,
+            'winner_id': 456,
+            'reward': Decimal('15.00'),
+        })
+        tx.event_availability_logs.append({
+            'event': 'pin',
+            'opened_at': datetime(2026, 9, 21, 14, 0, 0),
+            'solved_at': datetime(2026, 9, 21, 14, 10, 0),
+            'duration_seconds': 600,
+            'winner_id': 789,
+            'reward': Decimal('5.00'),
+        })
+
+        result = EconomyStatsDB.aggregate(tx, BUCKET_14H, BUCKET_15H)
+        avail = result.get('event_availability', {})
+        self.assertIn('hash', avail)
+        self.assertEqual(avail['hash']['wins'], 2)
+        self.assertEqual(avail['hash']['total_seconds'], 420)
+        self.assertEqual(avail['hash']['avg_seconds'], 210)
+        self.assertFalse(avail['hash']['ongoing'])
+
+        self.assertIn('pin', avail)
+        self.assertEqual(avail['pin']['wins'], 1)
+        self.assertEqual(avail['pin']['total_seconds'], 600)
+
+    def test_ongoing_event_availability(self):
+        """Détection d'un événement ouvert avant la fin de la période et non résolu."""
+        tx = MockTx()
+        # 'signal' ouvert à 14h15, non résolu
+        tx.events['signal'] = {
+            'event': 'signal',
+            'next_at': datetime(2026, 9, 21, 14, 15, 0),
+            'last_found_by': None,
+            'last_found_on': None,
+            'last_reward': Decimal('0.00'),
+        }
+
+        result = EconomyStatsDB.aggregate(tx, BUCKET_14H, BUCKET_15H)
+        avail = result.get('event_availability', {})
+        self.assertIn('signal', avail)
+        self.assertTrue(avail['signal']['ongoing'])
+        # 14h15 à 15h00 = 45 min = 2700 secondes
+        self.assertEqual(avail['signal']['total_seconds'], 2700)
+
+
+# ---------------------------------------------------------------------------
+# Tests rendu Embed (_build_embed)
+# ---------------------------------------------------------------------------
+
+class TestEconomyEmbed(unittest.TestCase):
+
+    def test_period_colors(self):
+        """Vérifie la différenciation en couleur des embeds selon la durée."""
+        from commands.admin.economy_reports import _build_embed, _PERIOD_COLORS
+        start = datetime(2026, 9, 21, 14, 0, 0)
+        end_1h = datetime(2026, 9, 21, 15, 0, 0)
+        end_24h = datetime(2026, 9, 22, 14, 0, 0)
+        end_72h = datetime(2026, 9, 24, 14, 0, 0)
+        dummy_data = {'active_players': 1}
+
+        embed_1h = _build_embed(1, dummy_data, start, end_1h)
+        embed_24h = _build_embed(24, dummy_data, start, end_24h)
+        embed_72h = _build_embed(72, dummy_data, start, end_72h)
+
+        self.assertEqual(embed_1h.color.value, 0x3498DB)
+        self.assertEqual(embed_24h.color.value, 0x2ECC71)
+        self.assertEqual(embed_72h.color.value, 0x9B59B6)
+
+    def test_retention_rendering(self):
+        """Vérifie le rendu du taux de rejoueurs de la période précédente."""
+        from commands.admin.economy_reports import _build_embed
+        start = datetime(2026, 9, 21, 14, 0, 0)
+        end = datetime(2026, 9, 21, 15, 0, 0)
+
+        # Cas 1 : avec rejoueurs (3 sur 4 = 75.0%)
+        data = {
+            'active_players': 5,
+            'new_players': 2,
+            'prev_active_players': 4,
+            'retained_players': 3,
+            'claims': 10,
+        }
+        embed = _build_embed(1, data, start, end)
+        act_field = next(f for f in embed.fields if f.name == "Activité")
+        self.assertIn("Rejoueurs période préc. : 75.0 % (3/4)", act_field.value)
+
+        # Cas 2 : aucun joueur précédent (premier bilan)
+        data_first = {
+            'active_players': 2,
+            'new_players': 2,
+            'prev_active_players': 0,
+            'retained_players': 0,
+        }
+        embed_first = _build_embed(1, data_first, start, end)
+        act_field_first = next(f for f in embed_first.fields if f.name == "Activité")
+        self.assertIn("Rejoueurs période préc. : non applicable", act_field_first.value)
+
+    def test_availability_rendering(self):
+        """Vérifie le rendu du temps de disponibilité des événements."""
+        from commands.admin.economy_reports import _build_embed
+        start = datetime(2026, 9, 21, 14, 0, 0)
+        end = datetime(2026, 9, 21, 15, 0, 0)
+
+        data = {
+            'active_players': 3,
+            'event_availability': {
+                'hash': {'wins': 1, 'total_seconds': 192, 'avg_seconds': 192, 'ongoing': False},
+                'pin': {'wins': 2, 'total_seconds': 600, 'avg_seconds': 300, 'ongoing': False},
+                'signal': {'wins': 0, 'total_seconds': 1200, 'avg_seconds': 1200, 'ongoing': True},
+            }
+        }
+        embed = _build_embed(1, data, start, end)
+        gains_field = next(f for f in embed.fields if f.name == "Gains")
+        # 192s -> 3min 12s
+        self.assertIn("hash : 3min 12s", gains_field.value)
+        # 600s total, moy 300s -> 10min (2 man. · moy. 5min)
+        self.assertIn("pin : 10min (2 man. · moy. 5min)", gains_field.value)
+        # en cours
+        self.assertIn("signal : 20min (en cours)", gains_field.value)
+
+    def test_settle_challenge_win_availability(self):
+        """Vérifie que settle_challenge_win enregistre la durée disponible dans les logs."""
+        from unittest.mock import patch
+        from game.challenge_utils import settle_challenge_win
+        tx = MockTx()
+        # Événement 'decode' ouvert à 14h00
+        tx.events['decode'] = {
+            'event': 'decode',
+            'next_at': datetime(2026, 9, 21, 14, 0, 0),
+            'last_found_by': None,
+            'last_found_on': None,
+            'last_reward': Decimal('0.00'),
+        }
+
+        # Résolution à 14h12 (12 min = 720 secondes après ouverture)
+        solve_time = datetime(2026, 9, 21, 14, 12, 0)
+        with patch('game.challenge_utils.PlayerData.get', return_value={'firewall_level': 0, 'dollars': 100, 'events_won': 2}), \
+             patch('game.challenge_utils.UpdatePlayer.set'), \
+             patch('game.challenge_utils.DailyEventStatsDB.record_win'):
+            res = settle_challenge_win(tx, 'decode', 'decode_challenge', 999, Decimal('25.00'), solve_time, guild_name='TestGuild')
+
+        self.assertEqual(res['available_seconds'], 720)
+        self.assertEqual(len(tx.event_availability_logs), 1)
+        log = tx.event_availability_logs[0]
+        self.assertEqual(log['event'], 'decode')
+        self.assertEqual(log['duration_seconds'], 720)
+        self.assertEqual(log['winner_id'], 999)
 
 
 # ---------------------------------------------------------------------------

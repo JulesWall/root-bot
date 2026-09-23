@@ -304,12 +304,28 @@ CREATE TABLE IF NOT EXISTS daily_claim_logs (
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 12. Table des journaux de disponibilité et de résolution des événements réseau
+CREATE TABLE IF NOT EXISTS event_availability_logs (
+    id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    event               VARCHAR(32)     NOT NULL,
+    opened_at           DATETIME(6)     NOT NULL,
+    solved_at           DATETIME(6)     NOT NULL,
+    duration_seconds    INT UNSIGNED    NOT NULL,
+    winner_id           BIGINT UNSIGNED NULL,
+    reward              DECIMAL(30, 2)  NOT NULL DEFAULT 0.00,
+    INDEX idx_event_solved (event, solved_at),
+    INDEX idx_solved_at (solved_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ====================================================================
 -- MIGRATION (installations existantes) : suivi économique.
 -- Appliquer migrations/001_economy_reports.sql sur une base déjà déployée.
 -- ====================================================================
 -- MIGRATION (installations existantes) : suivi journalier des claims.
 -- Appliquer migrations/002_daily_claim_logs.sql sur une base déjà déployée.
+-- ====================================================================
+-- MIGRATION (installations existantes) : journaux de disponibilité des événements.
+-- Appliquer CREATE TABLE IF NOT EXISTS event_availability_logs (...).
 -- ====================================================================
 
 

@@ -177,7 +177,30 @@ def settle_challenge_win(
     # 3. Enregistrer la victoire dans la table journalière de modération
     DailyEventStatsDB.record_win(tx, actor)
 
-    # 4. Calculer le prochain horodatage et persister dans MySQL
+    # 4. Calculer le temps où l'événement est resté disponible et archiver
+    prev_event = EventsDB.get(tx, event_name)
+    prev_next_at = prev_event.get("next_at") if prev_event else None
+    available_seconds = 0
+    if prev_next_at:
+        p_dt = prev_next_at.replace(tzinfo=None) if getattr(prev_next_at, 'tzinfo', None) else prev_next_at
+        n_dt = now.replace(tzinfo=None) if getattr(now, 'tzinfo', None) else now
+        if n_dt >= p_dt:
+            available_seconds = int((n_dt - p_dt).total_seconds())
+        opened_at = prev_next_at
+    else:
+        opened_at = now
+
+    EventsDB.record_availability(
+        tx,
+        event_name=event_name,
+        opened_at=opened_at,
+        solved_at=now,
+        duration_seconds=available_seconds,
+        winner_id=actor,
+        reward=final_reward,
+    )
+
+    # 5. Calculer le prochain horodatage et persister dans MySQL
     interval_seconds = calculate_next_interval_seconds(now, challenge_key)
     next_at = now + timedelta(seconds=interval_seconds)
     server_name = guild_name or "Serveur inconnu"
@@ -197,5 +220,6 @@ def settle_challenge_win(
         "multiplier": multiplier,
         "next_at": next_at,
         "server_name": server_name,
+        "available_seconds": available_seconds,
     }
 

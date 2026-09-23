@@ -16,6 +16,7 @@ import discord
 from discord.ext import commands, tasks
 
 from game.db.economy_stats import EconomyStatsDB
+from utils.time_format import format_duration
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,12 @@ _PERIOD_LABELS = {
     1:  '1 h',
     24: '24 h',
     72: '72 h',
+}
+
+_PERIOD_COLORS = {
+    1:  0x3498DB,  # Bleu réseau (1h)
+    24: 0x2ECC71,  # Vert émeraude (24h)
+    72: 0x9B59B6,  # Violet améthyste (72h)
 }
 
 
@@ -94,18 +101,20 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
     embed = discord.Embed(
         title=f"Bilan économique — {label}",
         description=f"Du {start_str} au {end_str} — heure de Paris",
-        color=0x2B2D31,
+        color=_PERIOD_COLORS.get(period_hours, 0x2B2D31),
     )
 
     active = int(data.get('active_players') or 0)
     new_pl = int(data.get('new_players') or 0)
-    returning = int(data.get('returning_players') or 0)
     claims = int(data.get('claims') or 0)
     full_claims = int(data.get('full_claims') or 0)
 
-    if active > 0:
-        retention_pct = round(100 * returning / active, 1)
-        retention_str = f"{returning} de retour ({retention_pct} %)"
+    prev_active = int(data.get('prev_active_players') or 0)
+    retained = int(data.get('retained_players') or 0)
+
+    if prev_active > 0:
+        retention_pct = round(100 * retained / prev_active, 1)
+        retention_str = f"{retention_pct} % ({retained}/{prev_active})"
     else:
         retention_str = "non applicable"
 
@@ -118,7 +127,8 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
     embed.add_field(
         name="Activité",
         value=(
-            f"{active} joueurs actifs · {new_pl} nouveaux · {retention_str}\n"
+            f"{active} joueurs actifs · {new_pl} nouveaux\n"
+            f"Rejoueurs période préc. : {retention_str}\n"
             f"{claims} claims · RAM pleine : {ram_str}"
         ),
         inline=False,
@@ -151,6 +161,30 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
     event_detail = f" ({' · '.join(event_detail_parts)})" if event_detail_parts else ""
     event_str = f"{event_total:,.2f} USD{event_detail}"
 
+    # Temps de disponibilité des événements
+    event_avail = data.get('event_availability') or {}
+    avail_parts = []
+    for ev in ('hash', 'pin', 'decode', 'anomaly', 'buffer', 'signal', 'packet'):
+        info = event_avail.get(ev)
+        if not info:
+            continue
+        tot_sec = int(info.get('total_seconds') or 0)
+        if tot_sec <= 0:
+            continue
+        dur_str = format_duration(tot_sec)
+        wins = int(info.get('wins') or 0)
+        ongoing = bool(info.get('ongoing'))
+        if ongoing:
+            avail_parts.append(f"{ev} : {dur_str} (en cours)")
+        elif wins > 1:
+            avg_sec = int(info.get('avg_seconds') or 0)
+            avg_str = format_duration(avg_sec)
+            avail_parts.append(f"{ev} : {dur_str} ({wins} man. · moy. {avg_str})")
+        else:
+            avail_parts.append(f"{ev} : {dur_str}")
+
+    avail_str = " · ".join(avail_parts) if avail_parts else "aucun"
+
     grant_usd = _to_dec(data.get('grant_usd'))
 
     embed.add_field(
@@ -158,6 +192,7 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
         value=(
             f"Minage : {_fmt_rtm(mining_rtm)} · {rtm_per_str} par actif\n"
             f"Événements : {event_str}\n"
+            f"Disponibilité : {avail_str}\n"
             f"Dotations : {_fmt_usd(grant_usd)}"
         ),
         inline=False,
@@ -311,13 +346,17 @@ class EconomyReports(commands.Cog):
         # Reconstruction des Decimal depuis les str JSON
         dec_data = {}
         for k, v in data.items():
-            if k in ('period_start', 'period_end', 'active_players',
-                     'new_players', 'returning_players',
-                     'claims', 'full_claims',
-                     'miners_t1', 'miners_t2', 'miners_t3', 'miners_t4', 'miners_t5',
-                     'attack_bought', 'defense_bought', 'upgrades_started',
-                     'conversions', 'trades'):
-                dec_data[k] = int(v or 0) if k != 'period_start' and k != 'period_end' else v
+            if k in ('period_start', 'period_end'):
+                dec_data[k] = v
+            elif k in ('active_players', 'new_players', 'returning_players',
+                       'prev_active_players', 'retained_players',
+                       'claims', 'full_claims',
+                       'miners_t1', 'miners_t2', 'miners_t3', 'miners_t4', 'miners_t5',
+                       'attack_bought', 'defense_bought', 'upgrades_started',
+                       'conversions', 'trades'):
+                dec_data[k] = int(v or 0)
+            elif k == 'event_availability':
+                dec_data[k] = v if isinstance(v, dict) else {}
             else:
                 try:
                     dec_data[k] = Decimal(str(v or 0))

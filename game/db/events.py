@@ -45,3 +45,23 @@ class EventsDB:
         )
         return tx.one("SELECT * FROM events WHERE event = %s", (event_name,))
 
+    @staticmethod
+    def record_availability(
+        tx,
+        event_name: str,
+        opened_at: datetime,
+        solved_at: datetime,
+        duration_seconds: int,
+        winner_id: int | None = None,
+        reward: Decimal = Decimal('0.00'),
+    ) -> None:
+        """Enregistre une résolution d'événement avec le temps pendant lequel il est resté disponible."""
+        tx.execute(
+            """
+            INSERT INTO event_availability_logs
+                (event, opened_at, solved_at, duration_seconds, winner_id, reward)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (event_name, opened_at, solved_at, max(0, int(duration_seconds)), winner_id, reward),
+        )
+
