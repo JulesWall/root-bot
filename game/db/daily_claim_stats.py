@@ -23,14 +23,15 @@ class DailyClaimStatsDB:
         claimed_at: datetime,
         interval_seconds: int | None,
         amount: Decimal,
+        is_auto: bool = False,
     ) -> None:
         """Enregistre un claim réussi pour un joueur."""
         tx.execute(
             """
-            INSERT INTO daily_claim_logs (discord_id, claimed_at, interval_seconds, amount)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO daily_claim_logs (discord_id, claimed_at, interval_seconds, amount, is_auto)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (discord_id, claimed_at, interval_seconds, amount),
+            (discord_id, claimed_at, interval_seconds, amount, 1 if is_auto else 0),
         )
 
     @staticmethod
@@ -43,8 +44,10 @@ class DailyClaimStatsDB:
                 {
                     'discord_id': int,
                     'claim_count': int,
+                    'manual_count': int,
+                    'auto_count': int,
                     'total_amount': Decimal,
-                    'claims': [{'claimed_at': datetime, 'interval_seconds': int | None, 'amount': Decimal}, ...]
+                    'claims': [{'claimed_at': datetime, 'interval_seconds': int | None, 'amount': Decimal, 'is_auto': bool}, ...]
                 },
                 ...
             ]
@@ -72,7 +75,7 @@ class DailyClaimStatsDB:
         placeholders = ", ".join(["%s"] * len(user_ids))
         rows = tx.all(
             f"""
-            SELECT discord_id, claimed_at, interval_seconds, amount
+            SELECT discord_id, claimed_at, interval_seconds, amount, is_auto
             FROM daily_claim_logs
             WHERE discord_id IN ({placeholders})
             ORDER BY claimed_at ASC
@@ -87,16 +90,22 @@ class DailyClaimStatsDB:
                 "claimed_at": row["claimed_at"],
                 "interval_seconds": row["interval_seconds"],
                 "amount": row["amount"],
+                "is_auto": bool(row.get("is_auto", 0)),
             })
 
         summary = []
         for user_row in top_users:
             uid = user_row["discord_id"]
+            user_claims = claims_by_user.get(uid, [])
+            auto_count = sum(1 for c in user_claims if c.get("is_auto"))
+            manual_count = len(user_claims) - auto_count
             summary.append({
                 "discord_id": uid,
                 "claim_count": int(user_row["claim_count"]),
+                "manual_count": manual_count,
+                "auto_count": auto_count,
                 "total_amount": user_row["total_amount"],
-                "claims": claims_by_user.get(uid, []),
+                "claims": user_claims,
             })
 
         return summary
@@ -104,15 +113,24 @@ class DailyClaimStatsDB:
     @staticmethod
     def get_user_claims(tx, discord_id: int) -> list[dict]:
         """Retourne la liste chronologique complète des claims d'un joueur pour la journée en cours."""
-        return tx.all(
+        rows = tx.all(
             """
-            SELECT claimed_at, interval_seconds, amount
+            SELECT claimed_at, interval_seconds, amount, is_auto
             FROM daily_claim_logs
             WHERE discord_id = %s
             ORDER BY claimed_at ASC
             """,
             (discord_id,),
         )
+        return [
+            {
+                "claimed_at": r["claimed_at"],
+                "interval_seconds": r["interval_seconds"],
+                "amount": r["amount"],
+                "is_auto": bool(r.get("is_auto", 0)),
+            }
+            for r in rows
+        ]
 
     @staticmethod
     def reset(tx) -> None:

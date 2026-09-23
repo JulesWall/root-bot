@@ -35,7 +35,7 @@ class RootService:
     ACTIONS = {
         'network', 'buy', 'upgrade', 'reputation', 'top', 'set_language',
         'hash', 'pin', 'event', 'decode', 'anomaly', 'buffer', 'signal',
-        'packet', 'trade', 'claim', 'convert', 'compile', 'scan', 'hack',
+        'packet', 'trade', 'claim', 'claim_auto', 'claim_cancel', 'convert', 'compile', 'scan', 'hack',
     }
 
     def __init__(self, database=None):
@@ -110,6 +110,34 @@ class RootService:
             PvpDB.complete_and_delete_expired,
             locks=['pvp'],
         )
+
+    async def process_due_autoclaims(self) -> list[dict]:
+        """Scanne les joueurs ayant des claims automatiques programmés et exécute ceux dont la RAM est >= 99.9%."""
+        return await self.database.run(
+            self._process_due_autoclaims_tx,
+            locks=['autoclaim'],
+        )
+
+    @staticmethod
+    def _process_due_autoclaims_tx(tx) -> list[dict]:
+        from decimal import Decimal
+        from game.math_config import MathConfig
+
+        candidates = Player.get_active_autoclaim_players(tx)
+        results = []
+        now = tx.now
+        for p in candidates:
+            actor = p['discord_id']
+            stats = MathConfig.calculate_player_stats(p)
+            state = MathConfig.compute_mining_progress(p, stats, now)
+            capacity = state.get('capacity_rtm', Decimal('0'))
+            buffer_rtm = state.get('buffer', Decimal('0'))
+            # Seuil : 99.9% de la capacité totale de RAM ou mémoire pleine
+            if capacity > 0 and (buffer_rtm >= capacity * Decimal('0.999') or state.get('is_full')):
+                res = Player.process_autoclaim_tick(tx, actor)
+                if res.get('claimed'):
+                    results.append(res)
+        return results
 
     async def execute(self, actor: int, guild: int | None, method: str, **args):
         """
@@ -227,6 +255,10 @@ class RootService:
             return Player.upgrade(tx, actor, **args)
         elif method == 'claim':
             return Player.claim(tx, actor)
+        elif method == 'claim_auto':
+            return Player.start_autoclaim(tx, actor, count=args.get('count', 'all'))
+        elif method == 'claim_cancel':
+            return Player.cancel_autoclaim(tx, actor)
         elif method == 'convert':
             return Player.convert(tx, actor, **args)
         elif method == 'compile':

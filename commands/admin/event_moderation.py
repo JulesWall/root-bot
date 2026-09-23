@@ -14,7 +14,6 @@ from datetime import datetime, time
 import logging
 from zoneinfo import ZoneInfo
 
-import discord
 from discord.ext import commands, tasks
 
 from game.db.daily_event_stats import DailyEventStatsDB

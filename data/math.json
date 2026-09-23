@@ -1,6 +1,6 @@
 {
-  "version": "1.1.1",
-  "initial_grant_usd": 2000,
+  "version": "1.1.2",
+  "initial_grant_usd": 300,
   "usd_decimal_places": 2,
   "rtm_decimal_places": 5,
   "firewall": {
@@ -12,7 +12,7 @@
     "check_interval_seconds": 30
   },
   "mining": {
-    "cost_t1_usd": 2000,
+    "cost_t1_usd": 200,
     "cost_multiplier": 5,
     "rootium_per_hs_per_minute": 1e-07,
     "bytes_per_rtm": 10000000,
@@ -48,7 +48,7 @@
     "required_firewall": {
       "mining": 0,
       "attack": 1,
-      "bay_defense": 1
+      "bay_defense": 0
     },
     "cost_multiplier": 1.5
   },
@@ -102,8 +102,8 @@
   },
   "hash_challenge": {
     "range_size": 1000000,
-    "reward_min_usd": 7.5,
-    "reward_max_usd": 20.0,
+    "reward_min_usd": 25,
+    "reward_max_usd": 75,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
@@ -113,8 +113,8 @@
   },
   "pin_challenge": {
     "range_size": 125,
-    "reward_min_usd": 7.5,
-    "reward_max_usd": 20.0,
+    "reward_min_usd": 25,
+    "reward_max_usd": 75,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
@@ -123,8 +123,8 @@
     "night_interval_max_minutes": 60
   },
   "decode_challenge": {
-    "reward_min_usd": 7.5,
-    "reward_max_usd": 20.0,
+    "reward_min_usd": 25,
+    "reward_max_usd": 75,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
@@ -133,8 +133,8 @@
     "night_interval_max_minutes": 60
   },
   "anomaly_challenge": {
-    "reward_min_usd": 7.5,
-    "reward_max_usd": 20.0,
+    "reward_min_usd": 25,
+    "reward_max_usd": 75,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
@@ -143,8 +143,8 @@
     "night_interval_max_minutes": 60
   },
   "buffer_challenge": {
-    "reward_min_usd": 7.5,
-    "reward_max_usd": 20.0,
+    "reward_min_usd": 25,
+    "reward_max_usd": 75,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
@@ -153,8 +153,8 @@
     "night_interval_max_minutes": 60
   },
   "signal_challenge": {
-    "reward_min_usd": 7.5,
-    "reward_max_usd": 20.0,
+    "reward_min_usd": 25,
+    "reward_max_usd": 75,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,

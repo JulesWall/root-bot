@@ -10,7 +10,6 @@ qu'ils continuent à chercher pour rien.
 import asyncio
 from datetime import datetime, timezone
 import logging
-from typing import Any
 
 import discord
 

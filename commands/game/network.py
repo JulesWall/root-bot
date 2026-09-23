@@ -296,6 +296,68 @@ class NetworkActionView(discord.ui.View):
                 pass
 
 
+def _build_compact_total_lines(ctx, stats, firewall: int, mining_state: dict, result: dict, is_mem_full: bool, rep_val: int, rep_bonus_pct: Decimal) -> str:
+    """Génère l'affichage compact, lisible et coloré en blockquotes pour la section Total Infrastructure."""
+    is_fr = (text.get_locale(ctx) == 'fr')
+
+    tot_atk = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(
+        stats.get('total_bits_per_s', 0)
+    )
+    tot_bdef = f"{stats['total_bay_defense']} DEF"
+    tot_ndef = f"{stats['network_defense']} DEF"
+    hashrate = stats['total_hashrate_formatted']
+
+    mem_pct = float(mining_state.get('memory_pct', 0))
+    bar_blocks = max(0, min(10, int(round(mem_pct / 10.0))))
+    ram_bar = '▰' * bar_blocks + '▱' * (10 - bar_blocks)
+    used_str = mining_state.get('memory_used_formatted', '0 o')
+    total_ram_str = mining_state.get('total_ram_formatted', '0 o')
+    rate_str = text.format_rtm(mining_state.get('rate_per_min', 0))
+    pending_str = text.format_rtm(mining_state.get('buffer', 0))
+    fill_str = format_duration(mining_state.get('seconds_to_fill_total', 0))
+
+    rep_note = f", +{rep_bonus_pct:.1f}% rep" if rep_val > 0 else ""
+    autoclaim_credits = int(result.get('autoclaim_credits', 0) or 0)
+    autoclaim_active = int(result.get('autoclaim_active', 0) or 0)
+
+    lines = []
+    if is_mem_full:
+        lines.append(text.get(ctx, 'g_net_ram_alert'))
+
+    if is_fr:
+        lines.append(f"> ⚡ **Hashrate global** : `{hashrate}`")
+        lines.append(f"> ⚔️ **Attaque** : `{tot_atk}`")
+        lines.append(f"> 🛡️ **Défense** : `{tot_bdef}` *(Baies)* · `{tot_ndef}` *(Réseau)*")
+        lines.append(f"> 🧠 **Mémoire vive** : {ram_bar} **{mem_pct:.1f}%** (`{used_str} / {total_ram_str}`)")
+        if is_mem_full:
+            lines.append(f"> 🪙 **À récolter** : **{pending_str} RTM** · 🔴 **SATURÉ**")
+        else:
+            lines.append(f"> ⏱️ **Plein dans** : **{fill_str}** *({rate_str} RTM/min{rep_note})*")
+            lines.append(f"> 🪙 **À récolter** : **{pending_str} RTM**")
+
+        if autoclaim_active > 0:
+            lines.append(f"> 🎫 **Autoclaim** : **{autoclaim_credits}** en réserve · **{autoclaim_active}** programmé(s)")
+        else:
+            lines.append(f"> 🎫 **Autoclaim** : **{autoclaim_credits}** crédit(s) en réserve")
+    else:
+        lines.append(f"> ⚡ **Global Hashrate**: `{hashrate}`")
+        lines.append(f"> ⚔️ **Attack**: `{tot_atk}`")
+        lines.append(f"> 🛡️ **Defense**: `{tot_bdef}` *(Bays)* · `{tot_ndef}` *(Network)*")
+        lines.append(f"> 🧠 **Memory (RAM)**: {ram_bar} **{mem_pct:.1f}%** (`{used_str} / {total_ram_str}`)")
+        if is_mem_full:
+            lines.append(f"> 🪙 **To claim**: **{pending_str} RTM** · 🔴 **FULL**")
+        else:
+            lines.append(f"> ⏱️ **Full in**: **{fill_str}** *({rate_str} RTM/min{rep_note})*")
+            lines.append(f"> 🪙 **To claim**: **{pending_str} RTM**")
+
+        if autoclaim_active > 0:
+            lines.append(f"> 🎫 **Autoclaim**: **{autoclaim_credits}** in reserve · **{autoclaim_active}** queued")
+        else:
+            lines.append(f"> 🎫 **Autoclaim**: **{autoclaim_credits}** credit(s) in reserve")
+
+    return '\n'.join(lines)
+
+
 class Network(BaseGameCog):
     """Cog gérant la commande centrale /network et l'affichage du profil joueur."""
 
@@ -524,36 +586,20 @@ class Network(BaseGameCog):
         )
 
         # Récapitulatif Total prenant toute la largeur en dessous (inline=False)
-        tot_atk = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(
-            stats.get('total_bits_per_s', 0)
+        total_text = _build_compact_total_lines(
+            ctx=ctx,
+            stats=stats,
+            firewall=firewall,
+            mining_state=mining_state,
+            result=result,
+            is_mem_full=is_mem_full,
+            rep_val=rep_val,
+            rep_bonus_pct=rep_bonus_pct,
         )
-        tot_bdef = f"{stats['total_bay_defense']} DEF"
-        tot_ndef = f"{stats['network_defense']} DEF"
 
-        total_lines = []
-        if is_mem_full:
-            total_lines.append(text.get(ctx, 'g_net_ram_alert'))
-        total_lines.extend([
-            text.get(ctx, 'g_net_rack_total_hashrate', hashrate=stats['total_hashrate_formatted']),
-            text.get(ctx, 'g_net_rack_total_combat', attack=tot_atk, defense=tot_bdef),
-            text.get(ctx, 'g_net_rack_total_net_def', defense=tot_ndef, level=firewall),
-        ])
-
-        # ── Statut de minage : mémoire vive, débit et Rootium en attente de /claim ─────────
-        rate_str = text.format_rtm(mining_state.get('rate_per_min', 0))
-        pending_str = text.format_rtm(mining_state.get('buffer', 0))
-        pct_str = f"{Decimal(str(mining_state.get('memory_pct', 0))):.1f}"
-        used_str = mining_state.get('memory_used_formatted', '0 o')
-        total_ram_str = mining_state.get('total_ram_formatted', '0 o')
-        full_note = text.get(ctx, 'g_net_mining_full') if mining_state.get('is_full') else ''
-        fill_str = format_duration(mining_state.get('seconds_to_fill_total', 0))
-
-        rep_bonus_mining = f" *(+{rep_bonus_pct:.1f}% rep)*" if rep_val > 0 else ""
-        total_lines.append(text.get(ctx, 'g_net_rack_ram', used=used_str, total=total_ram_str, pct=pct_str, fill=fill_str))
-        total_lines.append(text.get(ctx, 'g_net_rack_mining', rate=rate_str, pending=pending_str, full=full_note, rep_bonus_note=rep_bonus_mining))
         embed.add_field(
             name=text.get(ctx, 'g_net_rack_total_title'),
-            value='\n'.join(total_lines),
+            value=total_text,
             inline=False,
         )
 

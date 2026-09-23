@@ -212,7 +212,7 @@ class Logger:
         )
         await self._send_embed("moderation_reputation", embed)
 
-    async def log_claim(self, ctx, amount, new_rootium=None, rate=None, ram_total=None, seconds_since_last_claim=None):
+    async def log_claim(self, ctx, amount, new_rootium=None, rate=None, ram_total=None, seconds_since_last_claim=None, is_auto: bool = False, remaining_active: int = None):
         """Consigne une récolte de minage (/claim) dans le salon de modération dédié.
 
         Trace le joueur, le Rootium extrait de la mémoire vive, le nouveau solde, le débit de
@@ -222,15 +222,27 @@ class Logger:
         from utils.text import format_rtm
         from utils.time_format import format_duration
 
-        author = getattr(ctx, "author", None) or getattr(ctx, "user", None)
+        if isinstance(ctx, (discord.User, discord.Member)):
+            author = ctx
+            guild = getattr(ctx, "guild", None)
+            locale_str = "fr"
+        else:
+            author = getattr(ctx, "author", None) or getattr(ctx, "user", None)
+            guild = getattr(ctx, "guild", None)
+            locale_str = _get_client_locale(ctx) if ctx else "fr"
+
         if not author:
             return
 
-        guild = getattr(ctx, "guild", None)
         lines = [
-            f"**Joueur :** {_format_user_compact(author)} ({_get_client_locale(ctx)})",
+            f"**Joueur :** {_format_user_compact(author)} ({locale_str})",
             f"**Rootium réclamé :** ◈ `{format_rtm(amount)} RTM`",
         ]
+        if is_auto:
+            if remaining_active is not None:
+                lines.append(f"**Mode :** 🤖 Autoclaim (Claims restants : `{remaining_active}`)")
+            else:
+                lines.append("**Mode :** 🤖 Autoclaim")
         if new_rootium is not None:
             lines.append(f"**Nouveau solde :** ◈ `{format_rtm(new_rootium)} RTM`")
         if rate is not None:
@@ -245,10 +257,13 @@ class Logger:
             lines.append(f"**Serveur :** {guild.name} (`{guild.id}`) · **Owner :** {owner_str}")
             lines.append(f"**Membres :** `{getattr(guild, 'member_count', '?')}` · **Créé :** {_format_ts_compact(getattr(guild, 'created_at', None))}")
 
+        embed_color = discord.Color.from_rgb(52, 152, 219) if is_auto else discord.Color.from_rgb(241, 196, 15)
+        embed_title = "🤖 Récolte automatique (Autoclaim)" if is_auto else "🪙 Récolte de minage"
+
         embed = discord.Embed(
-            title="🪙 Récolte de minage",
+            title=embed_title,
             description="\n".join(lines),
-            color=discord.Color.from_rgb(241, 196, 15),
+            color=embed_color,
             timestamp=discord.utils.utcnow(),
         )
         await self._send_embed("moderation_claim", embed)
@@ -510,9 +525,13 @@ class Logger:
             reg_str = f"{reg_pct:.1f}%" if reg_pct is not None else "N/A"
             std_str = f"± {format_duration(analysis['std_dev_sec'])}" if analysis["std_dev_sec"] is not None else ""
 
+            auto_count = row.get("auto_count", 0)
+            manual_count = row.get("manual_count", claim_count)
+            claims_label = f"`{claim_count}` (👤 `{manual_count}` · 🤖 `{auto_count}`)" if auto_count > 0 else f"`{claim_count}`"
+
             lines = [
                 f"**{idx}.** {badge} {user_str}",
-                f"   ├ ⛏️ Claims : `{claim_count}` · Total : `{total_rtm} RTM`",
+                f"   ├ ⛏️ Claims : {claims_label} · Total : `{total_rtm} RTM`",
                 f"   ├ ⏱️ Intervalle moyen : `{mean_str}` · Régularité : `{reg_str}` {f'(`{std_str}`)' if std_str else ''}",
             ]
 

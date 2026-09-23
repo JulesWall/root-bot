@@ -63,52 +63,20 @@ from decimal import Decimal as D
 from utils.text import format_usd
 import tempfile
 import discord
-from game.db.consequence import ConsequenceDB
-from game.db.pvp import PvpDB
-from commands.game.hack import Hack, HackConfirmView
-from commands.game.buy import Buy, _get_shop_options, _get_purchasable_options, ShopCatalogView, ShopSelectView
-from commands.game.network import Network, NetworkActionView
-from commands.admin.beta_launch import BetaLaunch
-from utils.presence_manager import (
-    calculate_remaining_hours,
-    clear_beta_launch_target,
-    get_beta_launch_target,
-    get_presence_activity,
-    get_presence_text,
-    parse_target_datetime,
-    set_beta_launch_target,
-    update_bot_presence,
-)
-from commands.admin.claim_moderation import ClaimModeration
-from game.db.daily_claim_stats import DailyClaimStatsDB
-from utils.claim_analysis import calculate_player_claim_metrics, extract_claim_intervals
-from game.db.economy_stats import EconomyStatsDB, _PERIODS
-from tools.simulate_balance import DAY, PROFILES, STRESS_PROFILE, Profile, Simulation, aggregate, price
-
-
-
-# Imports additionnels pour les modules spécialisés
 from decimal import Decimal as D
 import tempfile
 import time
-import discord
 import utils.check
 from utils.language_manager import _cache
 from game.root_service import RootService
 from game.db.consequence import ConsequenceDB
 from game.db.pvp import PvpDB
-from commands.game.hack import Hack, HackConfirmView
-from commands.game.buy import Buy, _get_shop_options, _get_purchasable_options, ShopCatalogView, ShopSelectView
+from commands.game.hack import Hack
+from commands.game.buy import Buy, _get_shop_options, _get_purchasable_options, ShopCatalogView
 from commands.game.network import Network, NetworkActionView
-from commands.admin.beta_launch import BetaLaunch
 from utils.presence_manager import (
-    calculate_remaining_hours,
-    clear_beta_launch_target,
-    get_beta_launch_target,
     get_presence_activity,
     get_presence_text,
-    parse_target_datetime,
-    set_beta_launch_target,
     update_bot_presence,
 )
 from commands.admin.claim_moderation import ClaimModeration
@@ -116,6 +84,7 @@ from game.db.daily_claim_stats import DailyClaimStatsDB
 from utils.claim_analysis import calculate_player_claim_metrics, extract_claim_intervals
 from game.db.economy_stats import EconomyStatsDB, _PERIODS
 from tools.simulate_balance import DAY, PROFILES, STRESS_PROFILE, Profile, Simulation, aggregate, price
+
 
 
 class MockTransaction:
@@ -311,6 +280,9 @@ class MockTransaction:
             cutoff = params[0]
             return [{"id": c["id"]} for c in self.consequences if c["delete_at"] <= cutoff]
 
+        if "FROM PLAYERS WHERE AUTOCLAIM_ACTIVE > 0" in q:
+            return [dict(p) for p in self.players.values() if int(p.get("autoclaim_active", 0) or 0) > 0]
+
         if "SELECT SECRET_ID FROM PLAYERS WHERE SECRET_ID IS NOT NULL" in q:
             return [{"secret_id": p.get("secret_id")} for p in self.players.values() if p.get("secret_id")]
 
@@ -433,6 +405,7 @@ class MockTransaction:
                 "claimed_at": params[1],
                 "interval_seconds": params[2],
                 "amount": params[3],
+                "is_auto": bool(params[4]) if len(params) > 4 else False,
             })
             return 1
 
@@ -4891,146 +4864,41 @@ class TestReputationInviteAndOpBypass(unittest.IsolatedAsyncioTestCase):
                         sent_content = ctx.send.call_args[0][0]
                         self.assertIn("1234", sent_content)
 
-class TestBetaCountdownAndPresence(unittest.IsolatedAsyncioTestCase):
-    """Vérifie tous les aspects du compte à rebours de la bêta et de la présence Discord."""
+class TestBotPresence(unittest.IsolatedAsyncioTestCase):
+    """Vérifie la gestion de la présence Discord et du statut de maintenance."""
 
-    def setUp(self):
-        clear_beta_launch_target()
-        self._orig_env = {
-            k: os.environ.get(k)
-            for k in ("BETA_LAUNCH_AT", "BETA_LAUNCH_TIME", "BETA_LAUNCH_HOURS")
-        }
-        for k in ("BETA_LAUNCH_AT", "BETA_LAUNCH_TIME", "BETA_LAUNCH_HOURS"):
-            os.environ.pop(k, None)
+    def test_get_presence_text_from_env(self):
+        """Vérifie que la présence est récupérée depuis BOT_PRESENCE dans l'environnement."""
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Root Bot Beta"}):
+            self.assertEqual(get_presence_text(), "Root Bot Beta")
 
-    def tearDown(self):
-        clear_beta_launch_target()
-        for k, v in self._orig_env.items():
-            if v is not None:
-                os.environ[k] = v
-            else:
-                os.environ.pop(k, None)
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Custom Presence"}):
+            self.assertEqual(get_presence_text(), "Custom Presence")
 
-    def test_parse_target_datetime_relative(self):
-        """Vérifie le parsing des formats relatifs (+24h, 12h, 5 heures)."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        target24 = parse_target_datetime("24h", now=now)
-        self.assertEqual(target24, now + timedelta(hours=24))
-
-        target12 = parse_target_datetime("+12h", now=now)
-        self.assertEqual(target12, now + timedelta(hours=12))
-
-        target5 = parse_target_datetime("5 heures", now=now)
-        self.assertEqual(target5, now + timedelta(hours=5))
-
-    def test_parse_target_datetime_time_of_day(self):
-        """Vérifie le parsing d'une heure de la journée (ex: 18:00 ou 18h30)."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        target = parse_target_datetime("18:00", now=now)
-        self.assertEqual(target, datetime(2026, 9, 22, 18, 0, 0, tzinfo=timezone.utc))
-
-        # Si l'heure est déjà passée aujourd'hui, elle bascule sur le lendemain
-        target_past = parse_target_datetime("10:00", now=now)
-        self.assertEqual(target_past, datetime(2026, 9, 23, 10, 0, 0, tzinfo=timezone.utc))
-
-    def test_parse_target_datetime_iso_and_dates(self):
-        """Vérifie le parsing des formats ISO et dates classiques."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        target = parse_target_datetime("2026-09-25T15:30:00", now=now)
-        self.assertEqual(target.year, 2026)
-        self.assertEqual(target.month, 9)
-        self.assertEqual(target.day, 25)
-        self.assertEqual(target.hour, 15)
-        self.assertEqual(target.minute, 30)
-
-        # Invalide
-        self.assertIsNone(parse_target_datetime("invalide_date"))
-        self.assertIsNone(parse_target_datetime(None))
-
-    def test_calculate_remaining_hours(self):
-        """Vérifie le calcul des heures restantes avec arrondi supérieur."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-
-        # 5h 30min d'attente -> 6 heures
-        t1 = now + timedelta(hours=5, minutes=30)
-        self.assertEqual(calculate_remaining_hours(target=t1, now=now), 6)
-
-        # Exactement 5 heures -> 5 heures
-        t2 = now + timedelta(hours=5)
-        self.assertEqual(calculate_remaining_hours(target=t2, now=now), 5)
-
-        # 45 minutes restantes -> 1 heure
-        t3 = now + timedelta(minutes=45)
-        self.assertEqual(calculate_remaining_hours(target=t3, now=now), 1)
-
-        # Date dépassée (0s ou négatif) -> 0
-        t4 = now - timedelta(minutes=5)
-        self.assertEqual(calculate_remaining_hours(target=t4, now=now), 0)
-
-    def test_get_presence_text_formatting(self):
-        """Vérifie le texte exact selon la spécification heure par heure."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-
-        with patch("utils.check.Check.beta_enabled", return_value=True):
-            # Plus de 1 heure
-            t_multi = now + timedelta(hours=4, minutes=10)
-            self.assertEqual(get_presence_text(target=t_multi, now=now), "Ouverture de la beta dans 5 heures")
-
-            # Exactement 1 heure
-            t_single = now + timedelta(minutes=50)
-            self.assertEqual(get_presence_text(target=t_single, now=now), "Ouverture de la beta dans 1 heure")
-
-            # Déjà ouvert
-            t_past = now - timedelta(seconds=10)
-            self.assertEqual(get_presence_text(target=t_past, now=now), "Beta ouverte !")
-
-        with patch("utils.check.Check.beta_enabled", return_value=False):
-            self.assertEqual(get_presence_text(target=t_multi, now=now), data.BOT_NAME)
+        with patch.dict(os.environ, {"BOT_PRESENCE": ""}):
+            with patch("utils.check.Check.beta_enabled", return_value=False):
+                self.assertEqual(get_presence_text(), data.BOT_NAME)
 
     def test_get_presence_activity_type(self):
-        """Vérifie que get_presence_activity retourne un CustomActivity avec le bon texte."""
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        with patch("utils.check.Check.beta_enabled", return_value=True):
-            t = now + timedelta(hours=3)
-            act = get_presence_activity(target=t, now=now)
+        """Vérifie que get_presence_activity configure correctement l'activité avec le texte de présence."""
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Root Bot Beta"}):
+            act = get_presence_activity()
             self.assertIsInstance(act, discord.CustomActivity)
-            self.assertEqual(act.name, "Ouverture de la beta dans 3 heures")
-
-        with patch("utils.check.Check.beta_enabled", return_value=False):
-            act_default = get_presence_activity(target=t, now=now)
-            self.assertIsInstance(act_default, discord.Game)
-            self.assertEqual(act_default.name, data.BOT_NAME)
-
-    def test_target_persistence_in_file(self):
-        """Vérifie la persistance de la date cible via set_beta_launch_target."""
-        import os
-        with patch.dict(os.environ, {"BETA_LAUNCH_AT": "", "BETA_LAUNCH_TIME": "", "BETA_LAUNCH_HOURS": ""}):
-            now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-            target = now + timedelta(hours=48)
-
-            set_beta_launch_target(target)
-            loaded = get_beta_launch_target()
-            self.assertIsNotNone(loaded)
-            self.assertEqual(int(loaded.timestamp()), int(target.timestamp()))
-
-            clear_beta_launch_target()
-            self.assertIsNone(get_beta_launch_target())
+            self.assertEqual(act.name, "Root Bot Beta")
 
     async def test_update_bot_presence_status_and_activity(self):
         """Vérifie que update_bot_presence respecte le mode maintenance et applique l'activité."""
         mock_bot = MagicMock()
         mock_bot.change_presence = AsyncMock()
-        now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
-        set_beta_launch_target(now + timedelta(hours=10))
 
-        with patch("utils.check.Check.beta_enabled", return_value=True):
+        with patch.dict(os.environ, {"BOT_PRESENCE": "Root Bot Beta"}):
             # 1. Hors maintenance -> Status.online
             with patch("utils.check.Check.maintenance_enabled", return_value=False):
                 await update_bot_presence(mock_bot)
                 mock_bot.change_presence.assert_called_once()
                 call_kwargs = mock_bot.change_presence.call_args[1]
                 self.assertEqual(call_kwargs["status"], discord.Status.online)
-                self.assertIn("Ouverture de la beta", call_kwargs["activity"].name)
+                self.assertEqual(call_kwargs["activity"].name, "Root Bot Beta")
 
             # 2. Même appel sans changement -> pas de flood gateway
             mock_bot.change_presence.reset_mock()
@@ -5044,46 +4912,8 @@ class TestBetaCountdownAndPresence(unittest.IsolatedAsyncioTestCase):
                 mock_bot.change_presence.assert_called_once()
                 call_kwargs = mock_bot.change_presence.call_args[1]
                 self.assertEqual(call_kwargs["status"], discord.Status.dnd)
+                self.assertEqual(call_kwargs["activity"].name, "Root Bot Beta")
 
-    async def test_admin_beta_launch_commands(self):
-        """Vérifie la commande d'administration /beta_launch (status, set, clear)."""
-        import os
-        with patch.dict(os.environ, {"BETA_LAUNCH_AT": "", "BETA_LAUNCH_TIME": "", "BETA_LAUNCH_HOURS": ""}):
-            mock_bot = MagicMock()
-            mock_bot.change_presence = AsyncMock()
-            cog = BetaLaunch(mock_bot)
-
-            mock_ctx = MagicMock()
-            mock_ctx.author.id = 12345
-            mock_ctx.respond = AsyncMock()
-            mock_ctx.send = AsyncMock()
-
-            # 1. Non-OP refusé
-            with patch("utils.check.Check.is_op", new=AsyncMock(return_value=False)):
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="status")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("Accès refusé", mock_ctx.respond.call_args[0][0])
-
-            # 2. OP autorisé : set
-            mock_ctx.respond.reset_mock()
-            with patch("utils.check.Check.is_op", new=AsyncMock(return_value=True)):
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="set", cible="24h")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("Lancement de la Bêta programmé", mock_ctx.respond.call_args[0][0])
-                self.assertIsNotNone(get_beta_launch_target())
-
-                # 3. OP autorisé : status
-                mock_ctx.respond.reset_mock()
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="status")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("Compte à rebours Bêta actif", mock_ctx.respond.call_args[0][0])
-
-                # 4. OP autorisé : clear
-                mock_ctx.respond.reset_mock()
-                await cog.slash_beta_launch.callback(cog, mock_ctx, action="clear")
-                mock_ctx.respond.assert_called_once()
-                self.assertIn("réinitialisé", mock_ctx.respond.call_args[0][0])
-                self.assertIsNone(get_beta_launch_target())
 
 # ── 3. Améliorations QoL & Interface ───────────────────────────────────────
 
@@ -5906,6 +5736,8 @@ class MockTx:
         self.now = now or datetime(2026, 9, 21, 14, 30, 0)
         self.economy_hourly: dict[tuple, dict] = {}
         self.economy_reports: dict[int, dict] = {}
+        self.event_availability_logs: list[dict] = []
+        self.events: dict[str, dict] = {}
         self.tables_exist = True  # simule information_schema
         self.acquired_locks = []
         self._queries = []
@@ -5931,6 +5763,12 @@ class MockTx:
             row = self.economy_reports.get(period)
             return dict(row) if row else None
 
+        # events SELECT * ... WHERE event = %s
+        if 'FROM EVENTS WHERE EVENT' in q:
+            ev = args[0]
+            row = self.events.get(ev)
+            return dict(row) if row else None
+
         # economy_hourly EXISTS (returning check)
         if 'FROM ECONOMY_HOURLY' in q and 'WHERE PLAYER_ID' in q and 'BUCKET_START <' in q:
             player_id = args[0]
@@ -5939,6 +5777,17 @@ class MockTx:
                 if pid == player_id and b < bucket_limit:
                     return {'1': 1}
             return None
+
+        # Previous period retention query
+        if 'PREV_ACTIVE_PLAYERS' in q:
+            prev_start, p_end, curr_start, curr_end = args
+            prev_pids = {pid for (b, pid) in self.economy_hourly if prev_start <= b < p_end}
+            curr_pids = {pid for (b, pid) in self.economy_hourly if curr_start <= b < curr_end}
+            retained = prev_pids & curr_pids
+            return {
+                'prev_active_players': len(prev_pids),
+                'retained_players': len(retained),
+            }
 
         # economy_hourly aggregate
         if 'FROM ECONOMY_HOURLY' in q and 'COUNT(DISTINCT' in q:
@@ -5973,11 +5822,62 @@ class MockTx:
         if 'FROM ECONOMY_REPORTS ORDER BY PERIOD_HOURS' in q:
             return sorted(self.economy_reports.values(), key=lambda r: r['period_hours'])
 
+        if 'FROM EVENT_AVAILABILITY_LOGS' in q:
+            start, end = args
+            matching = [
+                log for log in self.event_availability_logs
+                if start <= log['solved_at'] < end
+            ]
+            by_event = {}
+            for m in matching:
+                ev = m['event']
+                if ev not in by_event:
+                    by_event[ev] = {'event': ev, 'wins': 0, 'total_seconds': 0}
+                by_event[ev]['wins'] += 1
+                by_event[ev]['total_seconds'] += m['duration_seconds']
+            rows = []
+            for ev, edata in by_event.items():
+                avg = edata['total_seconds'] / edata['wins'] if edata['wins'] else 0
+                rows.append({
+                    'event': ev,
+                    'wins': edata['wins'],
+                    'total_seconds': edata['total_seconds'],
+                    'avg_seconds': avg,
+                })
+            return rows
+
         return []
 
     def execute(self, sql: str, args=()):
         self._queries.append((sql, args))
         q = ' '.join(sql.split()).upper()
+
+        if 'CREATE TABLE IF NOT EXISTS' in q:
+            return 0
+
+        # INSERT INTO event_availability_logs
+        if 'INSERT INTO EVENT_AVAILABILITY_LOGS' in q:
+            self.event_availability_logs.append({
+                'event': args[0],
+                'opened_at': args[1],
+                'solved_at': args[2],
+                'duration_seconds': args[3],
+                'winner_id': args[4],
+                'reward': args[5],
+            })
+            return 1
+
+        # INSERT INTO events ... ON DUPLICATE KEY UPDATE
+        if 'INSERT INTO EVENTS' in q:
+            ev = args[0]
+            self.events[ev] = {
+                'event': args[0],
+                'next_at': args[1],
+                'last_found_by': args[2],
+                'last_found_on': args[3],
+                'last_reward': args[4],
+            }
+            return 1
 
         # INSERT INTO economy_reports
         if 'INSERT INTO ECONOMY_REPORTS' in q:
@@ -6357,6 +6257,190 @@ class TestAggregate(unittest.TestCase):
         self.assertEqual(returning, 1)
         rate = returning / active
         self.assertAlmostEqual(rate, 0.5)
+
+    def test_prev_period_retention(self):
+        """Calcul de la rétention des joueurs actifs de la période précédente."""
+        tx = MockTx()
+        bucket_13h = datetime(2026, 9, 21, 13, 0, 0)
+        # Période précédente (13h-14h) : joueurs 100, 200, 300
+        for pid in (100, 200, 300):
+            tx.economy_hourly[(bucket_13h, pid)] = {
+                'bucket_start': bucket_13h, 'player_id': pid, 'claims': 1,
+            }
+        # Période courante (14h-15h) : joueurs 200, 300, 400
+        for pid in (200, 300, 400):
+            tx.economy_hourly[(BUCKET_14H, pid)] = {
+                'bucket_start': BUCKET_14H, 'player_id': pid, 'claims': 1,
+            }
+
+        result = EconomyStatsDB.aggregate(tx, BUCKET_14H, BUCKET_15H)
+        self.assertEqual(result['active_players'], 3)
+        self.assertEqual(result['prev_active_players'], 3)
+        self.assertEqual(result['retained_players'], 2)  # 200 et 300 ont rejoué
+
+    def test_event_availability_aggregation(self):
+        """Agrégation des journaux de disponibilité d'événements résolus."""
+        tx = MockTx()
+        # Deux résolutions pour hash et une pour pin dans [14h, 15h)
+        tx.event_availability_logs.append({
+            'event': 'hash',
+            'opened_at': datetime(2026, 9, 21, 14, 10, 0),
+            'solved_at': datetime(2026, 9, 21, 14, 13, 0),
+            'duration_seconds': 180,
+            'winner_id': 123,
+            'reward': Decimal('10.00'),
+        })
+        tx.event_availability_logs.append({
+            'event': 'hash',
+            'opened_at': datetime(2026, 9, 21, 14, 30, 0),
+            'solved_at': datetime(2026, 9, 21, 14, 34, 0),
+            'duration_seconds': 240,
+            'winner_id': 456,
+            'reward': Decimal('15.00'),
+        })
+        tx.event_availability_logs.append({
+            'event': 'pin',
+            'opened_at': datetime(2026, 9, 21, 14, 0, 0),
+            'solved_at': datetime(2026, 9, 21, 14, 10, 0),
+            'duration_seconds': 600,
+            'winner_id': 789,
+            'reward': Decimal('5.00'),
+        })
+
+        result = EconomyStatsDB.aggregate(tx, BUCKET_14H, BUCKET_15H)
+        avail = result.get('event_availability', {})
+        self.assertIn('hash', avail)
+        self.assertEqual(avail['hash']['wins'], 2)
+        self.assertEqual(avail['hash']['total_seconds'], 420)
+        self.assertEqual(avail['hash']['avg_seconds'], 210)
+        self.assertFalse(avail['hash']['ongoing'])
+
+        self.assertIn('pin', avail)
+        self.assertEqual(avail['pin']['wins'], 1)
+        self.assertEqual(avail['pin']['total_seconds'], 600)
+
+    def test_ongoing_event_availability(self):
+        """Détection d'un événement ouvert avant la fin de la période et non résolu."""
+        tx = MockTx()
+        # 'signal' ouvert à 14h15, non résolu
+        tx.events['signal'] = {
+            'event': 'signal',
+            'next_at': datetime(2026, 9, 21, 14, 15, 0),
+            'last_found_by': None,
+            'last_found_on': None,
+            'last_reward': Decimal('0.00'),
+        }
+
+        result = EconomyStatsDB.aggregate(tx, BUCKET_14H, BUCKET_15H)
+        avail = result.get('event_availability', {})
+        self.assertIn('signal', avail)
+        self.assertTrue(avail['signal']['ongoing'])
+        # 14h15 à 15h00 = 45 min = 2700 secondes
+        self.assertEqual(avail['signal']['total_seconds'], 2700)
+
+
+# ---------------------------------------------------------------------------
+# Tests rendu Embed (_build_embed)
+# ---------------------------------------------------------------------------
+
+class TestEconomyEmbed(unittest.IsolatedAsyncioTestCase):
+
+    def test_period_colors(self):
+        """Vérifie la différenciation en couleur des embeds selon la durée."""
+        from commands.admin.economy_reports import _build_embed
+        start = datetime(2026, 9, 21, 14, 0, 0)
+        end_1h = datetime(2026, 9, 21, 15, 0, 0)
+        end_24h = datetime(2026, 9, 22, 14, 0, 0)
+        end_72h = datetime(2026, 9, 24, 14, 0, 0)
+        dummy_data = {'active_players': 1}
+
+        embed_1h = _build_embed(1, dummy_data, start, end_1h)
+        embed_24h = _build_embed(24, dummy_data, start, end_24h)
+        embed_72h = _build_embed(72, dummy_data, start, end_72h)
+
+        self.assertEqual(embed_1h.color.value, 0x3498DB)
+        self.assertEqual(embed_24h.color.value, 0x2ECC71)
+        self.assertEqual(embed_72h.color.value, 0x9B59B6)
+
+    def test_retention_rendering(self):
+        """Vérifie le rendu du taux de rejoueurs de la période précédente."""
+        from commands.admin.economy_reports import _build_embed
+        start = datetime(2026, 9, 21, 14, 0, 0)
+        end = datetime(2026, 9, 21, 15, 0, 0)
+
+        # Cas 1 : avec rejoueurs (3 sur 4 = 75.0%)
+        data = {
+            'active_players': 5,
+            'new_players': 2,
+            'prev_active_players': 4,
+            'retained_players': 3,
+            'claims': 10,
+        }
+        embed = _build_embed(1, data, start, end)
+        act_field = next(f for f in embed.fields if "Activité" in f.name)
+        self.assertIn("Rétention : 75.0 % (3/4 rejoueurs)", act_field.value)
+
+        # Cas 2 : aucun joueur précédent (premier bilan)
+        data_first = {
+            'active_players': 2,
+            'new_players': 2,
+            'prev_active_players': 0,
+            'retained_players': 0,
+        }
+        embed_first = _build_embed(1, data_first, start, end)
+        act_field_first = next(f for f in embed_first.fields if "Activité" in f.name)
+        self.assertIn("Rétention : non applicable (0 joueur préc.)", act_field_first.value)
+
+    def test_availability_rendering(self):
+        """Vérifie le rendu du temps de disponibilité des événements."""
+        from commands.admin.economy_reports import _build_embed
+        start = datetime(2026, 9, 21, 14, 0, 0)
+        end = datetime(2026, 9, 21, 15, 0, 0)
+
+        data = {
+            'active_players': 3,
+            'event_availability': {
+                'hash': {'wins': 1, 'total_seconds': 192, 'avg_seconds': 192, 'ongoing': False},
+                'pin': {'wins': 2, 'total_seconds': 600, 'avg_seconds': 300, 'ongoing': False},
+                'signal': {'wins': 0, 'total_seconds': 1200, 'avg_seconds': 1200, 'ongoing': True},
+            }
+        }
+        embed = _build_embed(1, data, start, end)
+        avail_field = next(f for f in embed.fields if "Disponibilité" in f.name)
+        # 192s -> 3min 12s
+        self.assertIn("[hash]     3min 12s", avail_field.value)
+        # 600s total, moy 300s -> 10min (2 manches • moy. 5min)
+        self.assertIn("[pin]      10min (2 manches • moy. 5min)", avail_field.value)
+        # en cours
+        self.assertIn("[signal]   20min (en cours)", avail_field.value)
+
+    def test_settle_challenge_win_availability(self):
+        """Vérifie que settle_challenge_win enregistre la durée disponible dans les logs."""
+        from unittest.mock import patch
+        from game.challenge_utils import settle_challenge_win
+        tx = MockTx()
+        # Événement 'decode' ouvert à 14h00
+        tx.events['decode'] = {
+            'event': 'decode',
+            'next_at': datetime(2026, 9, 21, 14, 0, 0),
+            'last_found_by': None,
+            'last_found_on': None,
+            'last_reward': Decimal('0.00'),
+        }
+
+        # Résolution à 14h12 (12 min = 720 secondes après ouverture)
+        solve_time = datetime(2026, 9, 21, 14, 12, 0)
+        with patch('game.challenge_utils.PlayerData.get', return_value={'firewall_level': 0, 'dollars': 100, 'events_won': 2}), \
+             patch('game.challenge_utils.UpdatePlayer.set'), \
+             patch('game.challenge_utils.DailyEventStatsDB.record_win'):
+            res = settle_challenge_win(tx, 'decode', 'decode_challenge', 999, Decimal('25.00'), solve_time, guild_name='TestGuild')
+
+        self.assertEqual(res['available_seconds'], 720)
+        self.assertEqual(len(tx.event_availability_logs), 1)
+        log = tx.event_availability_logs[0]
+        self.assertEqual(log['event'], 'decode')
+        self.assertEqual(log['duration_seconds'], 720)
+        self.assertEqual(log['winner_id'], 999)
 
 
 # ---------------------------------------------------------------------------
@@ -6857,7 +6941,7 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         ctx.interaction = MagicMock()
         ctx.respond = AsyncMock()
 
-        for query in ("prefix", "op", "beta_launch", "inconnue123", "/ban"):
+        for query in ("prefix", "op", "guildinfo", "inconnue123", "/ban"):
             ctx.respond.reset_mock()
             with patch("commands.utility.help.get_locale", return_value="fr"):
                 with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
@@ -7154,6 +7238,266 @@ class TestOfficialServerAutoRole(unittest.IsolatedAsyncioTestCase):
 
         await bot.on_member_join(member)
         member.add_roles.assert_awaited_once()
+
+
+class TestAutoclaimFeature(unittest.IsolatedAsyncioTestCase):
+    """Couvre l'ensemble du système d'autoclaim (crédits, seuil 99.9%, annulation, logs et anti-triche)."""
+
+    def setUp(self):
+        self.tx = MockTransaction()
+        self.actor = 99901
+        Player.network(self.tx, self.actor)
+        self.tx.players[self.actor]["mining_t1"] = 1
+        self.tx.players[self.actor]["mining_buffer"] = Decimal('0.05000')
+        self.tx.players[self.actor]["mining_last_update_at"] = self.tx.now
+        self.tx.players[self.actor]["autoclaim_credits"] = 3
+        self.tx.players[self.actor]["autoclaim_active"] = 0
+
+    def test_start_autoclaim_all_and_count(self):
+        """Vérifie le démarrage de l'autoclaim avec 'all' et avec un montant explicite."""
+        # Lancement avec count='all'
+        res_all = Player.start_autoclaim(self.tx, self.actor, 'all')
+        self.assertEqual(res_all['activated_count'], 3)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_credits'], 0)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 3)
+        self.assertTrue(res_all['claim_result'].get('claimed'))
+
+        # Restitution pour second test
+        self.tx.players[self.actor]['autoclaim_credits'] = 5
+        self.tx.players[self.actor]['autoclaim_active'] = 0
+        res_nb = Player.start_autoclaim(self.tx, self.actor, 2)
+        self.assertEqual(res_nb['activated_count'], 2)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_credits'], 3)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 2)
+
+    def test_start_autoclaim_errors(self):
+        """Vérifie le rejet pour crédits insuffisants, quantité invalide ou absence de mineurs."""
+        # 1. Crédits insuffisants
+        self.tx.players[self.actor]['autoclaim_credits'] = 0
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 1)
+        self.assertEqual(cm.exception.key, 'insufficient_autoclaim_credits')
+
+        self.tx.players[self.actor]['autoclaim_credits'] = 2
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 5)
+        self.assertEqual(cm.exception.key, 'insufficient_autoclaim_credits')
+
+        # 2. Quantité invalide
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 0)
+        self.assertEqual(cm.exception.key, 'insufficient_autoclaim_credits')
+
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 'invalide')
+        self.assertEqual(cm.exception.key, 'invalid_autoclaim_count')
+
+        # 3. Aucun module de minage
+        no_miner_actor = 99902
+        Player.network(self.tx, no_miner_actor)
+        self.tx.players[no_miner_actor]['autoclaim_credits'] = 5
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, no_miner_actor, 'all')
+        self.assertEqual(cm.exception.key, 'no_miner_autoclaim')
+
+    def test_cancel_autoclaim(self):
+        """Vérifie l'annulation des autoclaims et la restitution exacte des crédits."""
+        self.tx.players[self.actor]['autoclaim_credits'] = 1
+        self.tx.players[self.actor]['autoclaim_active'] = 3
+
+        res = Player.cancel_autoclaim(self.tx, self.actor)
+        self.assertEqual(res['refunded_count'], 3)
+        self.assertEqual(res['autoclaim_credits'], 4)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_credits'], 4)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 0)
+
+        # Annulation quand aucun n'est actif -> erreur
+        with self.assertRaises(GameError) as cm:
+            Player.cancel_autoclaim(self.tx, self.actor)
+        self.assertEqual(cm.exception.key, 'no_active_autoclaim')
+
+    def test_process_autoclaim_tick_at_threshold(self):
+        """Vérifie l'exécution d'un tick d'autoclaim et la décrémentation du compteur."""
+        self.tx.players[self.actor]['autoclaim_active'] = 2
+        self.tx.players[self.actor]['mining_buffer'] = Decimal('0.05000')
+
+        res = Player.process_autoclaim_tick(self.tx, self.actor)
+        self.assertTrue(res.get('claimed'))
+        self.assertTrue(res.get('is_auto'))
+        self.assertEqual(res.get('autoclaim_active_remaining'), 1)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 1)
+
+        # Vérifie l'enregistrement avec is_auto=True dans daily_claim_logs
+        self.assertEqual(len(self.tx.daily_claim_logs), 1)
+        self.assertTrue(self.tx.daily_claim_logs[0]['is_auto'])
+
+    async def test_service_process_due_autoclaims_threshold_filter(self):
+        """Vérifie que process_due_autoclaims ne récolte que si la RAM atteint >= 99.9%."""
+        from game.root_service import RootService
+        mock_db = MockDatabase()
+        mock_db.players[self.actor] = dict(self.tx.players[self.actor])
+        mock_db.players[self.actor]['autoclaim_active'] = 1
+
+        service = RootService(database=mock_db)
+
+        # Calcul de la capacité de RAM
+        stats = MathConfig.calculate_player_stats(mock_db.players[self.actor])
+        capacity = MathConfig.compute_mining_progress(mock_db.players[self.actor], stats, datetime.now())['capacity_rtm']
+
+        # 1. Tampon à 50% de la capacité -> pas de récolte
+        mock_db.players[self.actor]['mining_buffer'] = (capacity * Decimal('0.50')).quantize(Decimal('0.00001'))
+        mock_db.players[self.actor]['mining_last_update_at'] = datetime.now()
+        due = await service.process_due_autoclaims()
+        self.assertEqual(len(due), 0)
+        self.assertEqual(mock_db.players[self.actor]['autoclaim_active'], 1)
+
+        # 2. Tampon à 99.95% de la capacité (>= 99.9%) -> déclenchement automatique
+        mock_db.players[self.actor]['mining_buffer'] = (capacity * Decimal('0.9995')).quantize(Decimal('0.00001'))
+        mock_db.players[self.actor]['mining_last_update_at'] = datetime.now()
+        due = await service.process_due_autoclaims()
+        self.assertEqual(len(due), 1)
+        self.assertEqual(due[0]['actor'], self.actor)
+        self.assertTrue(due[0]['is_auto'])
+        self.assertEqual(mock_db.players[self.actor]['autoclaim_active'], 0)
+
+    def test_daily_claim_stats_breakdown(self):
+        """Vérifie que DailyClaimStatsDB ventile correctement manual_count et auto_count."""
+        now = datetime(2026, 9, 23, 14, 0, 0)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor, now, 600, Decimal("1.0"), is_auto=False)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor, now + timedelta(minutes=10), 600, Decimal("1.0"), is_auto=True)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor, now + timedelta(minutes=20), 600, Decimal("1.0"), is_auto=True)
+
+        summary = DailyClaimStatsDB.get_summary(self.tx)
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0]["claim_count"], 3)
+        self.assertEqual(summary[0]["manual_count"], 1)
+        self.assertEqual(summary[0]["auto_count"], 2)
+
+        user_claims = DailyClaimStatsDB.get_user_claims(self.tx, self.actor)
+        self.assertEqual(len(user_claims), 3)
+        self.assertFalse(user_claims[0]["is_auto"])
+        self.assertTrue(user_claims[1]["is_auto"])
+        self.assertTrue(user_claims[2]["is_auto"])
+
+    def test_claim_analysis_autoclaim_anti_cheat(self):
+        """Vérifie que les autoclaims n'induisent pas de faux positifs de macro."""
+        now = datetime(2026, 9, 23, 10, 0, 0)
+        # Séquence de claims avec plusieurs autoclaims
+        claims = [
+            {"claimed_at": now, "interval_seconds": 0, "amount": Decimal("1"), "is_auto": False},
+            {"claimed_at": now + timedelta(hours=2), "interval_seconds": 7200, "amount": Decimal("1"), "is_auto": False},
+            {"claimed_at": now + timedelta(hours=5), "interval_seconds": 10800, "amount": Decimal("1"), "is_auto": True},
+            {"claimed_at": now + timedelta(hours=8), "interval_seconds": 10800, "amount": Decimal("1"), "is_auto": True},
+        ]
+        metrics = calculate_player_claim_metrics(claims)
+        self.assertEqual(metrics["manual_claim_count"], 2)
+        self.assertEqual(metrics["auto_claim_count"], 2)
+        # Ne doit pas être HIGH risk
+        self.assertNotEqual(metrics["risk_level"], "HIGH")
+
+    async def test_claim_credits_hint_conditional_display(self):
+        """Vérifie que la phrase de crédits ne s'affiche que si autoclaim_credits > 0."""
+        from commands.game.claim import Claim
+
+        mock_bot = MagicMock()
+        mock_bot.wait_until_ready = AsyncMock()
+        mock_bot.discord_logger = MagicMock()
+        cog = Claim(mock_bot)
+        try:
+            mock_ctx = MagicMock()
+            mock_ctx.interaction = None
+            mock_ctx.clean_prefix = "!"
+            mock_ctx.prefix = "!"
+            mock_ctx.user = None
+            mock_ctx.author.id = self.actor
+
+            # 1. Avec 0 crédits
+            res_zero = {
+                'claimed': True,
+                'amount': Decimal('0.05000'),
+                'new_rootium': Decimal('10.05000'),
+                'rate_per_min': Decimal('0.00010'),
+                'total_ram_formatted': '100 Ko',
+                'autoclaim_credits': 0,
+            }
+            cog._reply = AsyncMock()
+            cog._log_blockchain = AsyncMock()
+            cog._log_moderation = AsyncMock()
+            await cog._send(mock_ctx, 'claim', res_zero)
+            sent_content_zero = cog._reply.call_args[0][1]
+            self.assertNotIn("Autoclaim credits", sent_content_zero)
+            self.assertNotIn("Crédits d'autoclaim", sent_content_zero)
+
+            # 2. Avec 3 crédits
+            res_credits = {
+                'claimed': True,
+                'amount': Decimal('0.05000'),
+                'new_rootium': Decimal('10.05000'),
+                'rate_per_min': Decimal('0.00010'),
+                'total_ram_formatted': '100 Ko',
+                'autoclaim_credits': 3,
+            }
+            cog._reply.reset_mock()
+            await cog._send(mock_ctx, 'claim', res_credits)
+            sent_content_credits = cog._reply.call_args[0][1]
+            self.assertTrue(
+                "Autoclaim credits" in sent_content_credits or "Crédits d'autoclaim" in sent_content_credits
+            )
+            self.assertIn("`3`", sent_content_credits)
+        finally:
+            cog.cog_unload()
+
+    async def test_prefix_and_slash_claim_dispatch(self):
+        """Vérifie l'aiguillage des commandes préfixe !claim auto/cancel et slash /claim auto:x."""
+        from commands.game.claim import Claim
+
+        mock_bot = MagicMock()
+        mock_bot.wait_until_ready = AsyncMock()
+        cog = Claim(mock_bot)
+        try:
+            cog._invoke = AsyncMock()
+            mock_ctx = MagicMock()
+
+            # 1. !claim -> claim
+            await cog.prefix_claim.callback(cog, mock_ctx)
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim')
+
+            # 2. !claim auto 3 -> claim_auto count='3'
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'auto', '3')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_auto', count='3')
+
+            # 3. !claim auto all -> claim_auto count='all'
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'auto', 'all')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_auto', count='all')
+
+            # 4. !claim auto cancel -> claim_cancel
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'auto', 'cancel')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_cancel')
+
+            # 5. !claim cancel -> claim_cancel
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'cancel')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_cancel')
+
+            # 6. /claim -> claim
+            cog._invoke.reset_mock()
+            await cog.claim.callback(cog, mock_ctx, auto=None)
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim')
+
+            # 7. /claim auto:'all' -> claim_auto
+            cog._invoke.reset_mock()
+            await cog.claim.callback(cog, mock_ctx, auto='all')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_auto', count='all')
+
+            # 8. /claim auto:'cancel' -> claim_cancel
+            cog._invoke.reset_mock()
+            await cog.claim.callback(cog, mock_ctx, auto='cancel')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_cancel')
+        finally:
+            cog.cog_unload()
 
 
 if __name__ == '__main__':

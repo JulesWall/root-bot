@@ -5,8 +5,6 @@ Le joueur cède des tokens Rootium ; le DEX crédite des dollars.
 Chaque vente confirmée est inscrite dans le journal #blockchain (TYPE SELL TOKEN).
 """
 
-from decimal import Decimal
-
 import discord
 from discord.ext import commands
 

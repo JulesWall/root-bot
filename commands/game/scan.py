@@ -24,7 +24,6 @@ from discord.ext import commands, tasks
 
 import data
 from commands.game.commandgame import BaseGameCog
-from game.db.players import Player
 from game.game_error import GameError
 from game.math_config import MathConfig
 from lang.descslash import desc, desc_loc
