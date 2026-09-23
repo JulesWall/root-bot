@@ -874,6 +874,8 @@ class TestChallengeManagers(unittest.TestCase):
             self.assertEqual(len(line), 16, "Chaque ligne doit avoir 16 caractères.")
         total_digits = sum(1 for c in challenge["block_display"] if c.isdigit())
         self.assertEqual(total_digits, 1, "Il doit y avoir exactement un seul chiffre parasite.")
+        digit = next(c for c in challenge["block_display"] if c.isdigit())
+        self.assertIn(digit, "123456789")
 
     def test_anomaly_process(self):
         AnomalyManager._active_challenge = None
