@@ -188,8 +188,8 @@
     "retaliation_window_hours": 72
   },
   "packet_challenge": {
-    "reward_min_usd": 7.5,
-    "reward_max_usd": 20.0,
+    "reward_min_usd": 25,
+    "reward_max_usd": 75,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
