@@ -19,7 +19,7 @@ from commands.game.commandgame import BaseGameCog
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils.root_embed import RootEmbed
-from utils.text import format_usd
+from utils.text import format_usd, get as text_get
 
 
 class Hourly(BaseGameCog):
@@ -61,28 +61,33 @@ class Hourly(BaseGameCog):
         combo_ts = result["combo_deadline_ts"]
         interval_seconds = result.get("interval_seconds")
 
-        # Construction du texte descriptif
-        lines = []
-
         if is_first:
-            lines.append("> 🟢 **Première récolte effectuée !** Reviens dans 1 heure pour amorcer ton combo.")
+            status = text_get(ctx, "g_hourly_status_first")
         elif combo_lost:
-            lines.append("> ⚠️ **Combo interrompu !** Le délai d'1h20 a été dépassé. Ton bonus a été réinitialisé à 0%.")
+            status = text_get(ctx, "g_hourly_status_broken")
         else:
-            lines.append(f"> ⚡ **Combo maintenu !** Tu obtiens **+{step_bonus_pct:.0f}%** de bonus sur ce créneau.")
+            status = text_get(ctx, "g_hourly_status_combo", step=f"{step_bonus_pct:.0f}")
 
-        lines.append("")
-        lines.append(f"• **Gain de base :** 💵 `{format_usd(base_usd)}`")
-
+        lines = [
+            status,
+            "",
+            text_get(ctx, "g_hourly_base", base=format_usd(base_usd)),
+        ]
         if bonus_pct > Decimal("0"):
-            lines.append(f"• **Bonus cumulé :** 🔥 `+{bonus_pct:.1f}%` (+`{format_usd(bonus_usd)}`)")
-
-        lines.append(f"• **Total crédité :** 💵 **`{format_usd(total_usd)}`**")
-        lines.append(f"• **Nouveau solde :** 💳 `{format_usd(new_dollars)}`")
-        lines.append(f"• **Série active :** 🔥 **`{streak}`** heure(s) consécutive(s)")
-        lines.append("")
-        lines.append(f"⏱️ **Prochain créneau :** <t:{next_ts}:R> (<t:{next_ts}:t>)")
-        lines.append(f"🎯 **Fin de fenêtre combo :** <t:{combo_ts}:t> (<t:{combo_ts}:R>)")
+            lines.append(text_get(
+                ctx,
+                "g_hourly_bonus",
+                bonus=f"{bonus_pct:.1f}",
+                bonus_usd=format_usd(bonus_usd),
+            ))
+        lines.extend([
+            text_get(ctx, "g_hourly_total", total=format_usd(total_usd)),
+            text_get(ctx, "g_hourly_balance", balance=format_usd(new_dollars)),
+            text_get(ctx, "g_hourly_streak", streak=streak),
+            "",
+            text_get(ctx, "g_hourly_next", next_ts=next_ts),
+            text_get(ctx, "g_hourly_window", combo_ts=combo_ts),
+        ])
 
         embed = RootEmbed(ctx, "hourly", "\n".join(lines))
 
@@ -105,6 +110,8 @@ class Hourly(BaseGameCog):
                     interval_seconds=interval_seconds,
                     combo_lost=combo_lost,
                     is_first=is_first,
+                    step_bonus_pct=step_bonus_pct,
+                    new_dollars=new_dollars,
                 )
         except Exception:
             pass

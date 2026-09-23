@@ -8,10 +8,26 @@ Permet le suivi, la journalisation et l'audit anti-triche des récompenses horai
 - Calcul des métriques statistiques de dispersion et de risque d'automatisation (bot).
 """
 
+from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
 import math
 from typing import Any
+
+
+def _normalize_hourly_row(row: dict) -> dict:
+    """Normalise une ligne hourly_logs (Decimal, bool, types stables)."""
+    return {
+        "id": row.get("id"),
+        "discord_id": row["discord_id"],
+        "claimed_at": row.get("claimed_at"),
+        "interval_seconds": row.get("interval_seconds"),
+        "base_usd": Decimal(str(row.get("base_usd") or 0)),
+        "bonus_pct": Decimal(str(row.get("bonus_pct") or 0)),
+        "total_usd": Decimal(str(row.get("total_usd") or 0)),
+        "streak": int(row.get("streak") or 0),
+        "combo_lost": bool(row.get("combo_lost", 0)),
+    }
 
 
 class HourlyStatsDB:
@@ -49,7 +65,7 @@ class HourlyStatsDB:
 
     @staticmethod
     def get_summary(tx, limit_users: int = 50) -> dict[str, Any]:
-        """Retourne la synthèse générale des dernières 24h et le classement des joueurs.
+        """Retourne la synthèse de la période en cours (depuis la dernière purge de minuit).
 
         Returns:
             dict avec :
@@ -58,7 +74,7 @@ class HourlyStatsDB:
             - 'unique_players': int
             - 'top_users': list[dict]
         """
-        # Agrégation globale sur les dernières 24h
+        # Période courante : hourly_logs est purgée chaque minuit après envoi du rapport.
         global_stats = tx.one(
             """
             SELECT 
@@ -66,7 +82,6 @@ class HourlyStatsDB:
                 COALESCE(SUM(total_usd), 0.00) AS total_usd,
                 COUNT(DISTINCT discord_id) AS unique_players
             FROM hourly_logs
-            WHERE claimed_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
             """
         ) or {}
 
@@ -79,7 +94,6 @@ class HourlyStatsDB:
                 MAX(streak) AS max_streak,
                 MAX(bonus_pct) AS max_bonus_pct
             FROM hourly_logs
-            WHERE claimed_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
             GROUP BY discord_id
             ORDER BY claim_count DESC, total_usd DESC
             LIMIT %s
@@ -87,12 +101,96 @@ class HourlyStatsDB:
             (limit_users,),
         ) or []
 
+        recent_rows = tx.all(
+            """
+            SELECT id, discord_id, claimed_at, interval_seconds, base_usd, bonus_pct, total_usd, streak, combo_lost
+            FROM hourly_logs
+            ORDER BY claimed_at ASC
+            """
+        ) or []
+        recent_logs = [_normalize_hourly_row(r) for r in recent_rows]
+        grouped: dict[int, list[dict]] = defaultdict(list)
+        for row in recent_logs:
+            grouped[int(row["discord_id"])].append(row)
+
+        top_streaks = sorted(
+            (
+                {
+                    "discord_id": uid,
+                    "max_streak": max((r["streak"] for r in rows), default=0),
+                    "claim_count": len(rows),
+                }
+                for uid, rows in grouped.items()
+            ),
+            key=lambda item: (item["max_streak"], item["claim_count"]),
+            reverse=True,
+        )[:10]
+        top_bonuses = sorted(
+            (
+                {
+                    "discord_id": uid,
+                    "max_bonus_pct": max((r["bonus_pct"] for r in rows), default=Decimal("0")),
+                    "claim_count": len(rows),
+                }
+                for uid, rows in grouped.items()
+            ),
+            key=lambda item: (item["max_bonus_pct"], item["claim_count"]),
+            reverse=True,
+        )[:10]
+
+        suspects = []
+        for uid, rows in grouped.items():
+            metrics = calculate_player_hourly_metrics(rows)
+            if metrics["risk_level"] == "LOW":
+                continue
+            suspects.append({
+                "discord_id": uid,
+                "claim_count": metrics["claim_count"],
+                "risk_level": metrics["risk_level"],
+                "risk_badge": metrics["risk_badge"],
+                "regularity_pct": metrics["regularity_pct"],
+                "std_dev_sec": metrics["std_dev_sec"],
+                "alerts": list(metrics.get("alerts") or []),
+            })
+        suspects.sort(key=lambda item: (0 if item["risk_level"] == "HIGH" else 1, -item["claim_count"]))
+
         return {
             "total_claims": int(global_stats.get("total_claims") or 0),
             "total_usd": Decimal(str(global_stats.get("total_usd") or 0)),
             "unique_players": int(global_stats.get("unique_players") or 0),
             "top_users": top_users,
+            "top_streaks": top_streaks,
+            "top_bonuses": top_bonuses,
+            "suspects": suspects,
         }
+
+    @staticmethod
+    def reset(tx) -> None:
+        """Supprime l'historique hourly_logs après l'envoi réussi du rapport de minuit.
+
+        Le combo joueur (hourly_last_at, hourly_combo_bonus, hourly_streak) n'est pas touché.
+        """
+        tx.execute("DELETE FROM hourly_logs")
+
+    @staticmethod
+    def get_last_report_date(tx) -> str | None:
+        """Retourne la date (YYYY-MM-DD) du dernier rapport quotidien hourly consigné."""
+        row = tx.one("SELECT last_found_on FROM events WHERE event = 'daily_hourly_report'")
+        return row["last_found_on"] if row else None
+
+    @staticmethod
+    def set_last_report_date(tx, date_str: str, now_dt: datetime) -> None:
+        """Enregistre la date (YYYY-MM-DD) du dernier rapport quotidien hourly."""
+        tx.execute(
+            """
+            INSERT INTO events (event, next_at, last_found_on, last_reward)
+            VALUES ('daily_hourly_report', %s, %s, 0.00)
+            ON DUPLICATE KEY UPDATE
+                next_at = VALUES(next_at),
+                last_found_on = VALUES(last_found_on)
+            """,
+            (now_dt, date_str),
+        )
 
     @staticmethod
     def get_user_hourly_logs(tx, discord_id: int, limit: int = 50) -> list[dict]:
@@ -102,25 +200,13 @@ class HourlyStatsDB:
             SELECT id, discord_id, claimed_at, interval_seconds, base_usd, bonus_pct, total_usd, streak, combo_lost
             FROM hourly_logs
             WHERE discord_id = %s
-            ORDER BY claimed_at ASC
+            ORDER BY claimed_at DESC
             LIMIT %s
             """,
             (discord_id, limit),
         ) or []
-        return [
-            {
-                "id": r["id"],
-                "discord_id": r["discord_id"],
-                "claimed_at": r["claimed_at"],
-                "interval_seconds": r["interval_seconds"],
-                "base_usd": Decimal(str(r["base_usd"])),
-                "bonus_pct": Decimal(str(r["bonus_pct"])),
-                "total_usd": Decimal(str(r["total_usd"])),
-                "streak": int(r["streak"]),
-                "combo_lost": bool(r.get("combo_lost", 0)),
-            }
-            for r in rows
-        ]
+        # Les N plus récents, restitués du plus ancien au plus récent.
+        return list(reversed([_normalize_hourly_row(r) for r in rows]))
 
 
 def extract_hourly_intervals(logs: list[dict]) -> list[float]:

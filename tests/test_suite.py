@@ -171,6 +171,10 @@ class MockTransaction:
             row = self.events.get("daily_claim_report")
             return {"last_found_on": row.get("last_found_on")} if row else None
 
+        if "SELECT LAST_FOUND_ON FROM EVENTS WHERE EVENT = 'DAILY_HOURLY_REPORT'" in q:
+            row = self.events.get("daily_hourly_report")
+            return {"last_found_on": row.get("last_found_on")} if row else None
+
         if "TOTAL_CLAIMS" in q and "HOURLY_LOGS" in q:
             tot = len(self.hourly_logs)
             tot_usd = sum((Decimal(str(h["total_usd"])) for h in self.hourly_logs), Decimal("0.00"))
@@ -301,9 +305,12 @@ class MockTransaction:
         if "FROM HOURLY_LOGS WHERE DISCORD_ID =" in q:
             uid = params[0]
             matched = [dict(h) for h in self.hourly_logs if h["discord_id"] == uid]
-            matched.sort(key=lambda r: r["claimed_at"])
+            matched.sort(key=lambda r: r["claimed_at"], reverse=("DESC" in q))
             limit = params[1] if len(params) > 1 else 50
             return matched[:limit]
+
+        if "FROM HOURLY_LOGS" in q and "GROUP BY" not in q and "WHERE DISCORD_ID =" not in q:
+            return [dict(h) for h in self.hourly_logs]
 
         if "SELECT * FROM PVP_ATTACKS WHERE ATTACKER_ID =" in q:
             aid = int(params[0])
@@ -405,6 +412,15 @@ class MockTransaction:
             if "DAILY_CLAIM_REPORT" in q:
                 self.events["daily_claim_report"] = {
                     "event": "daily_claim_report",
+                    "next_at": params[0],
+                    "last_found_by": None,
+                    "last_found_on": params[1] if len(params) > 1 else None,
+                    "last_reward": Decimal("0.00"),
+                }
+                return 1
+            if "DAILY_HOURLY_REPORT" in q:
+                self.events["daily_hourly_report"] = {
+                    "event": "daily_hourly_report",
                     "next_at": params[0],
                     "last_found_by": None,
                     "last_found_on": params[1] if len(params) > 1 else None,
@@ -7830,7 +7846,7 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             "lang": "fr",
         }
 
-    async def test_hourly_first_claim(self):
+    async def test_hourly_first_time(self):
         """Premier /hourly sans historique : gain de base, bonus 0%, streak 1, pas de combo perdu."""
         res = await self.service.execute(self.actor, None, 'hourly')
         self.assertTrue(res['claimed'])
@@ -7852,7 +7868,7 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(player['hourly_last_at'], self.mock_db.now)
         self.assertEqual(len(self.mock_db.hourly_logs), 1)
 
-    async def test_hourly_cooldown_rejection(self):
+    async def test_hourly_cooldown(self):
         """Tentative de /hourly avant 1 heure (ex: 30 minutes) -> GameError('hourly_cooldown')."""
         await self.service.execute(self.actor, None, 'hourly')
         self.mock_db.now += timedelta(minutes=30)
@@ -7862,18 +7878,17 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.key, 'hourly_cooldown')
         self.assertEqual(ctx.exception.values.get('remaining_seconds'), 1800)
 
-    async def test_hourly_combo_accumulation(self):
-        """Exécution dans la fenêtre combo [60m, 80m] :
-        - 1er hourly à t=0
-        - 2e hourly à t=72m -> interval 72m -> bonus +8% (cumul 8%)
-        - 3e hourly à t=72+70m -> interval 70m -> bonus +10% (cumul 18%)
+    async def test_hourly_unlimited_combo(self):
+        """Les bonus d'étape s'additionnent sans plafond.
+        - 1er hourly à t=0 → 0 %
+        - 2e à +72 min → +8 % (cumul 8 %)
+        - 3e à +70 min → +10 % (cumul 18 %)
+        - 4e à +60 min → +20 % (cumul 38 %, au-delà de tout cap)
         """
-        # Claim 1 : t=0
         res1 = await self.service.execute(self.actor, None, 'hourly')
         self.assertEqual(res1['streak'], 1)
         self.assertEqual(res1['bonus_pct'], Decimal('0.00'))
 
-        # Claim 2 : t=72 min
         self.mock_db.now += timedelta(minutes=72)
         res2 = await self.service.execute(self.actor, None, 'hourly')
         self.assertFalse(res2['combo_lost'])
@@ -7883,7 +7898,6 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         expected2 = (res2['base_usd'] * Decimal('1.08')).quantize(Decimal('0.01'))
         self.assertEqual(res2['total_usd'], expected2)
 
-        # Claim 3 : t=72 + 70 min
         self.mock_db.now += timedelta(minutes=70)
         res3 = await self.service.execute(self.actor, None, 'hourly')
         self.assertFalse(res3['combo_lost'])
@@ -7893,30 +7907,86 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         expected3 = (res3['base_usd'] * Decimal('1.18')).quantize(Decimal('0.01'))
         self.assertEqual(res3['total_usd'], expected3)
 
-    async def test_hourly_combo_broken_after_window(self):
-        """Dépassement de la fenêtre (> 80 minutes) -> combo_lost=True, bonus retombe à 0%, streak retombe à 1."""
-        # Claim 1
+        self.mock_db.now += timedelta(minutes=60)
+        res4 = await self.service.execute(self.actor, None, 'hourly')
+        self.assertFalse(res4['combo_lost'])
+        self.assertEqual(res4['streak'], 4)
+        self.assertEqual(res4['step_bonus_pct'], Decimal('20.00'))
+        self.assertEqual(res4['bonus_pct'], Decimal('38.00'))
+        expected4 = (res4['base_usd'] * Decimal('1.38')).quantize(Decimal('0.01'))
+        self.assertEqual(res4['total_usd'], expected4)
+
+    async def test_hourly_combo_reset_after_80min(self):
+        """À 80 min pile le combo tient (+0 %). Au-delà, il est réinitialisé."""
         await self.service.execute(self.actor, None, 'hourly')
-        # Claim 2 dans la fenêtre (+65 min -> +15%)
         self.mock_db.now += timedelta(minutes=65)
         res2 = await self.service.execute(self.actor, None, 'hourly')
         self.assertEqual(res2['bonus_pct'], Decimal('15.00'))
         self.assertEqual(res2['streak'], 2)
 
-        # Claim 3 en retard (+85 min > 80 min)
-        self.mock_db.now += timedelta(minutes=85)
+        self.mock_db.now += timedelta(minutes=80)
+        res_edge = await self.service.execute(self.actor, None, 'hourly')
+        self.assertFalse(res_edge['combo_lost'])
+        self.assertEqual(res_edge['streak'], 3)
+        self.assertEqual(res_edge['step_bonus_pct'], Decimal('0.00'))
+        self.assertEqual(res_edge['bonus_pct'], Decimal('15.00'))
+
+        self.mock_db.now += timedelta(minutes=81)
         res3 = await self.service.execute(self.actor, None, 'hourly')
         self.assertTrue(res3['combo_lost'])
         self.assertEqual(res3['streak'], 1)
         self.assertEqual(res3['bonus_pct'], Decimal('0.00'))
         self.assertEqual(res3['total_usd'], res3['base_usd'])
 
-    async def test_hourly_stats_db_and_regularity_metrics(self):
-        """Vérifie HourlyStatsDB.get_summary, get_user_hourly_logs et calculate_player_hourly_metrics."""
+    async def test_hourly_logging(self):
+        """Le cog joueur affiche le gain et journalise l'exécution via Logger.log_hourly."""
+        from commands.game.hourly import Hourly
+
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_bot.discord_logger = MagicMock()
+        mock_bot.discord_logger.log_hourly = AsyncMock()
+
+        hourly_cog = Hourly(mock_bot)
+        hourly_cog._prefetch_lang = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.interaction = None
+        mock_ctx.locale = None
+        mock_ctx.prefix = "!"
+        mock_ctx.author.id = self.actor
+        mock_ctx.author.name = "TestPlayer"
+        mock_ctx.author.mention = f"<@{self.actor}>"
+        mock_ctx.guild = None
+        mock_ctx.send = AsyncMock()
+
+        await hourly_cog.prefix_hourly.callback(hourly_cog, mock_ctx)
+        mock_ctx.send.assert_called_once()
+        sent_embed = mock_ctx.send.call_args[1]['embed']
+        self.assertIn("Base reward", sent_embed.description)
+        mock_bot.discord_logger.log_hourly.assert_called_once()
+        logged = mock_bot.discord_logger.log_hourly.await_args.kwargs
+        self.assertEqual(logged["streak"], 1)
+        self.assertFalse(logged["combo_lost"])
+        self.assertTrue(logged["is_first"])
+        self.assertEqual(logged["bonus_pct"], Decimal("0.00"))
+        self.assertEqual(logged["step_bonus_pct"], Decimal("0.00"))
+        self.assertEqual(logged["total_usd"], logged["base_usd"])
+        self.assertEqual(logged["new_dollars"], Decimal("100.00") + logged["base_usd"])
+
+    async def test_hourly_audit_metrics(self):
+        """Métriques d'audit, régularité bot, et rendu de !hourlyaudit."""
+        from commands.admin.hourly_moderation import HourlyModeration
         from game.db.hourly_stats import HourlyStatsDB, calculate_player_hourly_metrics
 
-        # Simulation de 5 logs parfaitement cadencés à 3600 secondes pour tester l'anti-bot
         bot_user = 9990001
+        self.mock_db.players[bot_user] = {
+            "discord_id": bot_user,
+            "dollars": Decimal("0.00"),
+            "hourly_last_at": None,
+            "hourly_combo_bonus": Decimal("12.00"),
+            "hourly_streak": 5,
+            "lang": "fr",
+        }
         self.mock_db.hourly_logs.clear()
         base_time = datetime(2026, 1, 1, 0, 0, 0)
         for i in range(5):
@@ -7938,9 +8008,12 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary['unique_players'], 1)
         self.assertEqual(summary['total_usd'], Decimal("250.00"))
         self.assertEqual(len(summary['top_users']), 1)
+        self.assertEqual(summary['suspects'][0]['discord_id'], bot_user)
+        self.assertEqual(summary['suspects'][0]['risk_level'], 'HIGH')
 
         user_logs = self.mock_db.run_sync(lambda tx: HourlyStatsDB.get_user_hourly_logs(tx, discord_id=bot_user, limit=50), readonly=True)
         self.assertEqual(len(user_logs), 5)
+        self.assertLess(user_logs[0]['claimed_at'], user_logs[-1]['claimed_at'])
 
         metrics = calculate_player_hourly_metrics(user_logs)
         self.assertEqual(metrics['intervals_count'], 4)
@@ -7949,56 +8022,128 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(metrics['risk_level'], 'HIGH')
         self.assertGreater(len(metrics['alerts']), 0)
 
-    async def test_hourly_cog_and_moderation_cog(self):
-        """Vérifie le fonctionnement du cog Hourly et du cog HourlyModeration."""
-        from commands.game.hourly import Hourly
-        from commands.admin.hourly_moderation import HourlyModeration
-
         mock_bot = MagicMock()
         mock_bot.root_service = self.service
         mock_bot.discord_logger = MagicMock()
-        mock_bot.discord_logger.log_hourly = AsyncMock()
-
-        hourly_cog = Hourly(mock_bot)
-        hourly_cog._prefetch_lang = AsyncMock()
-        mock_ctx = MagicMock()
-        mock_ctx.interaction = None
-        mock_ctx.prefix = "!"
-        mock_ctx.author.id = self.actor
-        mock_ctx.author.name = "TestPlayer"
-        mock_ctx.author.mention = f"<@{self.actor}>"
-        mock_ctx.guild = None
-        mock_ctx.send = AsyncMock()
-
-        await hourly_cog.prefix_hourly.callback(hourly_cog, mock_ctx)
-        mock_ctx.send.assert_called_once()
-        sent_embed = mock_ctx.send.call_args[1]['embed']
-        self.assertIn("Gain de base", sent_embed.description)
-        mock_bot.discord_logger.log_hourly.assert_called_once()
-
-        # Test HourlyModeration
-        mod_cog = HourlyModeration(mock_bot)
+        with patch.object(HourlyModeration, "daily_hourly_report_loop"):
+            mod_cog = HourlyModeration(mock_bot)
         mod_cog.check.is_op = AsyncMock(return_value=True)
         mod_ctx = MagicMock()
         mod_ctx.send = AsyncMock()
-        mod_ctx.guild = None
         mock_user = MagicMock()
-        mock_user.id = self.actor
-        mock_user.name = "TestPlayer"
-        mock_user.mention = f"<@{self.actor}>"
+        mock_user.id = bot_user
+        mock_user.name = "BotPlayer"
+        mock_user.mention = f"<@{bot_user}>"
         mock_user.display_avatar.url = "http://example.com/avatar.png"
-        mock_bot.fetch_user = AsyncMock(return_value=mock_user)
 
-        await mod_cog.manual_hourly_report.callback(mod_cog, mod_ctx)
-        mod_ctx.send.assert_called_once()
-        report_embed = mod_ctx.send.call_args[1]['embed']
-        self.assertIn("Rapport de Modération", report_embed.title)
-
-        mod_ctx.send.reset_mock()
         await mod_cog.audit_player_hourly.callback(mod_cog, mod_ctx, user=mock_user)
         mod_ctx.send.assert_called_once()
         audit_embed = mod_ctx.send.call_args[1]['embed']
         self.assertIn("Audit Anti-Triche Hourly", audit_embed.title)
+        field_names = [field.name for field in audit_embed.fields]
+        self.assertIn("Série actuelle", field_names)
+        self.assertIn("Chronologie des 10 derniers claims", field_names)
+        blob = "\n".join(field.value for field in audit_embed.fields)
+        self.assertIn("ÉLEVÉ", blob)
+        self.assertIn("`5`", blob)
+
+    async def test_tophourly_report(self):
+        """!tophourly envoie le rapport au salon de logs puis supprime hourly_logs."""
+        from commands.admin.hourly_moderation import HourlyModeration
+
+        bot_user = 9990001
+        last_at = datetime(2026, 1, 1, 4, 0, 0)
+        self.mock_db.players[bot_user] = {
+            "discord_id": bot_user,
+            "dollars": Decimal("200.00"),
+            "hourly_last_at": last_at,
+            "hourly_combo_bonus": Decimal("18.00"),
+            "hourly_streak": 4,
+            "lang": "fr",
+        }
+        base_time = datetime(2026, 1, 1, 0, 0, 0)
+        for i in range(5):
+            self.mock_db.hourly_logs.append({
+                "id": i + 1,
+                "discord_id": bot_user,
+                "claimed_at": base_time + timedelta(seconds=3601 * i),
+                "interval_seconds": 3601 if i > 0 else None,
+                "base_usd": Decimal("40.00"),
+                "bonus_pct": Decimal("8.00"),
+                "total_usd": Decimal("43.20"),
+                "streak": i + 1,
+                "combo_lost": False,
+            })
+
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_bot.discord_logger = MagicMock()
+        mock_bot.discord_logger.log_daily_hourly_report = AsyncMock()
+        with patch.object(HourlyModeration, "daily_hourly_report_loop"):
+            mod_cog = HourlyModeration(mock_bot)
+        mod_cog.check.is_op = AsyncMock(return_value=True)
+        mod_ctx = MagicMock()
+        mod_ctx.send = AsyncMock()
+
+        await mod_cog.manual_hourly_report.callback(mod_cog, mod_ctx)
+
+        messages = [call.args[0] for call in mod_ctx.send.await_args_list]
+        self.assertTrue(any("Génération" in msg for msg in messages))
+        self.assertTrue(any("Historique supprimé" in msg for msg in messages))
+        summary = mock_bot.discord_logger.log_daily_hourly_report.await_args.args[0]
+        self.assertEqual(summary["total_claims"], 5)
+        self.assertEqual(summary["suspects"][0]["discord_id"], bot_user)
+        self.assertEqual(summary["suspects"][0]["risk_level"], "HIGH")
+        self.assertEqual(self.mock_db.hourly_logs, [])
+        player = self.mock_db.players[bot_user]
+        self.assertEqual(player["hourly_streak"], 4)
+        self.assertEqual(player["hourly_combo_bonus"], Decimal("18.00"))
+        self.assertEqual(player["hourly_last_at"], last_at)
+        self.assertIsNotNone(self.mock_db.events.get("daily_hourly_report"))
+
+    async def test_tophourly_report_failure_keeps_history(self):
+        """Si l'envoi Discord échoue, hourly_logs et le combo restent intacts."""
+        from commands.admin.hourly_moderation import HourlyModeration
+
+        bot_user = 9990001
+        self.mock_db.players[bot_user] = {
+            "discord_id": bot_user,
+            "dollars": Decimal("50.00"),
+            "hourly_last_at": datetime(2026, 1, 1, 1, 0, 0),
+            "hourly_combo_bonus": Decimal("8.00"),
+            "hourly_streak": 2,
+            "lang": "fr",
+        }
+        self.mock_db.hourly_logs.append({
+            "id": 1,
+            "discord_id": bot_user,
+            "claimed_at": datetime(2026, 1, 1, 1, 0, 0),
+            "interval_seconds": None,
+            "base_usd": Decimal("40.00"),
+            "bonus_pct": Decimal("0.00"),
+            "total_usd": Decimal("40.00"),
+            "streak": 1,
+            "combo_lost": False,
+        })
+
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_bot.discord_logger = MagicMock()
+        mock_bot.discord_logger.log_daily_hourly_report = AsyncMock(side_effect=RuntimeError("Discord API Error"))
+        with patch.object(HourlyModeration, "daily_hourly_report_loop"):
+            mod_cog = HourlyModeration(mock_bot)
+        mod_cog.check.is_op = AsyncMock(return_value=True)
+        mod_ctx = MagicMock()
+        mod_ctx.send = AsyncMock()
+
+        await mod_cog.manual_hourly_report.callback(mod_cog, mod_ctx)
+
+        self.assertEqual(len(self.mock_db.hourly_logs), 1)
+        self.assertEqual(self.mock_db.players[bot_user]["hourly_streak"], 2)
+        self.assertEqual(self.mock_db.players[bot_user]["hourly_combo_bonus"], Decimal("8.00"))
+        self.assertNotIn("daily_hourly_report", self.mock_db.events)
+        messages = [call.args[0] for call in mod_ctx.send.await_args_list]
+        self.assertTrue(any("n'a pas été supprimé" in msg for msg in messages))
 
 
 if __name__ == '__main__':

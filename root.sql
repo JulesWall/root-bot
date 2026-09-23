@@ -367,10 +367,7 @@ CREATE TABLE IF NOT EXISTS hourly_logs (
 -- ALTER TABLE daily_claim_logs ADD INDEX idx_daily_claims_auto (is_auto);
 -- ====================================================================
 -- MIGRATION (installations existantes) : récompense horaire (/hourly).
--- ALTER TABLE players ADD COLUMN hourly_last_at DATETIME(6) NULL DEFAULT NULL;
--- ALTER TABLE players ADD COLUMN hourly_combo_bonus DECIMAL(10, 2) NOT NULL DEFAULT 0.00;
--- ALTER TABLE players ADD COLUMN hourly_streak INT UNSIGNED NOT NULL DEFAULT 0;
--- Appliquer CREATE TABLE IF NOT EXISTS hourly_logs (...);
+-- Appliquer migrations/003_hourly.sql sur une base déjà déployée.
 -- ====================================================================
 
 

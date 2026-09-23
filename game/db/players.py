@@ -1214,10 +1214,11 @@ class Player:
 
             # 2. Vérification de la fenêtre de combo (60m à 80m)
             if interval_seconds <= max_combo_sec:
+                # t = minutes entières écoulées. À 60 min : +20 %, à 80 min : +0 %.
                 t_min = interval_seconds // 60
                 step_pct = max(0, 20 - (t_min - 60))
-                step_bonus = Decimal(str(step_pct))
-                new_combo_bonus = current_combo_bonus + step_bonus
+                step_bonus = Decimal(step_pct).quantize(Decimal('0.01'))
+                new_combo_bonus = (current_combo_bonus + step_bonus).quantize(Decimal('0.01'))
                 new_streak = current_streak + 1
             else:
                 combo_lost = True

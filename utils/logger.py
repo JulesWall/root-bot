@@ -32,9 +32,16 @@ LOG_CHANNELS = {
     "moderation_trade": "LOG_MODERATION_TRADE_CHANNEL_ID",
     "moderation_claim_stats": "LOG_MODERATION_CLAIM_STATS_CHANNEL_ID",
     "moderation_hourly": "LOG_MODERATION_HOURLY_CHANNEL_ID",
+    "moderation_hourly_stats": "LOG_MODERATION_HOURLY_STATS_CHANNEL_ID",
 }
 
 logger = logging.getLogger(__name__)
+
+_HOURLY_RISK_LABELS = {
+    "LOW": "FAIBLE",
+    "MEDIUM": "MOYEN",
+    "HIGH": "ÉLEVÉ",
+}
 
 
 def _format_user_compact(user: discord.User | discord.Member) -> str:
@@ -282,6 +289,8 @@ class Logger:
         interval_seconds: int | None = None,
         combo_lost: bool = False,
         is_first: bool = False,
+        step_bonus_pct: Decimal | None = None,
+        new_dollars: Decimal | None = None,
     ):
         """Consigne une réclamation horaire (/hourly) dans le salon de modération dédié."""
         from utils.text import format_usd
@@ -302,17 +311,23 @@ class Logger:
         lines = [
             f"**Joueur :** {_format_user_compact(author)} ({locale_str})",
             f"**Gain de base :** 💵 `{format_usd(base_usd)}`",
-            f"**Bonus appliqué :** `{bonus_pct:+.2f}%`",
-            f"**Gain final crédité :** 💵 `{format_usd(total_usd)}`",
-            f"**Série (Streak) :** 🔥 `{streak}`",
         ]
+        if step_bonus_pct is not None:
+            lines.append(f"**Bonus d'étape :** `+{Decimal(str(step_bonus_pct)):.2f}%`")
+        lines.extend([
+            f"**Bonus total cumulé :** `{Decimal(str(bonus_pct)):+.2f}%`",
+            f"**Gain final crédité :** 💵 `{format_usd(total_usd)}`",
+        ])
+        if new_dollars is not None:
+            lines.append(f"**Nouveau solde :** 💳 `{format_usd(new_dollars)}`")
+        lines.append(f"**Série (Streak) :** 🔥 `{streak}`")
 
         if is_first:
-            lines.append("**Statut combo :** 🟢 Première réclamation (série initiée)")
+            lines.append("**Statut combo :** 🟢 Initialisé")
         elif combo_lost:
-            lines.append("**Statut combo :** ⚠️ **Combo Brisé** (dépassement des 80 min)")
+            lines.append("**Statut combo :** ⚠️ **Combo Brisé**")
         else:
-            lines.append("**Statut combo :** ⚡ Combo maintenu dans le créneau")
+            lines.append("**Statut combo :** ⚡ Actif")
 
         if interval_seconds is not None:
             lines.append(f"**Intervalle depuis le dernier claim :** `{format_duration(interval_seconds)}`")
@@ -332,8 +347,26 @@ class Logger:
         await self._send_embed("moderation_hourly", embed)
 
     async def log_daily_hourly_report(self, summary: dict):
-        """Envoie le rapport 24h des récompenses horaires (/hourly) dans le salon de modération."""
+        """Envoie le rapport quotidien /hourly dans LOG_MODERATION_HOURLY_STATS_CHANNEL_ID.
+
+        Toute erreur est propagée pour que l'historique ne soit pas purgé si l'envoi échoue.
+        """
         from utils.text import format_usd
+        from utils.time_format import format_duration
+
+        channel_id = self.channel_id("moderation_hourly_stats")
+        if channel_id is None:
+            logger.warning("LOG_MODERATION_HOURLY_STATS_CHANNEL_ID non configuré : rapport hourly 24h non envoyé.")
+            raise RuntimeError("LOG_MODERATION_HOURLY_STATS_CHANNEL_ID non configuré.")
+
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception as exc:
+                raise RuntimeError(f"Impossible de récupérer le salon hourly {channel_id}: {exc}") from exc
+        if not channel or not callable(getattr(channel, "send", None)):
+            raise RuntimeError(f"Salon invalide ou inaccessible pour le rapport hourly ({channel_id}).")
 
         total_claims = summary.get("total_claims", 0)
         total_usd = summary.get("total_usd", Decimal("0"))
@@ -341,7 +374,7 @@ class Logger:
         top_users = summary.get("top_users", [])
 
         embed = discord.Embed(
-            title="⏱️ Rapport de Modération Hourly (24h)",
+            title="⏱️ Rapport Quotidien des Récompenses Horaires (24h)",
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow(),
         )
@@ -358,13 +391,49 @@ class Logger:
                 cnt = u["claim_count"]
                 u_usd = format_usd(u["total_usd"])
                 streak = u.get("max_streak", 1)
-                bonus = u.get("max_bonus_pct", Decimal("0"))
-                rows.append(f"**{i}.** <@{uid}> (`{uid}`) — `{cnt}` claims (🔥 `{streak}` · `{bonus:+.1f}%`) — `{u_usd}`")
+                bonus = Decimal(str(u.get("max_bonus_pct", 0)))
+                rows.append(f"**{i}.** <@{uid}> (`{uid}`) — `{cnt}` claims (🔥 `{streak}` · `+{bonus:.1f}%`) — `{u_usd}`")
             embed.add_field(name="🏆 Top Joueurs Assidus (24h)", value="\n".join(rows), inline=False)
         else:
-            embed.add_field(name="🏆 Top Joueurs Assidus (24h)", value="*Aucun claim enregistré sur les dernières 24h.*", inline=False)
+            embed.add_field(name="🏆 Top Joueurs Assidus (24h)", value="*Aucun claim horaire enregistré sur cette période.*", inline=False)
 
-        await self._send_embed("moderation_hourly", embed)
+        top_streaks = summary.get("top_streaks") or []
+        if top_streaks:
+            streak_rows = [
+                f"**{i}.** <@{s['discord_id']}> — 🔥 `{s['max_streak']}` (`{s['claim_count']}` claims)"
+                for i, s in enumerate(top_streaks[:5], 1)
+            ]
+            embed.add_field(name="🔥 Plus longues séries", value="\n".join(streak_rows), inline=True)
+
+        top_bonuses = summary.get("top_bonuses") or []
+        if top_bonuses:
+            bonus_rows = [
+                f"**{i}.** <@{b['discord_id']}> — ⚡ `+{Decimal(str(b['max_bonus_pct'])):.1f}%`"
+                for i, b in enumerate(top_bonuses[:5], 1)
+            ]
+            embed.add_field(name="⚡ Plus hauts bonus cumulés", value="\n".join(bonus_rows), inline=True)
+
+        suspects = summary.get("suspects") or []
+        if suspects:
+            rows = []
+            for s in suspects[:10]:
+                uid = s["discord_id"]
+                badge = s.get("risk_badge", "🟡")
+                level = _HOURLY_RISK_LABELS.get(s.get("risk_level"), s.get("risk_level", "?"))
+                reg = s.get("regularity_pct")
+                reg_str = f"{reg:.1f}%" if reg is not None else "N/A"
+                std = s.get("std_dev_sec")
+                std_str = f"± {format_duration(std)}" if std is not None else "N/A"
+                rows.append(
+                    f"{badge} <@{uid}> (`{uid}`) — **{level}** · `{s.get('claim_count', 0)}` claims"
+                    f" · constance `{reg_str}` · dispersion `{std_str}`"
+                )
+            embed.add_field(name="⚠️ Profils suspects", value="\n".join(rows), inline=False)
+        else:
+            embed.add_field(name="⚠️ Profils suspects", value="*Aucun profil à intervalle anormalement constant.*", inline=False)
+
+        embed.set_footer(text="Root OS • Hourly 24h")
+        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
     async def log_guild_join(self, guild: discord.Guild, total_guilds: int):
         """Consigne l'arrivée du bot sur un serveur en format compact."""
