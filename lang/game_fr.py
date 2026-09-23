@@ -51,6 +51,7 @@ text = {
     'g_error_self_target': '> 🚫 **Cible invalide** · Tu ne peux pas cibler ton propre réseau.',
     'g_error_cooldown': '> ⏱️ **Délai d’attente** · Vous ne pouvez pas encore attribuer de point de réputation. Revenez dans **{time}**.',
     'g_error_claim_cooldown': '> ⏱️ **Délai d’attente** · Tu viens de réclamer ton minage. Réessaie dans **{remaining}**.',
+    'g_error_hourly_cooldown': '> ⏱️ **Délai d’attente** · Tu as déjà réclamé ta récompense horaire. Réessaie dans **{remaining}**.',
     'g_error_forbidden': '> ⛔ **Accès refusé** · Vous n’avez pas l’autorisation d’exécuter cette action.',
     'g_error_guild_required': '> 🏢 **Serveur requis** · Cette action doit être effectuée au sein d’un serveur.',
     'g_error_target_not_registered': '> 👤 **Joueur non inscrit** · Cet utilisateur n’est pas encore inscrit sur Root !',
@@ -308,6 +309,7 @@ descriptions = {
     'compile': 'Produire un nombre d\'ATK choisi à partir du débit de tes modules d\'attaque.',
     'scan': 'Scanner le réseau d\'un joueur pour découvrir son identifiant secret.',
     'hack': 'Lancer une cyberattaque PvP contre un réseau adverse.',
+    'hourly': 'Réclamer sa récompense horaire en USD avec bonus de combo.',
 }
 
 labels = {
@@ -334,6 +336,7 @@ labels = {
     'act_buy': '🛒 Achat de Composant',
     'act_upgrade': '🧱 Amélioration Pare-feu',
     'act_claim': '🪙 Récolte de Minage',
+    'act_hourly': '⏱️ Récompense Horaire',
     'act_reputation': '⭐ Attribution de Réputation',
     'act_top': '🏆 Classement Général',
     'act_hash': '🧩 Hash Challenge',

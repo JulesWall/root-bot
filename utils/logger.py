@@ -31,6 +31,7 @@ LOG_CHANNELS = {
     "blockchain": "LOG_BLOCKCHAIN_CHANNEL_ID",
     "moderation_trade": "LOG_MODERATION_TRADE_CHANNEL_ID",
     "moderation_claim_stats": "LOG_MODERATION_CLAIM_STATS_CHANNEL_ID",
+    "moderation_hourly": "LOG_MODERATION_HOURLY_CHANNEL_ID",
 }
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,8 @@ class Logger:
                     raw = os.getenv('LOG_PUBLIC_CHANNEL_ID')
                 elif log_key == 'moderation_claim_stats':
                     raw = os.getenv('LOG_MODERATION_EVENT_STATS_CHANNEL_ID') or os.getenv('LOG_MODERATION_CLAIM_CHANNEL_ID') or os.getenv('LOG_MODERATION_CHANNEL_ID')
+                elif log_key == 'moderation_hourly':
+                    raw = os.getenv('LOG_MODERATION_CLAIM_CHANNEL_ID') or os.getenv('LOG_MODERATION_CHANNEL_ID')
             value = int(raw or 0)
             return value if value > 0 else None
         except ValueError:
@@ -267,6 +270,101 @@ class Logger:
             timestamp=discord.utils.utcnow(),
         )
         await self._send_embed("moderation_claim", embed)
+
+    async def log_hourly(
+        self,
+        ctx,
+        user: discord.User | discord.Member,
+        base_usd: Decimal,
+        bonus_pct: Decimal,
+        total_usd: Decimal,
+        streak: int,
+        interval_seconds: int | None = None,
+        combo_lost: bool = False,
+        is_first: bool = False,
+    ):
+        """Consigne une réclamation horaire (/hourly) dans le salon de modération dédié."""
+        from utils.text import format_usd
+        from utils.time_format import format_duration
+
+        if isinstance(ctx, (discord.User, discord.Member)):
+            author = ctx
+            guild = getattr(ctx, "guild", None)
+            locale_str = "fr"
+        else:
+            author = getattr(ctx, "author", None) or getattr(ctx, "user", None) or user
+            guild = getattr(ctx, "guild", None)
+            locale_str = _get_client_locale(ctx) if ctx else "fr"
+
+        if not author:
+            return
+
+        lines = [
+            f"**Joueur :** {_format_user_compact(author)} ({locale_str})",
+            f"**Gain de base :** 💵 `{format_usd(base_usd)}`",
+            f"**Bonus appliqué :** `{bonus_pct:+.2f}%`",
+            f"**Gain final crédité :** 💵 `{format_usd(total_usd)}`",
+            f"**Série (Streak) :** 🔥 `{streak}`",
+        ]
+
+        if is_first:
+            lines.append("**Statut combo :** 🟢 Première réclamation (série initiée)")
+        elif combo_lost:
+            lines.append("**Statut combo :** ⚠️ **Combo Brisé** (dépassement des 80 min)")
+        else:
+            lines.append("**Statut combo :** ⚡ Combo maintenu dans le créneau")
+
+        if interval_seconds is not None:
+            lines.append(f"**Intervalle depuis le dernier claim :** `{format_duration(interval_seconds)}`")
+
+        if guild:
+            owner_id = getattr(guild, "owner_id", None)
+            owner_str = f"<@{owner_id}> (`{owner_id}`)" if owner_id else "Inconnu"
+            lines.append(f"**Serveur :** {guild.name} (`{guild.id}`) · **Owner :** {owner_str}")
+
+        color = discord.Color.gold() if not combo_lost else discord.Color.orange()
+        embed = discord.Embed(
+            title="⏱️ Récompense Horaire (/hourly)",
+            description="\n".join(lines),
+            color=color,
+            timestamp=discord.utils.utcnow(),
+        )
+        await self._send_embed("moderation_hourly", embed)
+
+    async def log_daily_hourly_report(self, summary: dict):
+        """Envoie le rapport 24h des récompenses horaires (/hourly) dans le salon de modération."""
+        from utils.text import format_usd
+
+        total_claims = summary.get("total_claims", 0)
+        total_usd = summary.get("total_usd", Decimal("0"))
+        unique_players = summary.get("unique_players", 0)
+        top_users = summary.get("top_users", [])
+
+        embed = discord.Embed(
+            title="⏱️ Rapport de Modération Hourly (24h)",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.description = (
+            f"**Total récoltes :** `{total_claims}` claims\n"
+            f"**Joueurs uniques :** `{unique_players}` joueurs\n"
+            f"**USD distribués :** 💵 `{format_usd(total_usd)}`\n"
+        )
+
+        if top_users:
+            rows = []
+            for i, u in enumerate(top_users[:15], 1):
+                uid = u["discord_id"]
+                cnt = u["claim_count"]
+                u_usd = format_usd(u["total_usd"])
+                streak = u.get("max_streak", 1)
+                bonus = u.get("max_bonus_pct", Decimal("0"))
+                rows.append(f"**{i}.** <@{uid}> (`{uid}`) — `{cnt}` claims (🔥 `{streak}` · `{bonus:+.1f}%`) — `{u_usd}`")
+            embed.add_field(name="🏆 Top Joueurs Assidus (24h)", value="\n".join(rows), inline=False)
+        else:
+            embed.add_field(name="🏆 Top Joueurs Assidus (24h)", value="*Aucun claim enregistré sur les dernières 24h.*", inline=False)
+
+        await self._send_embed("moderation_hourly", embed)
 
     async def log_guild_join(self, guild: discord.Guild, total_guilds: int):
         """Consigne l'arrivée du bot sur un serveur en format compact."""

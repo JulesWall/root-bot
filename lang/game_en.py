@@ -51,6 +51,7 @@ text = {
     'g_error_self_target': '> 🚫 **Invalid Target** · You cannot target your own network.',
     'g_error_cooldown': '> ⏱️ **Cooldown Active** · You cannot award reputation yet. Please return in **{time}**.',
     'g_error_claim_cooldown': '> ⏱️ **Cooldown Active** · You just claimed your mining. Try again in **{remaining}**.',
+    'g_error_hourly_cooldown': '> ⏱️ **Cooldown Active** · You have already claimed your hourly reward. Try again in **{remaining}**.',
     'g_error_forbidden': '> ⛔ **Access Denied** · You do not have permission to perform this action.',
     'g_error_guild_required': '> 🏢 **Server Required** · This action must be performed within a server.',
     'g_error_target_not_registered': '> 👤 **Unregistered Player** · This user is not registered on Root yet!',
@@ -308,6 +309,7 @@ descriptions = {
     'compile': 'Produce a chosen amount of ATK from your attack module throughput.',
     'scan': 'Scan a player\'s network to discover their secret identifier.',
     'hack': 'Launch a PvP cyberattack against an enemy network.',
+    'hourly': 'Claim your hourly USD reward with streak combo bonus.',
 }
 
 labels = {
@@ -334,6 +336,7 @@ labels = {
     'act_buy': '🛒 Component Purchase',
     'act_upgrade': '🧱 Firewall Upgrade',
     'act_claim': '🪙 Mining Harvest',
+    'act_hourly': '⏱️ Hourly Reward',
     'act_reputation': '⭐ Reputation Award',
     'act_top': '🏆 Global Leaderboard',
     'act_hash': '🧩 Hash Challenge',

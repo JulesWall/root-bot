@@ -36,6 +36,7 @@ class RootService:
         'network', 'buy', 'upgrade', 'reputation', 'top', 'set_language',
         'hash', 'pin', 'event', 'decode', 'anomaly', 'buffer', 'signal',
         'packet', 'trade', 'claim', 'claim_auto', 'claim_cancel', 'convert', 'compile', 'scan', 'hack',
+        'hourly',
     }
 
     def __init__(self, database=None):
@@ -255,6 +256,8 @@ class RootService:
             return Player.upgrade(tx, actor, **args)
         elif method == 'claim':
             return Player.claim(tx, actor)
+        elif method == 'hourly':
+            return Player.hourly(tx, actor)
         elif method == 'claim_auto':
             return Player.start_autoclaim(tx, actor, count=args.get('count', 'all'))
         elif method == 'claim_cancel':

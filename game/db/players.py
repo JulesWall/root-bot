@@ -11,11 +11,13 @@ Ce module implémente les classes d'accès aux données (DAO / Repository) et la
 
 from datetime import timedelta, timezone
 from decimal import Decimal, InvalidOperation
+import random
 
 from game.db.consequence import ConsequenceDB
 from game.db.daily_claim_stats import DailyClaimStatsDB
 from game.db.database import Database, player_lock_name
 from game.db.hack import HackDB
+from game.db.hourly_stats import HourlyStatsDB
 from game.db.pvp import PvpDB
 from game.db.secret_ids import (
     ensure_player_secret,
@@ -164,6 +166,7 @@ class UpdatePlayer:
             'mining_buffer', 'mining_last_update_at', 'mining_last_claim_at',
             'secret_id', 'attack_points',
             'autoclaim_credits', 'autoclaim_active',
+            'hourly_last_at', 'hourly_combo_bonus', 'hourly_streak',
         } | {f'{kind}_t{tier}' for kind in ('mining', 'attack', 'bay_defense') for tier in range(1, 7)}
 
         if not values or any(key not in allowed for key in values):
@@ -1160,4 +1163,119 @@ class Player:
             'receive_rtm': r_rtm,
             'initiator_lang': init_p.get('lang'),
             'target_lang': target_p.get('lang'),
+        }
+
+    @staticmethod
+    def hourly(tx, actor: int) -> dict:
+        """Réclame la récompense horaire (30 à 90 USD) avec bonus de combo incitatif.
+
+        Règles :
+        - Cooldown de 60 minutes : lève GameError('hourly_cooldown') si appelé trop tôt.
+        - Fenêtre de combo de 20 minutes (entre 60m et 80m après le précédent claim) :
+          Bonus étape = (20 - (temps_en_minutes - 60))%.
+          Ce bonus s'ajoute au bonus cumulé existant (sans limite de plafond).
+          Série incrémentée de 1.
+        - Si > 80 minutes : combo brisé, bonus réinitialisé à 0%, série revient à 1, gain de base seul.
+        - Si première exécution : gain de base, bonus 0%, série 1.
+        - Enregistre l'événement dans hourly_logs pour audit et surveillance.
+        """
+        p = PlayerData.get(tx, actor)
+
+        config = MathConfig.load().get('hourly', {})
+        reward_min = int(config.get('reward_min_usd', 30))
+        reward_max = int(config.get('reward_max_usd', 90))
+        cooldown_sec = int(config.get('cooldown_minutes', 60)) * 60
+        combo_window_sec = int(config.get('combo_window_minutes', 20)) * 60
+        max_combo_sec = cooldown_sec + combo_window_sec  # 80 min = 4800 s
+
+        last_hourly = p.get('hourly_last_at')
+        current_combo_bonus = Decimal(str(p.get('hourly_combo_bonus', 0) or 0))
+        current_streak = int(p.get('hourly_streak', 0) or 0)
+
+        interval_seconds = None
+        step_bonus = Decimal('0.00')
+        combo_lost = False
+        is_first = (last_hourly is None)
+
+        if not is_first:
+            ref, now_ref = last_hourly, tx.now
+            if getattr(ref, 'tzinfo', None) is not None and getattr(now_ref, 'tzinfo', None) is None:
+                now_ref = now_ref.replace(tzinfo=timezone.utc)
+            elif getattr(ref, 'tzinfo', None) is None and getattr(now_ref, 'tzinfo', None) is not None:
+                ref = ref.replace(tzinfo=now_ref.tzinfo)
+            elapsed = (now_ref - ref).total_seconds()
+            interval_seconds = max(0, int(elapsed))
+
+            # 1. Vérification du cooldown (60 minutes)
+            if interval_seconds < cooldown_sec:
+                remaining_sec = cooldown_sec - interval_seconds
+                remaining_str = format_duration(remaining_sec)
+                raise GameError('hourly_cooldown', remaining=remaining_str, time=remaining_str, remaining_seconds=remaining_sec)
+
+            # 2. Vérification de la fenêtre de combo (60m à 80m)
+            if interval_seconds <= max_combo_sec:
+                t_min = interval_seconds // 60
+                step_pct = max(0, 20 - (t_min - 60))
+                step_bonus = Decimal(str(step_pct))
+                new_combo_bonus = current_combo_bonus + step_bonus
+                new_streak = current_streak + 1
+            else:
+                combo_lost = True
+                step_bonus = Decimal('0.00')
+                new_combo_bonus = Decimal('0.00')
+                new_streak = 1
+        else:
+            new_combo_bonus = Decimal('0.00')
+            new_streak = 1
+
+        # Tirage aléatoire uniforme du gain de base
+        base_gain = Decimal(str(random.randint(reward_min, reward_max)))
+
+        # Calcul du gain total avec le bonus cumulé (sans plafond)
+        multiplier = Decimal('1') + (new_combo_bonus / Decimal('100'))
+        total_gain = (base_gain * multiplier).quantize(Decimal('0.01'))
+        bonus_usd = total_gain - base_gain
+
+        # Mise à jour du compte joueur
+        new_dollars = Decimal(str(p['dollars'])) + total_gain
+        UpdatePlayer.set(
+            tx, actor,
+            dollars=new_dollars,
+            hourly_last_at=tx.now,
+            hourly_combo_bonus=new_combo_bonus,
+            hourly_streak=new_streak,
+        )
+
+        # Enregistrement dans hourly_logs
+        HourlyStatsDB.record_hourly(
+            tx,
+            discord_id=actor,
+            claimed_at=tx.now,
+            interval_seconds=interval_seconds,
+            base_usd=base_gain,
+            bonus_pct=new_combo_bonus,
+            total_usd=total_gain,
+            streak=new_streak,
+            combo_lost=combo_lost,
+        )
+
+        next_avail_dt = tx.now + timedelta(seconds=cooldown_sec)
+        combo_dead_dt = tx.now + timedelta(seconds=max_combo_sec)
+        next_ts = int(next_avail_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(next_avail_dt, 'tzinfo', None) is None else int(next_avail_dt.timestamp())
+        combo_ts = int(combo_dead_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(combo_dead_dt, 'tzinfo', None) is None else int(combo_dead_dt.timestamp())
+
+        return {
+            'claimed': True,
+            'base_usd': base_gain,
+            'bonus_pct': new_combo_bonus,
+            'step_bonus_pct': step_bonus,
+            'bonus_usd': bonus_usd,
+            'total_usd': total_gain,
+            'new_dollars': new_dollars,
+            'streak': new_streak,
+            'combo_lost': combo_lost,
+            'is_first': is_first,
+            'interval_seconds': interval_seconds,
+            'next_available_ts': next_ts,
+            'combo_deadline_ts': combo_ts,
         }
