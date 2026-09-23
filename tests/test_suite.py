@@ -6513,7 +6513,7 @@ class TestAggregate(unittest.TestCase):
 # Tests rendu Embed (_build_embed)
 # ---------------------------------------------------------------------------
 
-class TestEconomyEmbed(unittest.TestCase):
+class TestEconomyEmbed(unittest.IsolatedAsyncioTestCase):
 
     def test_period_colors(self):
         """Vérifie la différenciation en couleur des embeds selon la durée."""
@@ -6547,8 +6547,8 @@ class TestEconomyEmbed(unittest.TestCase):
             'claims': 10,
         }
         embed = _build_embed(1, data, start, end)
-        act_field = next(f for f in embed.fields if f.name == "Activité")
-        self.assertIn("Rejoueurs période préc. : 75.0 % (3/4)", act_field.value)
+        act_field = next(f for f in embed.fields if "Activité" in f.name)
+        self.assertIn("Rétention : 75.0 % (3/4 rejoueurs)", act_field.value)
 
         # Cas 2 : aucun joueur précédent (premier bilan)
         data_first = {
@@ -6558,8 +6558,8 @@ class TestEconomyEmbed(unittest.TestCase):
             'retained_players': 0,
         }
         embed_first = _build_embed(1, data_first, start, end)
-        act_field_first = next(f for f in embed_first.fields if f.name == "Activité")
-        self.assertIn("Rejoueurs période préc. : non applicable", act_field_first.value)
+        act_field_first = next(f for f in embed_first.fields if "Activité" in f.name)
+        self.assertIn("Rétention : non applicable (0 joueur préc.)", act_field_first.value)
 
     def test_availability_rendering(self):
         """Vérifie le rendu du temps de disponibilité des événements."""
@@ -6576,13 +6576,13 @@ class TestEconomyEmbed(unittest.TestCase):
             }
         }
         embed = _build_embed(1, data, start, end)
-        gains_field = next(f for f in embed.fields if f.name == "Gains")
+        avail_field = next(f for f in embed.fields if "Disponibilité" in f.name)
         # 192s -> 3min 12s
-        self.assertIn("hash : 3min 12s", gains_field.value)
-        # 600s total, moy 300s -> 10min (2 man. · moy. 5min)
-        self.assertIn("pin : 10min (2 man. · moy. 5min)", gains_field.value)
+        self.assertIn("[hash]     3min 12s", avail_field.value)
+        # 600s total, moy 300s -> 10min (2 manches • moy. 5min)
+        self.assertIn("[pin]      10min (2 manches • moy. 5min)", avail_field.value)
         # en cours
-        self.assertIn("signal : 20min (en cours)", gains_field.value)
+        self.assertIn("[signal]   20min (en cours)", avail_field.value)
 
     def test_settle_challenge_win_availability(self):
         """Vérifie que settle_challenge_win enregistre la durée disponible dans les logs."""
