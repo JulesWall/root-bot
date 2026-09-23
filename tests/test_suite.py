@@ -7694,7 +7694,7 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(hash_pos, -1)
         self.assertLess(pin_pos, hash_pos)
 
-        expected_tag = f"<t:{future_ts}:R>"
+        expected_tag = f"**<t:{future_ts}:T>** (<t:{future_ts}:R>)"
         self.assertIn(expected_tag, content)
         self.assertNotIn("dans dans", content)
         self.assertNotIn("in in", content)
@@ -7743,7 +7743,7 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent_embeds), 1)
         _, content = sent_embeds[0]
         self.assertIn("Code PIN", content)
-        self.assertIn("• Statut : ⏳ Disponible <t:1790186400:R>", content)
+        self.assertIn(f"• Statut : ⏳ Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R>)", content)
         self.assertNotIn("dans dans", content)
 
 

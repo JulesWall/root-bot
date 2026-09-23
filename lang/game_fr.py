@@ -193,7 +193,7 @@ text = {
     'g_event_pin_name': '🔐 **Code PIN** (`{prefix}pin`)',
     'g_event_pin_desc': 'Individuel · Fourchette de 150',
     'g_event_status_active': '• Statut : 🟢 **En cours** (*{desc}*) — `{prefix}{cmd}`',
-    'g_event_status_cooldown': '• Statut : ⏳ Disponible <t:{timestamp}:R>',
+    'g_event_status_cooldown': '• Statut : ⏳ Disponible à **<t:{timestamp}:T>** (<t:{timestamp}:R>)',
     'g_event_last_winner': '• Dernier gagnant : {winner} depuis le serveur **{server}**',
     'g_event_decode_name': '🔍 **Décryptage** (`{prefix}decode`)',
     'g_event_decode_desc': 'Grille 4x4 · Séquence de coordonnées',

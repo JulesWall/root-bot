@@ -193,7 +193,7 @@ text = {
     'g_event_pin_name': '🔐 **PIN Code** (`{prefix}pin`)',
     'g_event_pin_desc': 'Individual · 150 Range',
     'g_event_status_active': '• Status: 🟢 **In progress** (*{desc}*) — `{prefix}{cmd}`',
-    'g_event_status_cooldown': '• Status: ⏳ Available <t:{timestamp}:R>',
+    'g_event_status_cooldown': '• Status: ⏳ Available at **<t:{timestamp}:T>** (<t:{timestamp}:R>)',
     'g_event_last_winner': '• Last winner: {winner} on server **{server}**',
     'g_event_decode_name': '🔍 **Decryption** (`{prefix}decode`)',
     'g_event_decode_desc': '4x4 Grid · Coordinates sequence',

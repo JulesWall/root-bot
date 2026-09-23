@@ -94,7 +94,7 @@ class Event(BaseGameCog):
                     rem_sec = event_info.get("remaining_seconds", 0)
                     ts = int(discord.utils.utcnow().timestamp()) + rem_sec
 
-                time_display = f"<t:{ts}:R>"
+                time_display = f"<t:{ts}:T> (<t:{ts}:R>)"
                 lines.append(text.get(ctx, "g_event_status_cooldown", timestamp=ts, remaining=time_display))
 
                 if event_info.get("last_found_by"):
