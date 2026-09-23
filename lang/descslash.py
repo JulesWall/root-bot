@@ -18,6 +18,7 @@ desc = {
     "hack_secret_id": "Secret ID of the target network",
     "hack_attack_points": "ATK points to engage (integer)",
     "hack_target": "Target zone: mining or attack",
+    "hourly": "Claim your hourly USD reward with streak combo bonus",
 }
 
 desc_loc = {
@@ -115,6 +116,11 @@ desc_loc = {
         "en-US": "Target zone: mining or attack",
         "en-GB": "Target zone: mining or attack",
         "fr": "Zone ciblée : mining ou attack",
+    },
+    "hourly": {
+        "en-US": "Claim your hourly USD reward with streak combo bonus",
+        "en-GB": "Claim your hourly USD reward with streak combo bonus",
+        "fr": "Réclamer sa récompense horaire en USD avec bonus de combo",
     },
 }
 

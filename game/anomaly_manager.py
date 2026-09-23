@@ -7,7 +7,7 @@ Architecture des données (Zéro fichier JSON) :
      le serveur d'origine (last_found_on) et la récompense en USD (last_reward).
 2. Mémoire vive (_active_challenge) :
    - Bloc de 10 lignes de 16 lettres majuscules sans ligne vide.
-   - Exactement un seul chiffre parasite (0-9) dissimulé sur une seule ligne.
+   - Exactement un seul chiffre parasite (1-9) dissimulé sur une seule ligne.
    - Cible : numéro de ligne compris entre 1 et 10 (comptage de haut en bas).
    - Validation atomique (un seul gagnant garanti même en cas de réponses simultanées).
    - Aucun délai entre les propositions erronées.
@@ -31,13 +31,13 @@ def _create_new_challenge() -> dict:
     """
     Génère un nouveau défi actif d'anomalie :
     - Exactement 10 lignes de 16 lettres majuscules.
-    - Sur une seule ligne (1 à 10), une seule lettre est remplacée par un chiffre (0-9).
+    - Sur une seule ligne (1 à 10), une seule lettre est remplacée par un chiffre (1-9).
     - Exactement 1 chiffre dans tout le bloc.
     """
     settings = MathConfig.load().get("anomaly_challenge", {})
 
     target_line = random.randint(1, LINE_COUNT)  # Ligne 1 à 10 (1-indexée)
-    target_digit = str(random.randint(0, 9))
+    target_digit = str(random.randint(1, 9))
     col_idx = random.randint(0, LINE_LENGTH - 1)  # Colonne 0 à 15
 
     lines = []

@@ -36,6 +36,7 @@ class RootEmbed(discord.Embed):
         'convert':     discord.Color.from_rgb(46, 204, 113),   # Vert émeraude (Vente de tokens)
         'compile':     discord.Color.from_rgb(231, 76, 60),    # Rouge offensif (Production d'ATK)
         'scan':        discord.Color.from_rgb(220, 50, 50),    # Rouge offensif (Scan PvP)
+        'hourly':      discord.Color.from_rgb(52, 152, 219),   # Bleu azur (Récompense horaire)
     }
 
     def __init__(self, ctx, action: str, content: str):

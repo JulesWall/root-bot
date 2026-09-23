@@ -51,6 +51,10 @@ text = {
     'g_error_self_target': '> 🚫 **Invalid Target** · You cannot target your own network.',
     'g_error_cooldown': '> ⏱️ **Cooldown Active** · You cannot award reputation yet. Please return in **{time}**.',
     'g_error_claim_cooldown': '> ⏱️ **Cooldown Active** · You just claimed your mining. Try again in **{remaining}**.',
+    'g_error_hourly_cooldown': '⏱️ Already claimed ! Come back in **{remaining}** !',
+    'g_hourly_first': '💵 You received **{total} USD** ! Come back <t:{next_ts}:R> to start your combo ! 🔥 Combo : {streak}, bonus +{bonus}%',
+    'g_hourly_combo': '💵 You received **{total} USD** ! Come back <t:{next_ts}:R> ! 🔥 Combo : {streak}, bonus +{bonus}%',
+    'g_hourly_broken': '💵 You received **{total} USD** ! 💥 Combo lost. Come back <t:{next_ts}:R> ! 🔥 Combo : {streak}, bonus +{bonus}%',
     'g_error_forbidden': '> ⛔ **Access Denied** · You do not have permission to perform this action.',
     'g_error_guild_required': '> 🏢 **Server Required** · This action must be performed within a server.',
     'g_error_target_not_registered': '> 👤 **Unregistered Player** · This user is not registered on Root yet!',
@@ -193,7 +197,7 @@ text = {
     'g_event_pin_name': '🔐 **PIN Code** (`{prefix}pin`)',
     'g_event_pin_desc': 'Individual · 150 Range',
     'g_event_status_active': '• Status: 🟢 **In progress** (*{desc}*) — `{prefix}{cmd}`',
-    'g_event_status_cooldown': '• Status: ⏳ Available in **{remaining}**',
+    'g_event_status_cooldown': '• Status: ⏳ Available at **<t:{timestamp}:T>** (<t:{timestamp}:R>)',
     'g_event_last_winner': '• Last winner: {winner} on server **{server}**',
     'g_event_decode_name': '🔍 **Decryption** (`{prefix}decode`)',
     'g_event_decode_desc': '4x4 Grid · Coordinates sequence',
@@ -285,6 +289,7 @@ text = {
     'g_hack_btn_cancel': '⛔ Abort',
     'g_error_beta_access_required': '> 🔒 **Restricted Beta Access** · The Root network is currently in closed beta for authorized players only. An active participant can sponsor you by awarding you a reputation point via `/rep <@you>` (make sure you initialized your network with `/network`).',
     'g_reputation_beta_granted': '\n🎉 **Beta Access Granted!** <@{recipient}> has been added to authorized players and can now access the full game.',
+    'g_reputation_beta_autoclaim': '🎫 <@{giver}> receives **{credits} autoclaim credits** for this sponsorship.',
     'g_reputation_dm_beta_granted': '🎉 **Congratulations!** You have also received permanent access to the Root Beta! All game features are now open to you.',
 }
 
@@ -308,6 +313,7 @@ descriptions = {
     'compile': 'Produce a chosen amount of ATK from your attack module throughput.',
     'scan': 'Scan a player\'s network to discover their secret identifier.',
     'hack': 'Launch a PvP cyberattack against an enemy network.',
+    'hourly': 'Claim your hourly USD reward with streak combo bonus.',
 }
 
 labels = {
@@ -334,6 +340,7 @@ labels = {
     'act_buy': '🛒 Component Purchase',
     'act_upgrade': '🧱 Firewall Upgrade',
     'act_claim': '🪙 Mining Harvest',
+    'act_hourly': '⏱️ Hourly Reward',
     'act_reputation': '⭐ Reputation Award',
     'act_top': '🏆 Global Leaderboard',
     'act_hash': '🧩 Hash Challenge',

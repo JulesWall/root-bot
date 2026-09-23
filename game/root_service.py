@@ -36,6 +36,7 @@ class RootService:
         'network', 'buy', 'upgrade', 'reputation', 'top', 'set_language',
         'hash', 'pin', 'event', 'decode', 'anomaly', 'buffer', 'signal',
         'packet', 'trade', 'claim', 'claim_auto', 'claim_cancel', 'convert', 'compile', 'scan', 'hack',
+        'hourly',
     }
 
     def __init__(self, database=None):
@@ -138,6 +139,13 @@ class RootService:
                 if res.get('claimed'):
                     results.append(res)
         return results
+
+    async def grant_autoclaim_credits(self, actor: int, amount: int) -> dict:
+        """Crédite des autoclaims au joueur, sous le verrou de son compte."""
+        return await self.database.run(
+            lambda tx: Player.add_autoclaim_credits(tx, actor, amount),
+            locks=[player_lock_name(int(actor))],
+        )
 
     async def execute(self, actor: int, guild: int | None, method: str, **args):
         """
@@ -255,6 +263,8 @@ class RootService:
             return Player.upgrade(tx, actor, **args)
         elif method == 'claim':
             return Player.claim(tx, actor)
+        elif method == 'hourly':
+            return Player.hourly(tx, actor)
         elif method == 'claim_auto':
             return Player.start_autoclaim(tx, actor, count=args.get('count', 'all'))
         elif method == 'claim_cancel':
