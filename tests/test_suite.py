@@ -311,6 +311,9 @@ class MockTransaction:
             cutoff = params[0]
             return [{"id": c["id"]} for c in self.consequences if c["delete_at"] <= cutoff]
 
+        if "FROM PLAYERS WHERE AUTOCLAIM_ACTIVE > 0" in q:
+            return [dict(p) for p in self.players.values() if int(p.get("autoclaim_active", 0) or 0) > 0]
+
         if "SELECT SECRET_ID FROM PLAYERS WHERE SECRET_ID IS NOT NULL" in q:
             return [{"secret_id": p.get("secret_id")} for p in self.players.values() if p.get("secret_id")]
 
@@ -433,6 +436,7 @@ class MockTransaction:
                 "claimed_at": params[1],
                 "interval_seconds": params[2],
                 "amount": params[3],
+                "is_auto": bool(params[4]) if len(params) > 4 else False,
             })
             return 1
 
@@ -7408,6 +7412,266 @@ class TestOfficialServerAutoRole(unittest.IsolatedAsyncioTestCase):
 
         await bot.on_member_join(member)
         member.add_roles.assert_awaited_once()
+
+
+class TestAutoclaimFeature(unittest.IsolatedAsyncioTestCase):
+    """Couvre l'ensemble du système d'autoclaim (crédits, seuil 99.9%, annulation, logs et anti-triche)."""
+
+    def setUp(self):
+        self.tx = MockTransaction()
+        self.actor = 99901
+        Player.network(self.tx, self.actor)
+        self.tx.players[self.actor]["mining_t1"] = 1
+        self.tx.players[self.actor]["mining_buffer"] = Decimal('0.05000')
+        self.tx.players[self.actor]["mining_last_update_at"] = self.tx.now
+        self.tx.players[self.actor]["autoclaim_credits"] = 3
+        self.tx.players[self.actor]["autoclaim_active"] = 0
+
+    def test_start_autoclaim_all_and_count(self):
+        """Vérifie le démarrage de l'autoclaim avec 'all' et avec un montant explicite."""
+        # Lancement avec count='all'
+        res_all = Player.start_autoclaim(self.tx, self.actor, 'all')
+        self.assertEqual(res_all['activated_count'], 3)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_credits'], 0)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 3)
+        self.assertTrue(res_all['claim_result'].get('claimed'))
+
+        # Restitution pour second test
+        self.tx.players[self.actor]['autoclaim_credits'] = 5
+        self.tx.players[self.actor]['autoclaim_active'] = 0
+        res_nb = Player.start_autoclaim(self.tx, self.actor, 2)
+        self.assertEqual(res_nb['activated_count'], 2)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_credits'], 3)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 2)
+
+    def test_start_autoclaim_errors(self):
+        """Vérifie le rejet pour crédits insuffisants, quantité invalide ou absence de mineurs."""
+        # 1. Crédits insuffisants
+        self.tx.players[self.actor]['autoclaim_credits'] = 0
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 1)
+        self.assertEqual(cm.exception.key, 'insufficient_autoclaim_credits')
+
+        self.tx.players[self.actor]['autoclaim_credits'] = 2
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 5)
+        self.assertEqual(cm.exception.key, 'insufficient_autoclaim_credits')
+
+        # 2. Quantité invalide
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 0)
+        self.assertEqual(cm.exception.key, 'insufficient_autoclaim_credits')
+
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, self.actor, 'invalide')
+        self.assertEqual(cm.exception.key, 'invalid_autoclaim_count')
+
+        # 3. Aucun module de minage
+        no_miner_actor = 99902
+        Player.network(self.tx, no_miner_actor)
+        self.tx.players[no_miner_actor]['autoclaim_credits'] = 5
+        with self.assertRaises(GameError) as cm:
+            Player.start_autoclaim(self.tx, no_miner_actor, 'all')
+        self.assertEqual(cm.exception.key, 'no_miner_autoclaim')
+
+    def test_cancel_autoclaim(self):
+        """Vérifie l'annulation des autoclaims et la restitution exacte des crédits."""
+        self.tx.players[self.actor]['autoclaim_credits'] = 1
+        self.tx.players[self.actor]['autoclaim_active'] = 3
+
+        res = Player.cancel_autoclaim(self.tx, self.actor)
+        self.assertEqual(res['refunded_count'], 3)
+        self.assertEqual(res['autoclaim_credits'], 4)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_credits'], 4)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 0)
+
+        # Annulation quand aucun n'est actif -> erreur
+        with self.assertRaises(GameError) as cm:
+            Player.cancel_autoclaim(self.tx, self.actor)
+        self.assertEqual(cm.exception.key, 'no_active_autoclaim')
+
+    def test_process_autoclaim_tick_at_threshold(self):
+        """Vérifie l'exécution d'un tick d'autoclaim et la décrémentation du compteur."""
+        self.tx.players[self.actor]['autoclaim_active'] = 2
+        self.tx.players[self.actor]['mining_buffer'] = Decimal('0.05000')
+
+        res = Player.process_autoclaim_tick(self.tx, self.actor)
+        self.assertTrue(res.get('claimed'))
+        self.assertTrue(res.get('is_auto'))
+        self.assertEqual(res.get('autoclaim_active_remaining'), 1)
+        self.assertEqual(self.tx.players[self.actor]['autoclaim_active'], 1)
+
+        # Vérifie l'enregistrement avec is_auto=True dans daily_claim_logs
+        self.assertEqual(len(self.tx.daily_claim_logs), 1)
+        self.assertTrue(self.tx.daily_claim_logs[0]['is_auto'])
+
+    async def test_service_process_due_autoclaims_threshold_filter(self):
+        """Vérifie que process_due_autoclaims ne récolte que si la RAM atteint >= 99.9%."""
+        from game.root_service import RootService
+        mock_db = MockDatabase()
+        mock_db.players[self.actor] = dict(self.tx.players[self.actor])
+        mock_db.players[self.actor]['autoclaim_active'] = 1
+
+        service = RootService(database=mock_db)
+
+        # Calcul de la capacité de RAM
+        stats = MathConfig.calculate_player_stats(mock_db.players[self.actor])
+        capacity = MathConfig.compute_mining_progress(mock_db.players[self.actor], stats, datetime.now())['capacity_rtm']
+
+        # 1. Tampon à 50% de la capacité -> pas de récolte
+        mock_db.players[self.actor]['mining_buffer'] = (capacity * Decimal('0.50')).quantize(Decimal('0.00001'))
+        mock_db.players[self.actor]['mining_last_update_at'] = datetime.now()
+        due = await service.process_due_autoclaims()
+        self.assertEqual(len(due), 0)
+        self.assertEqual(mock_db.players[self.actor]['autoclaim_active'], 1)
+
+        # 2. Tampon à 99.95% de la capacité (>= 99.9%) -> déclenchement automatique
+        mock_db.players[self.actor]['mining_buffer'] = (capacity * Decimal('0.9995')).quantize(Decimal('0.00001'))
+        mock_db.players[self.actor]['mining_last_update_at'] = datetime.now()
+        due = await service.process_due_autoclaims()
+        self.assertEqual(len(due), 1)
+        self.assertEqual(due[0]['actor'], self.actor)
+        self.assertTrue(due[0]['is_auto'])
+        self.assertEqual(mock_db.players[self.actor]['autoclaim_active'], 0)
+
+    def test_daily_claim_stats_breakdown(self):
+        """Vérifie que DailyClaimStatsDB ventile correctement manual_count et auto_count."""
+        now = datetime(2026, 9, 23, 14, 0, 0)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor, now, 600, Decimal("1.0"), is_auto=False)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor, now + timedelta(minutes=10), 600, Decimal("1.0"), is_auto=True)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor, now + timedelta(minutes=20), 600, Decimal("1.0"), is_auto=True)
+
+        summary = DailyClaimStatsDB.get_summary(self.tx)
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0]["claim_count"], 3)
+        self.assertEqual(summary[0]["manual_count"], 1)
+        self.assertEqual(summary[0]["auto_count"], 2)
+
+        user_claims = DailyClaimStatsDB.get_user_claims(self.tx, self.actor)
+        self.assertEqual(len(user_claims), 3)
+        self.assertFalse(user_claims[0]["is_auto"])
+        self.assertTrue(user_claims[1]["is_auto"])
+        self.assertTrue(user_claims[2]["is_auto"])
+
+    def test_claim_analysis_autoclaim_anti_cheat(self):
+        """Vérifie que les autoclaims n'induisent pas de faux positifs de macro."""
+        now = datetime(2026, 9, 23, 10, 0, 0)
+        # Séquence de claims avec plusieurs autoclaims
+        claims = [
+            {"claimed_at": now, "interval_seconds": 0, "amount": Decimal("1"), "is_auto": False},
+            {"claimed_at": now + timedelta(hours=2), "interval_seconds": 7200, "amount": Decimal("1"), "is_auto": False},
+            {"claimed_at": now + timedelta(hours=5), "interval_seconds": 10800, "amount": Decimal("1"), "is_auto": True},
+            {"claimed_at": now + timedelta(hours=8), "interval_seconds": 10800, "amount": Decimal("1"), "is_auto": True},
+        ]
+        metrics = calculate_player_claim_metrics(claims)
+        self.assertEqual(metrics["manual_claim_count"], 2)
+        self.assertEqual(metrics["auto_claim_count"], 2)
+        # Ne doit pas être HIGH risk
+        self.assertNotEqual(metrics["risk_level"], "HIGH")
+
+    async def test_claim_credits_hint_conditional_display(self):
+        """Vérifie que la phrase de crédits ne s'affiche que si autoclaim_credits > 0."""
+        from commands.game.claim import Claim
+
+        mock_bot = MagicMock()
+        mock_bot.wait_until_ready = AsyncMock()
+        mock_bot.discord_logger = MagicMock()
+        cog = Claim(mock_bot)
+        try:
+            mock_ctx = MagicMock()
+            mock_ctx.interaction = None
+            mock_ctx.clean_prefix = "!"
+            mock_ctx.prefix = "!"
+            mock_ctx.user = None
+            mock_ctx.author.id = self.actor
+
+            # 1. Avec 0 crédits
+            res_zero = {
+                'claimed': True,
+                'amount': Decimal('0.05000'),
+                'new_rootium': Decimal('10.05000'),
+                'rate_per_min': Decimal('0.00010'),
+                'total_ram_formatted': '100 Ko',
+                'autoclaim_credits': 0,
+            }
+            cog._reply = AsyncMock()
+            cog._log_blockchain = AsyncMock()
+            cog._log_moderation = AsyncMock()
+            await cog._send(mock_ctx, 'claim', res_zero)
+            sent_content_zero = cog._reply.call_args[0][1]
+            self.assertNotIn("Autoclaim credits", sent_content_zero)
+            self.assertNotIn("Crédits d'autoclaim", sent_content_zero)
+
+            # 2. Avec 3 crédits
+            res_credits = {
+                'claimed': True,
+                'amount': Decimal('0.05000'),
+                'new_rootium': Decimal('10.05000'),
+                'rate_per_min': Decimal('0.00010'),
+                'total_ram_formatted': '100 Ko',
+                'autoclaim_credits': 3,
+            }
+            cog._reply.reset_mock()
+            await cog._send(mock_ctx, 'claim', res_credits)
+            sent_content_credits = cog._reply.call_args[0][1]
+            self.assertTrue(
+                "Autoclaim credits" in sent_content_credits or "Crédits d'autoclaim" in sent_content_credits
+            )
+            self.assertIn("`3`", sent_content_credits)
+        finally:
+            cog.cog_unload()
+
+    async def test_prefix_and_slash_claim_dispatch(self):
+        """Vérifie l'aiguillage des commandes préfixe !claim auto/cancel et slash /claim auto:x."""
+        from commands.game.claim import Claim
+
+        mock_bot = MagicMock()
+        mock_bot.wait_until_ready = AsyncMock()
+        cog = Claim(mock_bot)
+        try:
+            cog._invoke = AsyncMock()
+            mock_ctx = MagicMock()
+
+            # 1. !claim -> claim
+            await cog.prefix_claim.callback(cog, mock_ctx)
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim')
+
+            # 2. !claim auto 3 -> claim_auto count='3'
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'auto', '3')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_auto', count='3')
+
+            # 3. !claim auto all -> claim_auto count='all'
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'auto', 'all')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_auto', count='all')
+
+            # 4. !claim auto cancel -> claim_cancel
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'auto', 'cancel')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_cancel')
+
+            # 5. !claim cancel -> claim_cancel
+            cog._invoke.reset_mock()
+            await cog.prefix_claim.callback(cog, mock_ctx, 'cancel')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_cancel')
+
+            # 6. /claim -> claim
+            cog._invoke.reset_mock()
+            await cog.claim.callback(cog, mock_ctx, auto=None)
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim')
+
+            # 7. /claim auto:'all' -> claim_auto
+            cog._invoke.reset_mock()
+            await cog.claim.callback(cog, mock_ctx, auto='all')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_auto', count='all')
+
+            # 8. /claim auto:'cancel' -> claim_cancel
+            cog._invoke.reset_mock()
+            await cog.claim.callback(cog, mock_ctx, auto='cancel')
+            cog._invoke.assert_awaited_with(mock_ctx, 'claim_cancel')
+        finally:
+            cog.cog_unload()
 
 
 if __name__ == '__main__':

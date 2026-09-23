@@ -387,14 +387,18 @@ COMMANDS = {
         "name": "claim",
         "category": "network",
         "title": "⚡ `/claim` — Collect Mined Rootium",
-        "description": "Transfers mined Rootium stored in hardware RAM to your main balance and clears buffer memory.",
-        "slash_syntax": "/claim",
-        "text_syntax": "{prefix}claim",
-        "parameters": "None.",
-        "slash_example": "/claim",
-        "text_example": "{prefix}claim",
-        "prerequisites": "An active network with at least one miner having accumulated Rootium.",
-        "advice": "When RAM fills up, mining stops completely! Check `/network` to track your gauge.",
+        "description": "Transfers mined Rootium stored in hardware RAM to your main balance and clears buffer memory. Also allows automating claims using autoclaim credits.",
+        "slash_syntax": "/claim [auto:<nb|all|cancel>]",
+        "text_syntax": "{prefix}claim [auto <nb|all> | cancel]",
+        "parameters": (
+            "  `auto <nb|all>` : Starts autoclaim. Performs an immediate claim then schedules each claim as soon as RAM reaches 99.9% (consumes autoclaim credits).\n"
+            "  `cancel` : Cancels active scheduled autoclaims and refunds remaining credits.\n"
+            "  *No argument* : Standard immediate manual claim."
+        ),
+        "slash_example": "/claim auto:all",
+        "text_example": "{prefix}claim auto 3",
+        "prerequisites": "An active network with at least one miner having accumulated Rootium. Autoclaim credits required for auto mode.",
+        "advice": "When RAM fills up, mining stops completely! Check `/network` to track your gauge. Autoclaim results are delivered via DM.",
         "aliases": ["{prefix}cl"],
         "linked_commands": ["convert", "network"],
     },

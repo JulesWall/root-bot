@@ -59,11 +59,18 @@ def calculate_player_claim_metrics(claims: list[dict], min_streak_size: int = 5)
         Dictionnaire synthétique avec les métriques globales, les streaks suspects et le niveau de risque.
     """
     claim_count = len(claims)
-    intervals = extract_claim_intervals(claims)
+    manual_claims = [c for c in claims if not c.get("is_auto")]
+    auto_claims = [c for c in claims if c.get("is_auto")]
+
+    # Pour l'analyse de régularité anti-triche, on se base en priorité sur les claims manuels s'il y en a assez
+    analysis_claims = manual_claims if len(manual_claims) >= 2 else claims
+    intervals = extract_claim_intervals(analysis_claims)
     total_amount = sum((c.get("amount") or 0 for c in claims), 0)
 
     metrics: dict[str, Any] = {
         "claim_count": claim_count,
+        "manual_claim_count": len(manual_claims),
+        "auto_claim_count": len(auto_claims),
         "total_amount": total_amount,
         "intervals_count": len(intervals),
         "mean_interval_sec": None,

@@ -67,14 +67,21 @@ CREATE TABLE IF NOT EXISTS players (
     -- Identifiant secret 6 chiffres (rotation globale 12 h UTC)
     secret_id           CHAR(6) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
 
+    -- Autoclaim : crédits possédés et nombre de récoltes automatiques programmées
+    autoclaim_credits   INT UNSIGNED    NOT NULL DEFAULT 0,
+    autoclaim_active    INT UNSIGNED    NOT NULL DEFAULT 0,
+
     -- Contraintes d'intégrité
     PRIMARY KEY (discord_id),
     UNIQUE KEY uq_players_secret_id (secret_id),
+    INDEX idx_players_autoclaim_active (autoclaim_active),
     CHECK (dollars >= 0),
     CHECK (rootium >= 0),
     CHECK (firewall_level <= 5),
     CHECK (reputation >= 0),
-    CHECK (attack_points >= 0)
+    CHECK (attack_points >= 0),
+    CHECK (autoclaim_credits >= 0),
+    CHECK (autoclaim_active >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 2. Table des Préfixes par Serveur
@@ -299,8 +306,10 @@ CREATE TABLE IF NOT EXISTS daily_claim_logs (
     claimed_at          DATETIME(6)     NOT NULL,
     interval_seconds    INT UNSIGNED    NULL     DEFAULT NULL,
     amount              DECIMAL(30, 5)  NOT NULL DEFAULT 0.00000,
+    is_auto             TINYINT(1)      NOT NULL DEFAULT 0,
     INDEX idx_daily_claims_user (discord_id, claimed_at),
     INDEX idx_daily_claims_time (claimed_at),
+    INDEX idx_daily_claims_auto (is_auto),
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -326,6 +335,13 @@ CREATE TABLE IF NOT EXISTS event_availability_logs (
 -- ====================================================================
 -- MIGRATION (installations existantes) : journaux de disponibilité des événements.
 -- Appliquer CREATE TABLE IF NOT EXISTS event_availability_logs (...).
+-- ====================================================================
+-- MIGRATION (installations existantes) : système d'autoclaim.
+-- ALTER TABLE players ADD COLUMN autoclaim_credits INT UNSIGNED NOT NULL DEFAULT 0;
+-- ALTER TABLE players ADD COLUMN autoclaim_active INT UNSIGNED NOT NULL DEFAULT 0;
+-- ALTER TABLE players ADD INDEX idx_players_autoclaim_active (autoclaim_active);
+-- ALTER TABLE daily_claim_logs ADD COLUMN is_auto TINYINT(1) NOT NULL DEFAULT 0;
+-- ALTER TABLE daily_claim_logs ADD INDEX idx_daily_claims_auto (is_auto);
 -- ====================================================================
 
 

@@ -551,6 +551,17 @@ class Network(BaseGameCog):
         rep_bonus_mining = f" *(+{rep_bonus_pct:.1f}% rep)*" if rep_val > 0 else ""
         total_lines.append(text.get(ctx, 'g_net_rack_ram', used=used_str, total=total_ram_str, pct=pct_str, fill=fill_str))
         total_lines.append(text.get(ctx, 'g_net_rack_mining', rate=rate_str, pending=pending_str, full=full_note, rep_bonus_note=rep_bonus_mining))
+
+        autoclaim_credits = int(result.get('autoclaim_credits', 0) or 0)
+        autoclaim_active = int(result.get('autoclaim_active', 0) or 0)
+        is_fr = (text.get_locale(ctx) == 'fr')
+        if autoclaim_active > 0:
+            status_text = f"**{autoclaim_credits}** en réserve · **{autoclaim_active}** programmé(s)" if is_fr else f"**{autoclaim_credits}** in reserve · **{autoclaim_active}** queued"
+            total_lines.append(f"🎫 **Autoclaim** : {status_text}")
+        else:
+            status_text = f"**{autoclaim_credits}** crédit(s)" if is_fr else f"**{autoclaim_credits}** credit(s)"
+            total_lines.append(f"🎫 **Crédits autoclaim** : {status_text}")
+
         embed.add_field(
             name=text.get(ctx, 'g_net_rack_total_title'),
             value='\n'.join(total_lines),

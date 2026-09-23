@@ -163,6 +163,7 @@ class UpdatePlayer:
             'reputation', 'next_reputation_at', 'network_defense', 'lang', 'events_won',
             'mining_buffer', 'mining_last_update_at', 'mining_last_claim_at',
             'secret_id', 'attack_points',
+            'autoclaim_credits', 'autoclaim_active',
         } | {f'{kind}_t{tier}' for kind in ('mining', 'attack', 'bay_defense') for tier in range(1, 7)}
 
         if not values or any(key not in allowed for key in values):
@@ -352,7 +353,7 @@ class Player:
         }
 
     @staticmethod
-    def claim(tx, actor: int) -> dict:
+    def claim(tx, actor: int, is_auto: bool = False, bypass_cooldown: bool = False) -> dict:
         """Réclame le Rootium miné accumulé et vide la mémoire vive du réseau.
 
         Mécanique :
@@ -367,18 +368,19 @@ class Player:
         p = PlayerData.get(tx, actor)
 
         # Délai d'attente minimal entre deux réclamations réussies (anti-spam)
-        cooldown = int(MathConfig.load().get('mining', {}).get('claim_cooldown_seconds', 0))
-        last_claim = p.get('mining_last_claim_at')
-        if cooldown > 0 and last_claim is not None and hasattr(last_claim, 'timestamp'):
-            ref, now_ref = last_claim, tx.now
-            if getattr(ref, 'tzinfo', None) is not None and getattr(now_ref, 'tzinfo', None) is None:
-                now_ref = now_ref.replace(tzinfo=timezone.utc)
-            elif getattr(ref, 'tzinfo', None) is None and getattr(now_ref, 'tzinfo', None) is not None:
-                ref = ref.replace(tzinfo=now_ref.tzinfo)
-            elapsed = (now_ref - ref).total_seconds()
-            if elapsed < cooldown:
-                remaining = format_duration(cooldown - elapsed)
-                raise GameError('claim_cooldown', remaining=remaining, time=remaining)
+        if not is_auto and not bypass_cooldown:
+            cooldown = int(MathConfig.load().get('mining', {}).get('claim_cooldown_seconds', 0))
+            last_claim = p.get('mining_last_claim_at')
+            if cooldown > 0 and last_claim is not None and hasattr(last_claim, 'timestamp'):
+                ref, now_ref = last_claim, tx.now
+                if getattr(ref, 'tzinfo', None) is not None and getattr(now_ref, 'tzinfo', None) is None:
+                    now_ref = now_ref.replace(tzinfo=timezone.utc)
+                elif getattr(ref, 'tzinfo', None) is None and getattr(now_ref, 'tzinfo', None) is not None:
+                    ref = ref.replace(tzinfo=now_ref.tzinfo)
+                elapsed = (now_ref - ref).total_seconds()
+                if elapsed < cooldown:
+                    remaining = format_duration(cooldown - elapsed)
+                    raise GameError('claim_cooldown', remaining=remaining, time=remaining)
 
         stats = MathConfig.calculate_player_stats(p)
         state = MathConfig.compute_mining_progress(p, stats, tx.now)
@@ -397,6 +399,9 @@ class Player:
                 ref = ref.replace(tzinfo=now_ref.tzinfo)
             seconds_since_last_claim = max(0, int((now_ref - ref).total_seconds()))
 
+        autoclaim_credits = int(p.get('autoclaim_credits', 0) or 0)
+        autoclaim_active = int(p.get('autoclaim_active', 0) or 0)
+
         result = {
             'rate_per_min': state['rate_per_min'],
             'base_rate_per_min': state.get('base_rate_per_min', state['rate_per_min']),
@@ -409,6 +414,9 @@ class Player:
             'total_hashrate_formatted': stats['total_hashrate_formatted'],
             'seconds_to_full': state['seconds_to_full'],
             'seconds_since_last_claim': seconds_since_last_claim,
+            'is_auto': is_auto,
+            'autoclaim_credits': autoclaim_credits,
+            'autoclaim_active': autoclaim_active,
         }
 
         if state['capacity_rtm'] <= 0:
@@ -438,9 +446,90 @@ class Player:
             claimed_at=tx.now,
             interval_seconds=seconds_since_last_claim,
             amount=claimed,
+            is_auto=is_auto,
         )
         result.update({'claimed': True, 'amount': claimed, 'new_rootium': new_rootium, 'ram_was_full': ram_was_full})
         return result
+
+    @staticmethod
+    def start_autoclaim(tx, actor: int, count: int | str = 'all') -> dict:
+        """Active l'autoclaim en consommant N crédits et en exécutant un premier claim immédiat."""
+        p = PlayerData.get(tx, actor)
+        stats = MathConfig.calculate_player_stats(p)
+        state = MathConfig.compute_mining_progress(p, stats, tx.now)
+
+        if state['capacity_rtm'] <= 0 or state['rate_per_min'] <= 0:
+            raise GameError('no_miner_autoclaim')
+
+        available = int(p.get('autoclaim_credits', 0) or 0)
+        if available <= 0:
+            raise GameError('insufficient_autoclaim_credits', available=0, requested=1)
+
+        if isinstance(count, str) and count.lower() in ('all', 'tout'):
+            amount = available
+        else:
+            try:
+                amount = int(count)
+            except (ValueError, TypeError):
+                raise GameError('invalid_autoclaim_count')
+
+        if amount <= 0 or amount > available:
+            raise GameError('insufficient_autoclaim_credits', available=available, requested=amount)
+
+        new_credits = available - amount
+        new_active = int(p.get('autoclaim_active', 0) or 0) + amount
+
+        UpdatePlayer.set(tx, actor, autoclaim_credits=new_credits, autoclaim_active=new_active)
+
+        # Claim immédiat pour vider la RAM et lancer le cycle propre
+        claim_res = Player.claim(tx, actor, is_auto=False, bypass_cooldown=True)
+        claim_res['autoclaim_credits'] = new_credits
+        claim_res['autoclaim_active'] = new_active
+
+        return {
+            'claim_result': claim_res,
+            'activated_count': amount,
+            'autoclaim_credits_remaining': new_credits,
+            'autoclaim_active': new_active,
+        }
+
+    @staticmethod
+    def cancel_autoclaim(tx, actor: int) -> dict:
+        """Annule les autoclaims programmés en cours et restitue les crédits."""
+        p = PlayerData.get(tx, actor)
+        active = int(p.get('autoclaim_active', 0) or 0)
+        if active <= 0:
+            raise GameError('no_active_autoclaim')
+
+        available = int(p.get('autoclaim_credits', 0) or 0) + active
+        UpdatePlayer.set(tx, actor, autoclaim_credits=available, autoclaim_active=0)
+
+        return {
+            'refunded_count': active,
+            'autoclaim_credits': available,
+        }
+
+    @staticmethod
+    def process_autoclaim_tick(tx, actor: int) -> dict:
+        """Exécute un claim automatique pour un joueur dont la RAM a atteint 99,9 %."""
+        p = PlayerData.get(tx, actor)
+        active = int(p.get('autoclaim_active', 0) or 0)
+        if active <= 0:
+            return {'claimed': False, 'reason': 'no_active'}
+
+        claim_res = Player.claim(tx, actor, is_auto=True, bypass_cooldown=True)
+        new_active = active - 1
+        UpdatePlayer.set(tx, actor, autoclaim_active=new_active)
+
+        claim_res['autoclaim_active_remaining'] = new_active
+        claim_res['autoclaim_credits_remaining'] = int(p.get('autoclaim_credits', 0) or 0)
+        claim_res['actor'] = actor
+        return claim_res
+
+    @staticmethod
+    def get_active_autoclaim_players(tx) -> list[dict]:
+        """Retourne la liste des joueurs ayant au moins un claim automatique programmé."""
+        return tx.all("SELECT * FROM players WHERE autoclaim_active > 0")
 
 
     @staticmethod

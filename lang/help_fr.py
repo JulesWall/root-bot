@@ -387,14 +387,18 @@ COMMANDS = {
         "name": "claim",
         "category": "network",
         "title": "⚡ `/claim` — Récupérer ma production",
-        "description": "Transfère le Rootium miné et stocké dans tes modules vers ton solde principal et libère la mémoire RAM.",
-        "slash_syntax": "/claim",
-        "text_syntax": "{prefix}claim",
-        "parameters": "Aucun paramètre.",
-        "slash_example": "/claim",
-        "text_example": "{prefix}claim",
-        "prerequisites": "Un réseau actif avec au moins un mineur ayant généré des fractions de Rootium.",
-        "advice": "Une mémoire RAM saturée interrompt le minage ! Consulte `/network` pour surveiller ta jauge.",
+        "description": "Transfère le Rootium miné et stocké dans tes modules vers ton solde principal et libère la mémoire RAM. Permet également d'automatiser les récoltes avec des crédits d'autoclaim.",
+        "slash_syntax": "/claim [auto:<nb|all|cancel>]",
+        "text_syntax": "{prefix}claim [auto <nb|all> | cancel]",
+        "parameters": (
+            "  `auto <nb|all>` : Lance l'autoclaim. Exécute une récolte immédiate puis programme chaque claim suivant dès que la RAM atteint 99,9 % (consomme des crédits d'autoclaim).\n"
+            "  `cancel` : Annule les autoclaims programmés en cours et restitue les crédits non consommés.\n"
+            "  *Sans argument* : Récolte manuelle immédiate standard."
+        ),
+        "slash_example": "/claim auto:all",
+        "text_example": "{prefix}claim auto 3",
+        "prerequisites": "Un réseau actif avec au moins un mineur ayant généré des fractions de Rootium. Des crédits d'autoclaim sont requis pour le mode auto.",
+        "advice": "Une mémoire RAM saturée interrompt le minage ! Consulte `/network` pour surveiller ta jauge. Les résultats d'autoclaim sont envoyés en MP.",
         "aliases": ["{prefix}cl"],
         "linked_commands": ["convert", "network"],
     },

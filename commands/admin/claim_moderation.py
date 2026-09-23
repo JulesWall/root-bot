@@ -183,9 +183,16 @@ class ClaimModeration(commands.Cog):
             color=color,
             timestamp=discord.utils.utcnow(),
         )
+        auto_count = analysis.get("auto_claim_count", 0)
+        manual_count = analysis.get("manual_claim_count", claim_count)
+        if auto_count > 0:
+            recoltes_str = f"`{claim_count}` claims (👤 `{manual_count}` · 🤖 `{auto_count}`) (`{total_rtm} RTM`)"
+        else:
+            recoltes_str = f"`{claim_count}` claims (`{total_rtm} RTM`)"
+
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="Joueur", value=f"{user.mention} (`{user.id}`)", inline=True)
-        embed.add_field(name="Récoltes (24h)", value=f"`{claim_count}` claims (`{total_rtm} RTM`)", inline=True)
+        embed.add_field(name="Récoltes (24h)", value=recoltes_str, inline=True)
         embed.add_field(name="Niveau de Risque", value=f"{badge} **{analysis['risk_level']}**", inline=True)
         embed.add_field(name="Intervalle Moyen", value=f"`{mean_str}`", inline=True)
         embed.add_field(name="Écart-type (Dispersion)", value=f"`{std_str}`", inline=True)
@@ -212,11 +219,13 @@ class ClaimModeration(commands.Cog):
             )
 
         # Affichage des derniers intervalles récents (jusqu'à 8)
-        last_intervals = [
-            format_duration(c["interval_seconds"] or 0)
-            for c in claims[-8:]
-            if c.get("interval_seconds") is not None
-        ]
+        last_intervals = []
+        for c in claims[-8:]:
+            if c.get("interval_seconds") is not None:
+                iv = format_duration(c["interval_seconds"] or 0)
+                if c.get("is_auto"):
+                    iv += " [AUTO]"
+                last_intervals.append(iv)
         if last_intervals:
             embed.add_field(
                 name="Derniers intervalles enregistrés",
