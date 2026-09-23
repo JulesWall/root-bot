@@ -6,6 +6,8 @@ Ce module permet la reconnaissance sociale entre joueurs :
 - Les points de réputation influencent directement le classement `/top` (catégorie réputation).
 """
 
+import logging
+
 import discord
 from discord.ext import commands
 
@@ -13,9 +15,12 @@ import data
 from commands.game.commandgame import BaseGameCog
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+from game.math_config import MathConfig
 from utils import text
 from utils.check import Check
 from utils.logger import Logger
+
+logger = logging.getLogger(__name__)
 
 
 class Rep(BaseGameCog):
@@ -86,14 +91,29 @@ class Rep(BaseGameCog):
             if await checks.has_beta_access(self.bot, ctx.author.id):
                 granted_beta = checks.grant_beta_access(recipient_id)
 
+        reward = None
         if granted_beta:
             content += text.get(ctx, 'g_reputation_beta_granted', recipient=recipient_id)
+            try:
+                amount = int(MathConfig.load().get('beta', {}).get('sponsor_autoclaim_credits', 10))
+                credited = await self.service.grant_autoclaim_credits(ctx.author.id, amount)
+                reward = text.get(
+                    ctx,
+                    'g_reputation_beta_autoclaim',
+                    giver=ctx.author.id,
+                    credits=int(credited.get('added', amount)),
+                )
+            except Exception:
+                logger.exception("Impossible de créditer les autoclaims de parrainage à %s", ctx.author.id)
 
-        kwargs = {'allowed_mentions': discord.AllowedMentions.none()}
-        if getattr(ctx, 'interaction', None):
-            await ctx.respond(content, **kwargs)
-        else:
-            await ctx.send(content, **kwargs)
+        await self._deliver(ctx, content, discord.AllowedMentions.none())
+        if reward:
+            await self._deliver(
+                ctx,
+                reward,
+                discord.AllowedMentions(users=True),
+                followup=True,
+            )
 
         # Résolution du destinataire
         target = getattr(ctx, '_rep_target', None)
@@ -129,6 +149,18 @@ class Rep(BaseGameCog):
                 recipient=target,
                 points=points,
             )
+
+    async def _deliver(self, ctx, content: str, mentions: discord.AllowedMentions, followup: bool = False):
+        """Envoie un message texte, en réponse initiale ou en message suivant."""
+        kwargs = {'allowed_mentions': mentions}
+        interaction = getattr(ctx, 'interaction', None)
+        if interaction and not followup:
+            await ctx.respond(content, **kwargs)
+        elif interaction and followup:
+            follow = getattr(ctx, 'followup', None) or getattr(interaction, 'followup', None)
+            await follow.send(content, **kwargs)
+        else:
+            await ctx.send(content, **kwargs)
 
 
 def setup(bot):

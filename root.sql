@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS players (
     autoclaim_credits   INT UNSIGNED    NOT NULL DEFAULT 0,
     autoclaim_active    INT UNSIGNED    NOT NULL DEFAULT 0,
 
+    -- Récompense horaire (/hourly) & Système de Combo
+    hourly_last_at      DATETIME(6)     NULL     DEFAULT NULL,
+    hourly_combo_bonus  DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
+    hourly_streak       INT UNSIGNED    NOT NULL DEFAULT 0,
+
     -- Contraintes d'intégrité
     PRIMARY KEY (discord_id),
     UNIQUE KEY uq_players_secret_id (secret_id),
@@ -81,7 +86,9 @@ CREATE TABLE IF NOT EXISTS players (
     CHECK (reputation >= 0),
     CHECK (attack_points >= 0),
     CHECK (autoclaim_credits >= 0),
-    CHECK (autoclaim_active >= 0)
+    CHECK (autoclaim_active >= 0),
+    CHECK (hourly_combo_bonus >= 0),
+    CHECK (hourly_streak >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 2. Table des Préfixes par Serveur
@@ -326,6 +333,22 @@ CREATE TABLE IF NOT EXISTS event_availability_logs (
     INDEX idx_solved_at (solved_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 13. Table des journaux d'exécution /hourly (surveillance, audit et anti-triche)
+CREATE TABLE IF NOT EXISTS hourly_logs (
+    id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id          BIGINT UNSIGNED NOT NULL,
+    claimed_at          DATETIME(6)     NOT NULL,
+    interval_seconds    INT UNSIGNED    NULL     DEFAULT NULL,
+    base_usd            DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
+    bonus_pct           DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
+    total_usd           DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
+    streak              INT UNSIGNED    NOT NULL DEFAULT 1,
+    combo_lost          TINYINT(1)      NOT NULL DEFAULT 0,
+    INDEX idx_hourly_logs_user (discord_id, claimed_at),
+    INDEX idx_hourly_logs_time (claimed_at),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ====================================================================
 -- MIGRATION (installations existantes) : suivi économique.
 -- Appliquer migrations/001_economy_reports.sql sur une base déjà déployée.
@@ -343,5 +366,9 @@ CREATE TABLE IF NOT EXISTS event_availability_logs (
 -- ALTER TABLE daily_claim_logs ADD COLUMN is_auto TINYINT(1) NOT NULL DEFAULT 0;
 -- ALTER TABLE daily_claim_logs ADD INDEX idx_daily_claims_auto (is_auto);
 -- ====================================================================
+-- MIGRATION (installations existantes) : récompense horaire (/hourly).
+-- Appliquer migrations/003_hourly.sql sur une base déjà déployée.
+-- ====================================================================
+
 
 

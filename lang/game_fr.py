@@ -51,6 +51,10 @@ text = {
     'g_error_self_target': '> 🚫 **Cible invalide** · Tu ne peux pas cibler ton propre réseau.',
     'g_error_cooldown': '> ⏱️ **Délai d’attente** · Vous ne pouvez pas encore attribuer de point de réputation. Revenez dans **{time}**.',
     'g_error_claim_cooldown': '> ⏱️ **Délai d’attente** · Tu viens de réclamer ton minage. Réessaie dans **{remaining}**.',
+    'g_error_hourly_cooldown': '⏱️ Déjà réclamé ! Reviens dans **{remaining}** !',
+    'g_hourly_first': '💵 Tu as reçu **{total} USD** ! Reviens <t:{next_ts}:R> pour lancer ton combo ! 🔥 Combo : {streak}, bonus +{bonus}%',
+    'g_hourly_combo': '💵 Tu as reçu **{total} USD** ! Reviens <t:{next_ts}:R> ! 🔥 Combo : {streak}, bonus +{bonus}%',
+    'g_hourly_broken': '💵 Tu as reçu **{total} USD** ! 💥 Combo perdu. Reviens <t:{next_ts}:R> ! 🔥 Combo : {streak}, bonus +{bonus}%',
     'g_error_forbidden': '> ⛔ **Accès refusé** · Vous n’avez pas l’autorisation d’exécuter cette action.',
     'g_error_guild_required': '> 🏢 **Serveur requis** · Cette action doit être effectuée au sein d’un serveur.',
     'g_error_target_not_registered': '> 👤 **Joueur non inscrit** · Cet utilisateur n’est pas encore inscrit sur Root !',
@@ -193,7 +197,7 @@ text = {
     'g_event_pin_name': '🔐 **Code PIN** (`{prefix}pin`)',
     'g_event_pin_desc': 'Individuel · Fourchette de 150',
     'g_event_status_active': '• Statut : 🟢 **En cours** (*{desc}*) — `{prefix}{cmd}`',
-    'g_event_status_cooldown': '• Statut : ⏳ Disponible dans **{remaining}**',
+    'g_event_status_cooldown': '• Statut : ⏳ Disponible à **<t:{timestamp}:T>** (<t:{timestamp}:R>)',
     'g_event_last_winner': '• Dernier gagnant : {winner} depuis le serveur **{server}**',
     'g_event_decode_name': '🔍 **Décryptage** (`{prefix}decode`)',
     'g_event_decode_desc': 'Grille 4x4 · Séquence de coordonnées',
@@ -285,6 +289,7 @@ text = {
     'g_hack_btn_cancel': '⛔ Interrompre',
     'g_error_beta_access_required': '> 🔒 **Accès Bêta restreint** · Le réseau Root est actuellement en phase de bêta fermée réservée aux joueurs autorisés. Un participant peut vous parrainer en vous accordant un point de réputation via la commande `/rep <@vous>` (assurez-vous d\'avoir initialisé votre réseau avec `/network`).',
     'g_reputation_beta_granted': '\n🎉 **Accès Bêta accordé !** <@{recipient}> a été ajouté aux joueurs autorisés et peut désormais accéder à l\'ensemble du jeu.',
+    'g_reputation_beta_autoclaim': '🎫 <@{giver}> reçoit **{credits} crédits d\'autoclaim** pour ce parrainage.',
     'g_reputation_dm_beta_granted': '🎉 **Félicitations !** Tu as également reçu un accès permanent au mode Bêta de Root ! Toutes les fonctionnalités te sont maintenant ouvertes.',
 }
 
@@ -308,6 +313,7 @@ descriptions = {
     'compile': 'Produire un nombre d\'ATK choisi à partir du débit de tes modules d\'attaque.',
     'scan': 'Scanner le réseau d\'un joueur pour découvrir son identifiant secret.',
     'hack': 'Lancer une cyberattaque PvP contre un réseau adverse.',
+    'hourly': 'Réclamer sa récompense horaire en USD avec bonus de combo.',
 }
 
 labels = {
@@ -334,6 +340,7 @@ labels = {
     'act_buy': '🛒 Achat de Composant',
     'act_upgrade': '🧱 Amélioration Pare-feu',
     'act_claim': '🪙 Récolte de Minage',
+    'act_hourly': '⏱️ Récompense Horaire',
     'act_reputation': '⭐ Attribution de Réputation',
     'act_top': '🏆 Classement Général',
     'act_hash': '🧩 Hash Challenge',

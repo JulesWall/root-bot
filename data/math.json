@@ -50,7 +50,8 @@
       "attack": 1,
       "bay_defense": 0
     },
-    "cost_multiplier": 1.5
+    "cost_multiplier": 1.5,
+    "sponsor_autoclaim_credits": 10
   },
   "module_stats": {
     "mining_hashrate_hs": {
@@ -201,5 +202,11 @@
     "delay_seconds": 2700,
     "check_interval_seconds": 15,
     "retaliation_window_hours": 72
+  },
+  "hourly": {
+    "reward_min_usd": 30,
+    "reward_max_usd": 90,
+    "cooldown_minutes": 60,
+    "combo_window_minutes": 20
   }
 }
