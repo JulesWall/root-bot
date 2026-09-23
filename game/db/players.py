@@ -1051,6 +1051,18 @@ class Player:
         return {'reputation_given': True, 'giver': actor, 'recipient': target, 'points': 1, 'bypassed_cooldown': bypass_cooldown}
 
     @staticmethod
+    def add_autoclaim_credits(tx, actor: int, amount: int) -> dict:
+        """Ajoute des crédits d'autoclaim au joueur qui parraine un nouvel accès bêta."""
+        amount = int(amount)
+        if amount <= 0:
+            raise GameError('invalid_amount')
+        player = PlayerData.get(tx, actor)
+        current = int(player.get('autoclaim_credits', 0) or 0)
+        total = current + amount
+        UpdatePlayer.set(tx, actor, autoclaim_credits=total)
+        return {'added': amount, 'autoclaim_credits': total}
+
+    @staticmethod
     def top(tx, category: str = 'reputation') -> dict:
         """Retourne le Top 10 des joueurs classés par réputation, USD, RTM ou victoires d'événements."""
         raw_cat = (category or 'reputation').lower().strip()

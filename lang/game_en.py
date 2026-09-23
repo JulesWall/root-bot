@@ -289,6 +289,7 @@ text = {
     'g_hack_btn_cancel': '⛔ Abort',
     'g_error_beta_access_required': '> 🔒 **Restricted Beta Access** · The Root network is currently in closed beta for authorized players only. An active participant can sponsor you by awarding you a reputation point via `/rep <@you>` (make sure you initialized your network with `/network`).',
     'g_reputation_beta_granted': '\n🎉 **Beta Access Granted!** <@{recipient}> has been added to authorized players and can now access the full game.',
+    'g_reputation_beta_autoclaim': '🎫 <@{giver}> receives **{credits} autoclaim credits** for this sponsorship.',
     'g_reputation_dm_beta_granted': '🎉 **Congratulations!** You have also received permanent access to the Root Beta! All game features are now open to you.',
 }
 

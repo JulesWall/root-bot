@@ -140,6 +140,13 @@ class RootService:
                     results.append(res)
         return results
 
+    async def grant_autoclaim_credits(self, actor: int, amount: int) -> dict:
+        """Crédite des autoclaims au joueur, sous le verrou de son compte."""
+        return await self.database.run(
+            lambda tx: Player.add_autoclaim_credits(tx, actor, amount),
+            locks=[player_lock_name(int(actor))],
+        )
+
     async def execute(self, actor: int, guild: int | None, method: str, **args):
         """
         Point d'entrée asynchrone universel pour l'exécution d'une action de jeu.

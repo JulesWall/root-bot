@@ -50,7 +50,8 @@
       "attack": 1,
       "bay_defense": 0
     },
-    "cost_multiplier": 1.5
+    "cost_multiplier": 1.5,
+    "sponsor_autoclaim_credits": 10
   },
   "module_stats": {
     "mining_hashrate_hs": {

@@ -4909,11 +4909,21 @@ class TestReputationInviteAndOpBypass(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res["bypassed_cooldown"])
         self.assertEqual(tx.players[target_id]["reputation"], 1)
 
+    def test_sponsor_autoclaim_credits_are_added(self):
+        """Le parrainage ajoute 10 crédits d'autoclaim au joueur qui donne le rep."""
+        tx = MockTransaction()
+        tx.players[9999] = {"discord_id": 9999, "autoclaim_credits": 2}
+        result = Player.add_autoclaim_credits(tx, 9999, 10)
+        self.assertEqual(result["added"], 10)
+        self.assertEqual(result["autoclaim_credits"], 12)
+        self.assertEqual(tx.players[9999]["autoclaim_credits"], 12)
+
     async def test_rep_cog_invites_recipient_during_beta(self):
         """Vérifie que la commande /rep inscrit le destinataire dans beta access.json pendant la bêta."""
         from commands.game.rep import Rep
 
         bot = MagicMock()
+        bot.root_service.grant_autoclaim_credits = AsyncMock(return_value={"added": 10, "autoclaim_credits": 10})
         cog = Rep(bot)
 
         ctx = MagicMock()
@@ -4939,9 +4949,19 @@ class TestReputationInviteAndOpBypass(unittest.IsolatedAsyncioTestCase):
                         self.assertIn(1234, check.load_beta_access())
 
                         # Le message de réponse doit contenir l'annonce d'accès accordé
-                        ctx.send.assert_awaited_once()
-                        sent_content = ctx.send.call_args[0][0]
-                        self.assertIn("1234", sent_content)
+                        self.assertEqual(ctx.send.await_count, 2)
+                        first, second = (call.args[0] for call in ctx.send.await_args_list)
+                        self.assertIn("1234", first)
+                        self.assertNotIn("10", first)
+                        self.assertIn("<@9999>", second)
+                        self.assertIn("10", second)
+                        self.assertTrue(ctx.send.await_args_list[1].kwargs["allowed_mentions"].users)
+                        bot.root_service.grant_autoclaim_credits.assert_awaited_once_with(9999, 10)
+
+                        ctx.send.reset_mock()
+                        bot.root_service.grant_autoclaim_credits.reset_mock()
+                        await cog._send(ctx, "reputation", result)
+                        bot.root_service.grant_autoclaim_credits.assert_not_awaited()
 
 class TestBotPresence(unittest.IsolatedAsyncioTestCase):
     """Vérifie la gestion de la présence Discord et du statut de maintenance."""

@@ -289,6 +289,7 @@ text = {
     'g_hack_btn_cancel': '⛔ Interrompre',
     'g_error_beta_access_required': '> 🔒 **Accès Bêta restreint** · Le réseau Root est actuellement en phase de bêta fermée réservée aux joueurs autorisés. Un participant peut vous parrainer en vous accordant un point de réputation via la commande `/rep <@vous>` (assurez-vous d\'avoir initialisé votre réseau avec `/network`).',
     'g_reputation_beta_granted': '\n🎉 **Accès Bêta accordé !** <@{recipient}> a été ajouté aux joueurs autorisés et peut désormais accéder à l\'ensemble du jeu.',
+    'g_reputation_beta_autoclaim': '🎫 <@{giver}> reçoit **{credits} crédits d\'autoclaim** pour ce parrainage.',
     'g_reputation_dm_beta_granted': '🎉 **Félicitations !** Tu as également reçu un accès permanent au mode Bêta de Root ! Toutes les fonctionnalités te sont maintenant ouvertes.',
 }
 
