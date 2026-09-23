@@ -1,6 +1,6 @@
 {
   "version": "1.1.1",
-  "initial_grant_usd": 2500,
+  "initial_grant_usd": 250,
   "usd_decimal_places": 2,
   "rtm_decimal_places": 5,
   "firewall": {
@@ -12,7 +12,7 @@
     "check_interval_seconds": 30
   },
   "mining": {
-    "cost_t1_usd": 1500,
+    "cost_t1_usd": 250,
     "cost_multiplier": 5,
     "rootium_per_hs_per_minute": 1e-07,
     "bytes_per_rtm": 10000000,
