@@ -5,7 +5,7 @@
   "rtm_decimal_places": 5,
   "firewall": {
     "max_level": 5,
-    "first_upgrade_usd": 10000,
+    "first_upgrade_usd": 5000,
     "upgrade_multiplier": 3,
     "max_tier_above": 1,
     "upgrade_duration_seconds": 18000,
@@ -201,5 +201,14 @@
     "delay_seconds": 2700,
     "check_interval_seconds": 15,
     "retaliation_window_hours": 72
+<<<<<<< Updated upstream
+=======
+  },
+  "hourly": {
+    "reward_min_usd": 45,
+    "reward_max_usd": 75,
+    "cooldown_minutes": 60,
+    "combo_window_minutes": 20
+>>>>>>> Stashed changes
   }
 }
