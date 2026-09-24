@@ -323,7 +323,7 @@ text = {
     'g_contract_btn_collect': 'Récupérer {usd} USD',
     # ── Reminders (/rmd) & Contrats ───────────────────────────────────────────
     'g_rmd_syntax': (
-        "### 🔔 Syntaxe de la commande `{prefix}rmd`\n\n"
+        "### Syntaxe de la commande `{prefix}rmd`\n\n"
         "**⚡ Rappels automatiques de jeu :**\n"
         "> • `{prefix}rmd all` — Activer tous les rappels possibles (hourly, claim, events).\n"
         "> • `{prefix}rmd hourly` — Alerte dès que la prime horaire est disponible.\n"
@@ -338,15 +338,15 @@ text = {
         "> • `{prefix}rmd cancel all` — Annuler tous tes rappels d'un coup.\n\n"
         "💡 *Délivrance automatique en MP (avec repli salon si tes MP sont fermés).*"
     ),
-    'g_rmd_created_smart': '> 🔔 **Rappel programmé** · {target_name} dans **{duration}** (<t:{ts}:R>).',
-    'g_rmd_created_custom': '> 🔔 **Rappel programmé** · Dans **{duration}** (<t:{ts}:R>) : **{message}**.',
-    'g_rmd_created_all_title': '🔔 **Activation des rappels Root (/rmd all)**',
-    'g_rmd_created_all_created': '> • ✅ **{target_name}** : programmé dans **{duration}** (<t:{ts}:R>)',
-    'g_rmd_created_all_available': '> • ℹ️ **{target_name}** : déjà disponible ! ({cmd})',
-    'g_rmd_created_all_already': '> • ⏳ **{target_name}** : déjà en cours (<t:{ts}:R>)',
-    'g_rmd_created_all_no_miner': '> • ⚠️ **{target_name}** : aucun mineur actif',
+    'g_rmd_created_smart': '> ✅ **Rappel programmé** · {target_name} dans **{duration}** (<t:{ts}:R>).',
+    'g_rmd_created_custom': '> ✅ **Rappel programmé** · Dans **{duration}** (<t:{ts}:R>) : **{message}**.',
+    'g_rmd_created_all_title': '**Activation des rappels Root (/rmd all)**',
+    'g_rmd_created_all_created': '> ✅ **{target_name}** : programmé dans **{duration}** (<t:{ts}:R>)',
+    'g_rmd_created_all_available': '> ℹ️ **{target_name}** : déjà disponible ! ({cmd})',
+    'g_rmd_created_all_already': '> ⏳ **{target_name}** : déjà en cours (<t:{ts}:R>)',
+    'g_rmd_created_all_no_miner': '> ⚠️ **{target_name}** : aucun mineur actif',
     'g_rmd_already_available': '> ℹ️ **{target_name} est déjà disponible !** Tu peux l\'utiliser dès maintenant avec `{cmd}`.',
-    'g_rmd_list_title': '🔔 **Tes Rappels Actifs**',
+    'g_rmd_list_title': '**Tes Rappels Actifs**',
     'g_rmd_list_empty': '> ℹ️ Tu n\'as aucun rappel actif en attente.',
     'g_rmd_list_item': '> • **#{id}** · <t:{ts}:R> · `{type}` : {message}',
     'g_rmd_cancel_success': '> ✅ **Rappel #{id} annulé** avec succès.',

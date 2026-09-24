@@ -323,7 +323,7 @@ text = {
     'g_contract_btn_collect': 'Collect {usd} USD',
     # ── Reminders (/rmd) & Contrats ───────────────────────────────────────────
     'g_rmd_syntax': (
-        "### 🔔 `{prefix}rmd` Command Syntax\n\n"
+        "### `{prefix}rmd` Command Syntax\n\n"
         "**⚡ Automatic Game Reminders:**\n"
         "> • `{prefix}rmd all` — Enable all possible game reminders (hourly, claim, events).\n"
         "> • `{prefix}rmd hourly` — Alerts as soon as the hourly reward is ready.\n"
@@ -338,15 +338,15 @@ text = {
         "> • `{prefix}rmd cancel all` — Clear all your active reminders.\n\n"
         "💡 *Delivered directly via DM (with channel fallback if your DMs are closed).*"
     ),
-    'g_rmd_created_smart': '> 🔔 **Reminder set** · {target_name} in **{duration}** (<t:{ts}:R>).',
-    'g_rmd_created_custom': '> 🔔 **Reminder set** · In **{duration}** (<t:{ts}:R>): **{message}**.',
-    'g_rmd_created_all_title': '🔔 **Root Reminders Activation (/rmd all)**',
-    'g_rmd_created_all_created': '> • ✅ **{target_name}**: scheduled in **{duration}** (<t:{ts}:R>)',
-    'g_rmd_created_all_available': '> • ℹ️ **{target_name}**: already available! ({cmd})',
-    'g_rmd_created_all_already': '> • ⏳ **{target_name}**: already active (<t:{ts}:R>)',
-    'g_rmd_created_all_no_miner': '> • ⚠️ **{target_name}**: no active miner',
+    'g_rmd_created_smart': '> ✅ **Reminder set** · {target_name} in **{duration}** (<t:{ts}:R>).',
+    'g_rmd_created_custom': '> ✅ **Reminder set** · In **{duration}** (<t:{ts}:R>): **{message}**.',
+    'g_rmd_created_all_title': '**Root Reminders Activation (/rmd all)**',
+    'g_rmd_created_all_created': '> ✅ **{target_name}**: scheduled in **{duration}** (<t:{ts}:R>)',
+    'g_rmd_created_all_available': '> ℹ️ **{target_name}**: already available! ({cmd})',
+    'g_rmd_created_all_already': '> ⏳ **{target_name}**: already active (<t:{ts}:R>)',
+    'g_rmd_created_all_no_miner': '> ⚠️ **{target_name}**: no active miner',
     'g_rmd_already_available': '> ℹ️ **{target_name} is already available!** You can use it right now with `{cmd}`.',
-    'g_rmd_list_title': '🔔 **Your Active Reminders**',
+    'g_rmd_list_title': '**Your Active Reminders**',
     'g_rmd_list_empty': '> ℹ️ You have no active reminders pending.',
     'g_rmd_list_item': '> • **#{id}** · <t:{ts}:R> · `{type}` : {message}',
     'g_rmd_cancel_success': '> ✅ **Reminder #{id} cancelled** successfully.',
