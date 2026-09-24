@@ -5587,6 +5587,29 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Baie 01", bays_field.value)
         self.assertIn("Baie 04", bays_field.value)
 
+    def test_network_displays_seconds_to_full_remaining(self):
+        """Vérifie que /network affiche le temps restant (seconds_to_full) et non le temps total (seconds_to_fill_total)."""
+        from commands.game.network import _build_compact_total_lines
+        mining_state = {
+            "buffer": Decimal("0.00050"),
+            "memory_pct": 50.0,
+            "rate_per_min": Decimal("0.00010"),
+            "memory_used_formatted": "100 o",
+            "total_ram_formatted": "200 o",
+            "is_full": False,
+            "seconds_to_full": 300,        # 5 minutes restantes
+            "seconds_to_fill_total": 600,  # 10 minutes au total
+        }
+        stats = {
+            'total_bits_per_s': 100,
+            'total_bay_defense': 10,
+            'network_defense': 20,
+            'total_hashrate_formatted': "50 H/s",
+        }
+        lines = _build_compact_total_lines(self.mock_ctx, stats, 1, mining_state, {}, False, 0, Decimal('0'))
+        self.assertIn("Plein dans** : **5min**", lines)
+        self.assertNotIn("10min", lines)
+
 
 class TestBuyCatalogAndShop(unittest.IsolatedAsyncioTestCase):
     """Tests du catalogue interactif et de la boutique (Chantier C)."""
@@ -9309,8 +9332,9 @@ class TestReminders(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res['status'], 'created')
         self.assertEqual(res['target'], 'events')
         self.assertEqual(res['target_event'], 'hash')
-        self.assertEqual(res['remaining_seconds'], 600)
+        self.assertEqual(res['remaining_seconds'], 570)  # 600s - 30s d'avance
         self.assertIn('reminder', res)
+        self.assertIn("30 secondes", res['reminder']['message'])
 
     async def test_rmd_limit_quota(self):
         """Vérifie la limite de 10 rappels actifs maximum par joueur."""
@@ -9515,7 +9539,8 @@ class TestReminders(unittest.IsolatedAsyncioTestCase):
         res_hash = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='hash')
         self.assertEqual(res_hash['status'], 'created')
         self.assertEqual(res_hash['target_event'], 'hash')
-        self.assertEqual(res_hash['remaining_seconds'], 480)
+        self.assertEqual(res_hash['remaining_seconds'], 450)  # 480s - 30s d'avance
+        self.assertIn("30 secondes", res_hash['reminder']['message'])
 
         # 5. /rmd all doit également voir le rappel hash déjà planifié
         res_all = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='all')

@@ -314,7 +314,7 @@ def _build_compact_total_lines(ctx, stats, firewall: int, mining_state: dict, re
     total_ram_str = mining_state.get('total_ram_formatted', '0 o')
     rate_str = text.format_rtm(mining_state.get('rate_per_min', 0))
     pending_str = text.format_rtm(mining_state.get('buffer', 0))
-    fill_str = format_duration(mining_state.get('seconds_to_fill_total', 0))
+    fill_str = format_duration(mining_state.get('seconds_to_full', 0))
 
     rep_note = f", +{rep_bonus_pct:.1f}% rep" if rep_val > 0 else ""
     autoclaim_credits = int(result.get('autoclaim_credits', 0) or 0)

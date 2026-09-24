@@ -29,6 +29,9 @@ from game.packet_manager import PacketManager
 from game.events_manager import EventsManager
 
 
+EVENT_REMINDER_ADVANCE_SECONDS = 30
+
+
 class RootService:
     """Façade centrale orchestrant toutes les opérations de jeu côté serveur."""
 
@@ -476,7 +479,7 @@ class RootService:
 
                 unavailable_events = [
                     (ev_name, info) for ev_name, info in events_map.items()
-                    if info.get('status') != 'active'
+                    if info.get('status') != 'active' and info.get('remaining_seconds', 0) > EVENT_REMINDER_ADVANCE_SECONDS
                 ]
                 unavailable_events.sort(key=lambda item: item[1].get('remaining_seconds', 999999))
 
@@ -493,11 +496,11 @@ class RootService:
                                 'remind_at': existing.get('remind_at'),
                             })
                         else:
-                            remind_at = info.get('next_at')
-                            rem_sec = info.get('remaining_seconds', 0)
+                            remind_at = info.get('next_at') - timedelta(seconds=EVENT_REMINDER_ADVANCE_SECONDS)
+                            rem_sec = info.get('remaining_seconds', 0) - EVENT_REMINDER_ADVANCE_SECONDS
                             try:
                                 created = RemindersDB.create_reminder(
-                                    tx, actor, remind_at=remind_at, message=f"Événement {ev_name} disponible !",
+                                    tx, actor, remind_at=remind_at, message=f"Événement {ev_name} dans 30 secondes !",
                                     channel_id=channel_id, guild_id=guild_id, reminder_type='events', target_event=ev_name,
                                 )
                                 results.append({
@@ -550,13 +553,16 @@ class RootService:
 
                 if target in EventsManager.SUPPORTED_EVENTS:
                     info = events_map.get(target)
-                    if not info or info.get('status') == 'active':
+                    if not info or info.get('status') == 'active' or info.get('remaining_seconds', 0) <= EVENT_REMINDER_ADVANCE_SECONDS:
                         return {'status': 'already_available', 'target': target}
-                    remind_at = info.get('next_at')
-                    rem_sec = info.get('remaining_seconds', 0)
+                    remind_at = info.get('next_at') - timedelta(seconds=EVENT_REMINDER_ADVANCE_SECONDS)
+                    rem_sec = info.get('remaining_seconds', 0) - EVENT_REMINDER_ADVANCE_SECONDS
                     chosen_event = target
                 else:
-                    active_any = [k for k, v in events_map.items() if v.get('status') == 'active']
+                    active_any = [
+                        k for k, v in events_map.items()
+                        if v.get('status') == 'active' or v.get('remaining_seconds', 0) <= EVENT_REMINDER_ADVANCE_SECONDS
+                    ]
                     if active_any:
                         return {'status': 'already_available', 'target': 'events', 'active_event': active_any[0]}
                     sorted_events = sorted(
@@ -564,11 +570,13 @@ class RootService:
                         key=lambda item: item[1].get('remaining_seconds', 999999),
                     )
                     chosen_event, info = sorted_events[0]
-                    remind_at = info.get('next_at')
-                    rem_sec = info.get('remaining_seconds', 0)
+                    if info.get('remaining_seconds', 0) <= EVENT_REMINDER_ADVANCE_SECONDS:
+                        return {'status': 'already_available', 'target': 'events', 'active_event': chosen_event}
+                    remind_at = info.get('next_at') - timedelta(seconds=EVENT_REMINDER_ADVANCE_SECONDS)
+                    rem_sec = info.get('remaining_seconds', 0) - EVENT_REMINDER_ADVANCE_SECONDS
 
                 created = RemindersDB.create_reminder(
-                    tx, actor, remind_at=remind_at, message=f"Événement {chosen_event} disponible !",
+                    tx, actor, remind_at=remind_at, message=f"Événement {chosen_event} dans 30 secondes !",
                     channel_id=channel_id, guild_id=guild_id, reminder_type='events', target_event=chosen_event,
                 )
                 return {'status': 'created', 'reminder': created, 'remind_at': remind_at, 'target': 'events', 'target_event': chosen_event, 'remaining_seconds': rem_sec}
