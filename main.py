@@ -20,7 +20,7 @@ from game.game_error import GameError
 from game.root_service import RootService
 from utils.logger import Logger
 from utils.check import Check
-from utils.prefix_manager import get_prefix_async
+from utils.prefix_manager import get_prefix_async, get_user_prefix_async
 from utils.language_manager import fetch_user_language
 from utils.presence_manager import get_presence_activity, update_bot_presence, start_presence_loop
 from utils import text
@@ -33,10 +33,15 @@ async def get_prefix_for_bot(bot: commands.Bot, message: discord.Message):
     Résout dynamiquement le préfixe pour chaque message textuel reçu.
     
     - Si le message provient d'un serveur (guild), lit le préfixe configuré en base via PrefixDB.
+    - Si le message provient d'un MP (DM), lit le préfixe personnel de l'utilisateur via PrefixDB.
     - Repli automatique sur data.DEFAULT_PREFIX ('+r') en cas d'absence de configuration.
     - Permet également de mentionner le bot comme préfixe (@Bot commande).
     """
-    prefix = await get_prefix_async(message.guild.id) if message.guild else data.DEFAULT_PREFIX
+    if message.guild:
+        prefix = await get_prefix_async(message.guild.id)
+    else:
+        author_id = getattr(message.author, "id", None)
+        prefix = await get_user_prefix_async(author_id) if author_id else data.DEFAULT_PREFIX
     return commands.when_mentioned_or(prefix)(bot, message)
 
 
@@ -135,7 +140,7 @@ def create_bot() -> commands.Bot:
         Vérification globale exécutée avant chaque commande (Slash ou préfixe).
         
         Ordre des contrôles de sécurité :
-        1. RÈGLE STRICTE MP : Interdiction absolue des commandes en MP. Le bot ne répond jamais en privé.
+        1. RÈGLE MP : Blocage des commandes réservées aux serveurs (ex: trade) en MP.
         2. Accusé de réception (defer) immédiat pour les Slash Commands pour éviter le timeout de 3s.
         3. Contrôle des utilisateurs bannis (sauf commandes admin pour permettre l'unban).
         4. Contrôle de maintenance globale (seul le rôle MAINTENANCE_BYPASS_ROLE_ID peut agir).
@@ -150,12 +155,9 @@ def create_bot() -> commands.Bot:
         is_help_command = command_name == "help"
         interaction = getattr(ctx, "interaction", None)
 
-        # 1. RÈGLE MP : Seules les Slash Commands sont autorisées en MP (pas de préfixe).
-        # Les commandes spécifiques aux serveurs (prefix, trade) sont rejetées.
+        # 1. RÈGLE MP : Les commandes spécifiques aux serveurs (trade) sont rejetées en MP.
         if ctx.guild is None:
-            if not interaction:
-                return False
-            if command_name in ("prefix", "trade"):
+            if command_name == "trade":
                 raise GameError('guild_only_command')
 
         # 2. Vérification des bannissements locaux (data/banned.json)
@@ -205,13 +207,17 @@ def create_bot() -> commands.Bot:
     async def on_message(message: discord.Message):
         """
         Écouteur de messages textuels.
-        Ignore systématiquement les bots et TOUT message reçu en MP (politique zéro MP).
+        Ignore systématiquement les bots.
         Normalise en minuscules le texte commençant par un préfixe custom pour tolérer les majuscules.
         """
-        if message.author.bot or message.guild is None:
+        if message.author.bot:
             return
         if message.content:
-            prefix = await get_prefix_async(message.guild.id)
+            if message.guild:
+                prefix = await get_prefix_async(message.guild.id)
+            else:
+                author_id = getattr(message.author, "id", None)
+                prefix = await get_user_prefix_async(author_id) if author_id else data.DEFAULT_PREFIX
             if message.content.lower().startswith(prefix.lower()):
                 message.content = prefix + message.content[len(prefix):].lower()
         await bot.process_commands(message)
@@ -220,14 +226,18 @@ def create_bot() -> commands.Bot:
     async def on_message_edit(before: discord.Message, after: discord.Message):
         """
         Permet de re-déclencher une commande si l'utilisateur modifie son message avec préfixe.
-        Ignore les MP et les messages de bots.
+        Ignore les messages de bots.
         Normalise en minuscules le texte commençant par un préfixe custom pour tolérer les majuscules.
         """
-        if after.author.bot or after.guild is None:
+        if after.author.bot:
             return
         if before.content != after.content:
             if after.content:
-                prefix = await get_prefix_async(after.guild.id)
+                if after.guild:
+                    prefix = await get_prefix_async(after.guild.id)
+                else:
+                    author_id = getattr(after.author, "id", None)
+                    prefix = await get_user_prefix_async(author_id) if author_id else data.DEFAULT_PREFIX
                 if after.content.lower().startswith(prefix.lower()):
                     after.content = prefix + after.content[len(prefix):].lower()
             await bot.process_commands(after)
@@ -278,12 +288,7 @@ def create_bot() -> commands.Bot:
         - CheckFailure -> accès refusé.
         - UserInputError -> syntaxe incorrecte.
         - Autres -> log d'anomalie système.
-        Règle stricte : Ne jamais répondre en message privé (silence total si ctx.guild is None).
         """
-        # En MP, le bot ne répond qu'aux Slash Commands (silence pour les commandes texte)
-        if ctx.guild is None and not getattr(ctx, "interaction", None):
-            return
-
         if isinstance(error, commands.CommandNotFound):
             return
 

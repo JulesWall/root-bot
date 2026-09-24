@@ -70,11 +70,15 @@ class Event(BaseGameCog):
         is_slash = bool(getattr(ctx, "interaction", None))
         prefix = "/" if is_slash else (getattr(ctx, "clean_prefix", None) or getattr(ctx, "prefix", "+r"))
 
-        # Le service renvoie {'events': {hash: {...}, pin: {...}, ...}}
+        # Le service renvoie {'events': {hash: {...}, pin: {...}, ...}, 'firewall_level': ..., 'firewall_multiplier': ...}
         events_data = (result or {}).get("events", {})
         sorted_events = self._sort_events(events_data)
+        fw_lvl = (result or {}).get("firewall_level", 0)
+        fw_mult = (result or {}).get("firewall_multiplier", 1)
 
         blocks = []
+        if fw_mult is not None:
+            blocks.append(text.get(ctx, "g_event_fw_banner", fw_mult=fw_mult, fw_lvl=fw_lvl))
         for event_key, event_info in sorted_events:
             lines = []
             lines.append(text.get(ctx, f"g_event_{event_key}_name", prefix=prefix))

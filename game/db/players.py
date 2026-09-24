@@ -167,7 +167,7 @@ class UpdatePlayer:
             'secret_id', 'attack_points',
             'autoclaim_credits', 'autoclaim_active',
             'hourly_last_at', 'hourly_combo_bonus', 'hourly_streak',
-            'contract_fidelity', 'contracts_completed',
+            'contract_fidelity', 'contracts_completed', 'contract_grace_until',
         } | {f'{kind}_t{tier}' for kind in ('mining', 'attack', 'bay_defense') for tier in range(1, 7)}
 
         if not values or any(key not in allowed for key in values):
@@ -338,6 +338,19 @@ class Player:
             rootium=Decimal(p['rootium']) - rtm_price,
             **{column: int(p.get(column, 0)) + 1}
         )
+        # Si le joueur achète un module de minage, sa capacité mémoire et son débit évoluent.
+        # On recalcule et synchronise l'échéance du rappel de saturation RAM si actif.
+        if kind == 'mining':
+            p_after = PlayerData.get(tx, actor)
+            stats_after = MathConfig.calculate_player_stats(p_after)
+            state_after = MathConfig.compute_mining_progress(p_after, stats_after, tx.now)
+            sec_to_full_after = state_after.get('seconds_to_full', 0)
+            if sec_to_full_after > 0:
+                from datetime import timedelta
+                from game.db.reminders import RemindersDB
+                new_remind_at = tx.now + timedelta(seconds=sec_to_full_after)
+                RemindersDB.reschedule_claim_reminder(tx, actor, new_remind_at)
+
         return {
             'bought': True,
             'kind': kind,
@@ -452,7 +465,27 @@ class Player:
             amount=claimed,
             is_auto=is_auto,
         )
-        result.update({'claimed': True, 'amount': claimed, 'new_rootium': new_rootium, 'ram_was_full': ram_was_full})
+
+        # Rapatriement adaptatif des rappels /rmd claim : si le joueur vide sa mémoire vive avant
+        # l'échéance programmée, le rappel actif est automatiquement recalculé et reprogrammé
+        # pour la prochaine saturation complète de la RAM.
+        reminder_rescheduled = False
+        sec_to_fill = state.get('seconds_to_fill_total', 0)
+        if sec_to_fill > 0:
+            from datetime import timedelta
+            from game.db.reminders import RemindersDB
+            new_remind_at = tx.now + timedelta(seconds=sec_to_fill)
+            rescheduled_count = RemindersDB.reschedule_claim_reminder(tx, actor, new_remind_at)
+            reminder_rescheduled = bool(rescheduled_count and rescheduled_count > 0)
+
+        result.update({
+            'claimed': True,
+            'amount': claimed,
+            'new_rootium': new_rootium,
+            'ram_was_full': ram_was_full,
+            'seconds_to_fill_total': sec_to_fill,
+            'reminder_rescheduled': reminder_rescheduled,
+        })
         return result
 
     @staticmethod
@@ -980,9 +1013,6 @@ class Player:
 
         usd_price, _ = _calculate_module_price('firewall', target_level)
 
-        if Decimal(p['dollars']) < usd_price:
-            raise GameError('upgrade_insufficient_funds', usd=format_usd(usd_price), level=target_level)
-
         settings = MathConfig.load()
         duration_seconds = int(settings.get('firewall', {}).get('upgrade_duration_seconds', 18000))
         duration_str = format_duration(duration_seconds)
@@ -1000,12 +1030,16 @@ class Player:
                 'usd_price': usd_price,
                 'current_usd': Decimal(str(p['dollars'])),
                 'remaining_usd': Decimal(str(p['dollars'])) - usd_price,
+                'can_afford': Decimal(p['dollars']) >= usd_price,
                 'duration': duration_str,
                 'duration_seconds': duration_seconds,
                 'defense_current': current_def,
                 'defense_next': next_def,
                 'defense_gain': def_gain,
             }
+
+        if Decimal(p['dollars']) < usd_price:
+            raise GameError('upgrade_insufficient_funds', usd=format_usd(usd_price), level=target_level)
 
         expires_at = tx.now + timedelta(seconds=duration_seconds)
         UpdatePlayer.set(tx, actor, dollars=Decimal(p['dollars']) - usd_price)
@@ -1253,8 +1287,12 @@ class Player:
             new_combo_bonus = Decimal('0.00')
             new_streak = 1
 
+        # Multiplicateur lié au niveau de pare-feu : (firewall_level + 1)
+        fw_level = int(p.get('firewall_level', 0) or 0)
+        fw_mult = Decimal(str(max(0, fw_level) + 1))
+
         # Tirage aléatoire uniforme du gain de base
-        base_gain = Decimal(str(random.randint(reward_min, reward_max)))
+        base_gain = (Decimal(str(random.randint(reward_min, reward_max))) * fw_mult).quantize(Decimal('0.01'))
 
         # Calcul du gain total avec le bonus cumulé (sans plafond)
         multiplier = Decimal('1') + (new_combo_bonus / Decimal('100'))
@@ -1303,6 +1341,8 @@ class Player:
             'interval_seconds': interval_seconds,
             'next_available_ts': next_ts,
             'combo_deadline_ts': combo_ts,
+            'firewall_level': fw_level,
+            'firewall_multiplier': int(fw_mult),
         }
 
     @staticmethod

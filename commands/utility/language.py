@@ -32,7 +32,7 @@ from utils.language_manager import (
     reset_user_language,
 )
 from utils.logger import Logger
-from utils.prefix_manager import get_prefix_async
+from utils.prefix_manager import resolve_prefix_async
 
 # Table de correspondance des alias de langues saisis par les utilisateurs
 LANG_ALIASES = {
@@ -66,9 +66,9 @@ class Language(commands.Cog):
             choice (str, optional): Code de langue, alias, ou commande de reset.
         """
         guild = getattr(ctx, "guild", None)
-        prefix = await get_prefix_async(guild.id) if guild else DEFAULT_PREFIX
         user = getattr(ctx, "author", None) or getattr(ctx, "user", None)
         user_id = getattr(user, "id", None)
+        prefix = await resolve_prefix_async(guild.id if guild else None, user_id)
         if user_id:
             try:
                 await fetch_user_language(user_id)

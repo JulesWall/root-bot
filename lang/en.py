@@ -7,6 +7,7 @@ text = {
     "prefix_invalid": "> ⚠️ **Invalid Prefix** · Prefix must be between **1 and 32 characters** (no spaces).",
     "prefix_usage": "> ℹ️ **Usage**: `prefix <new_prefix>` (e.g. `!`, `+r`)",
     "prefix_success": "> ✅ **Configuration Updated** · Server prefix is now set to `{new_prefix}`",
+    "prefix_user_success": "> ✅ **Configuration Updated** · Your personal DM prefix is now set to `{new_prefix}`",
     "ban_already_banned": "> ⚠️ **Action Denied** · {user} is already banned from Root network.",
     "ban_success": "> 🔨 **Sanction Applied** · {user} has been banned from Root network.",
     "unban_not_banned": "> ℹ️ **Notice** · {user} is not banned from Root network.",

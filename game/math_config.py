@@ -62,8 +62,8 @@ class MathConfig:
     def get_event_firewall_multiplier(cls, firewall_level: int) -> int:
         """Calcule le multiplicateur de gains d'événements conféré par le pare-feu.
         
-        Suit le barème par niveau de data/math.json (actuellement x1 à x3).
-        Le repli historique reste 2^niveau si aucun barème n'est fourni.
+        Suit le barème par niveau de data/math.json (actuellement x1 à x6).
+        Le repli par défaut est (niveau + 1).
         """
         rules = cls.load()
         multipliers = rules.get("event_firewall_multipliers")
@@ -79,9 +79,9 @@ class MathConfig:
             per_level = int(legacy_cfg.get("per_level", 1))
             return max(1, base + (int(firewall_level or 0) * per_level))
 
-        # Fallback mathématique : 2^level (1, 2, 4, 8, 16, 32...)
+        # Fallback standard : niveau + 1 (1, 2, 3, 4, 5, 6...)
         lvl = max(0, int(firewall_level or 0))
-        return 2 ** lvl
+        return lvl + 1
 
     @classmethod
     def get_module_stat(cls, kind: str, tier: int) -> int:

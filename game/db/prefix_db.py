@@ -59,3 +59,44 @@ class PrefixDB:
             locks=[f'guild:{int(guild_id)}'],
         )
 
+    # ── Préfixes Utilisateurs (MP) ───────────────────────────────────────────
+    @staticmethod
+    def get_user(tx, user_id: int) -> str:
+        """Retourne le préfixe configuré de l'utilisateur en MP ou data.DEFAULT_PREFIX ('+r')."""
+        row = tx.one(
+            'SELECT prefix FROM user_prefixes WHERE user_id = %s',
+            (user_id,)
+        )
+        return row['prefix'] if row else data.DEFAULT_PREFIX
+
+    @staticmethod
+    def set_user(tx, user_id: int, prefix: str):
+        """Insère ou met à jour le préfixe personnel d'un utilisateur (UPSERT atomique)."""
+        tx.execute(
+            """
+            INSERT INTO user_prefixes (user_id, prefix)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE prefix = VALUES(prefix)
+            """,
+            (user_id, prefix)
+        )
+
+    @staticmethod
+    def delete_user(tx, user_id: int):
+        """Supprime la configuration personnalisée en MP (retour à DEFAULT_PREFIX)."""
+        tx.execute(
+            'DELETE FROM user_prefixes WHERE user_id = %s',
+            (user_id,)
+        )
+
+    async def fetch_user(self, user_id: int) -> str:
+        """Lecture asynchrone concurrente du préfixe utilisateur."""
+        return await self.database.run(lambda tx: self.get_user(tx, user_id), readonly=True)
+
+    async def save_user(self, user_id: int, prefix: str):
+        """Écriture asynchrone du préfixe utilisateur validé."""
+        await self.database.run(
+            lambda tx: self.set_user(tx, user_id, prefix),
+            locks=[f'user:{int(user_id)}'],
+        )
+

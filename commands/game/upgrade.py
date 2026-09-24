@@ -140,7 +140,34 @@ class Upgrade(BaseGameCog):
             def_next_fmt = f"{def_next:,} DEF".replace(',', ' ')
 
             cur_usd = text.format_usd(result.get('current_usd', 0))
-            rem_usd = text.format_usd(result.get('remaining_usd', 0))
+            rem_usd_val = result.get('remaining_usd', 0)
+            is_fr = text.get_locale(ctx) == 'fr'
+
+            if rem_usd_val < 0:
+                missing = text.format_usd(abs(rem_usd_val))
+                rem_usd = f"**{text.format_usd(rem_usd_val)} USD** ⚠️ *(Manque {missing} USD)*" if is_fr else f"**{text.format_usd(rem_usd_val)} USD** ⚠️ *(Missing {missing} USD)*"
+            else:
+                rem_usd = f"**{text.format_usd(rem_usd_val)} USD**"
+
+            income_mult = next_lvl + 1
+            cur_income_mult = cur_lvl + 1
+            cur_multiplier = MathConfig.get_event_firewall_multiplier(cur_lvl)
+
+            unlocked_modules = text.get(ctx, f'g_upgrade_modules_{next_lvl}')
+
+            perks_list = []
+            if next_lvl == 1:
+                perks_list.append(text.get(ctx, 'g_upgrade_quote_perk_1'))
+            elif next_lvl == 3:
+                perks_list.append(text.get(ctx, 'g_upgrade_quote_scan_alert_3'))
+            elif next_lvl == 4:
+                perks_list.append(text.get(ctx, 'g_upgrade_quote_scan_alert_4'))
+            elif next_lvl == 5:
+                perks_list.append(text.get(ctx, 'g_upgrade_quote_perk_5'))
+
+            perks_str = ""
+            if perks_list:
+                perks_str = "\n" + "\n".join(f"• {p}" for p in perks_list)
 
             content = text.get(
                 ctx, 'g_upgrade_quote',
@@ -151,18 +178,14 @@ class Upgrade(BaseGameCog):
                 rem_usd=rem_usd,
                 duration=result.get('duration', '5h'),
                 multiplier=event_multiplier,
+                cur_multiplier=cur_multiplier,
                 defense_gain=def_gain_fmt,
                 defense_next=def_next_fmt,
+                income_mult=income_mult,
+                cur_income_mult=cur_income_mult,
+                unlocked_modules=unlocked_modules,
+                perks=perks_str,
             )
-            scan_line = ""
-            if next_lvl == 3:
-                scan_line = f"\n• {text.get(ctx, 'g_upgrade_quote_scan_alert_3')}"
-            elif next_lvl >= 4:
-                scan_line = f"\n• {text.get(ctx, 'g_upgrade_quote_scan_alert_4')}"
-
-            if scan_line and "\n\n*" in content:
-                parts = content.split("\n\n*", 1)
-                content = f"{parts[0]}{scan_line}\n\n*{parts[1]}"
 
             view = Confirmation(self._send, self.service, ctx, 'upgrade', {'confirm': True})
             await self._send_embed(ctx, 'upgrade', content, view=view)

@@ -125,3 +125,28 @@ class RemindersDB:
 
         return rows
 
+    @staticmethod
+    def reschedule_claim_reminder(tx, discord_id: int, new_remind_at: datetime) -> int:
+        """
+        Reprogramme l'échéance des rappels de claim actifs pour un joueur.
+        Permet de synchroniser les alertes /rmd claim lorsque le joueur vide
+        sa mémoire vive plus tôt que prévu ou fait évoluer son matériel.
+        Retourne le nombre de rappels mis à jour.
+        """
+        existing = tx.one(
+            "SELECT id FROM reminders WHERE discord_id = %s AND reminder_type = 'claim' LIMIT 1",
+            (discord_id,),
+        )
+        if not existing:
+            return 0
+
+        tx.execute(
+            """
+            UPDATE reminders
+            SET remind_at = %s
+            WHERE discord_id = %s AND reminder_type = 'claim'
+            """,
+            (new_remind_at, discord_id),
+        )
+        return 1
+

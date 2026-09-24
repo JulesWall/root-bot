@@ -161,9 +161,9 @@ class Claim(BaseGameCog):
             await self._invoke(ctx, 'claim')
 
     # ── Préfixe ──────────────────────────────────────────────────────────────
-    @commands.command(name='claim', aliases=['cl'], help=FR['claim'])
+    @commands.command(name='claim', aliases=['c', 'cl'], help=FR['claim'])
     async def prefix_claim(self, ctx, *args):
-        """Commande préfixe !claim (alias !cl)."""
+        """Commande préfixe !claim (aliases !c, !cl)."""
         if args:
             sub = args[0].strip().lower()
             if sub in ('cancel', 'stop', 'off', 'annuler'):
@@ -232,6 +232,12 @@ class Claim(BaseGameCog):
 
         if result.get('claimed'):
             amount = Decimal(str(result.get('amount', 0)))
+            rmd_hint = ""
+            if result.get('reminder_rescheduled'):
+                sec_to_fill = result.get('seconds_to_fill_total') or result.get('seconds_to_full', 0)
+                time_to_full = format_duration(sec_to_fill)
+                rmd_hint = text.get(ctx, 'g_claim_rmd_rescheduled_hint', time_to_full=time_to_full)
+
             content = text.get(
                 ctx, 'g_claim_success',
                 amount=text.format_rtm(amount),
@@ -240,6 +246,7 @@ class Claim(BaseGameCog):
                 rate=rate_str,
                 rep_bonus_note=rep_bonus_note,
                 credits_hint=credits_hint,
+                rmd_hint=rmd_hint,
             )
             await self._reply(ctx, content)
             await self._log_blockchain(ctx, amount)

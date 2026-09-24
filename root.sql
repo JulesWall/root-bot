@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS players (
     -- Système de Contrats (/contract)
     contract_fidelity   INT UNSIGNED    NOT NULL DEFAULT 0,
     contracts_completed INT UNSIGNED    NOT NULL DEFAULT 0,
+    contract_grace_until DATETIME(6)    NULL     DEFAULT NULL,
 
     -- Contraintes d'intégrité
     PRIMARY KEY (discord_id),
@@ -101,6 +102,13 @@ CREATE TABLE IF NOT EXISTS guild_prefixes (
     guild_id   BIGINT UNSIGNED NOT NULL,
     prefix     VARCHAR(32)     NOT NULL,
     PRIMARY KEY (guild_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2b. Table des Préfixes Personnels par Utilisateur (MP)
+CREATE TABLE IF NOT EXISTS user_prefixes (
+    user_id    BIGINT UNSIGNED NOT NULL,
+    prefix     VARCHAR(32)     NOT NULL,
+    PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 3. Table des Améliorations en cours (différées)

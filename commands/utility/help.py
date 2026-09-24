@@ -19,7 +19,7 @@ from discord.ext import commands
 import data
 from lang import help_en, help_fr
 from utils.check import Check
-from utils.prefix_manager import get_prefix_async
+from utils.prefix_manager import get_prefix_async, get_user_prefix_async
 from utils.text import get_locale
 
 logger = logging.getLogger(__name__)
@@ -429,11 +429,13 @@ class HelpCog(commands.Cog, name="Help"):
         has_access = await self.check.has_beta_access(self.bot, user_id)
         return not has_access
 
-    async def _resolve_prefix(self, guild_id: Optional[int]) -> str:
-        """Résout le préfixe avec repli sur DEFAULT_PREFIX si aucun serveur associé."""
-        if not guild_id:
-            return data.DEFAULT_PREFIX
-        return await get_prefix_async(guild_id)
+    async def _resolve_prefix(self, guild_id: Optional[int], user_id: Optional[int] = None) -> str:
+        """Résout le préfixe avec repli sur le préfixe utilisateur en MP ou DEFAULT_PREFIX."""
+        if guild_id:
+            return await get_prefix_async(guild_id)
+        if user_id:
+            return await get_user_prefix_async(user_id)
+        return data.DEFAULT_PREFIX
 
     @slash_command(
         name="help",
@@ -452,7 +454,7 @@ class HelpCog(commands.Cog, name="Help"):
         """Commande Slash d'accès au centre d'aide (réponse éphémère)."""
         locale = get_locale(ctx) or "fr"
         guild_id = ctx.guild.id if ctx.guild else None
-        prefix = await self._resolve_prefix(guild_id)
+        prefix = await self._resolve_prefix(guild_id, ctx.author.id)
 
         canonical_cmd, category, unknown_q = self._resolve_command_query(command, locale)
         show_beta = await self._should_show_beta_note(ctx.author.id)
@@ -490,7 +492,7 @@ class HelpCog(commands.Cog, name="Help"):
         """Commande textuelle avec préfixe ({prefix}help)."""
         locale = get_locale(ctx) or "fr"
         guild_id = ctx.guild.id if ctx.guild else None
-        prefix = await self._resolve_prefix(guild_id)
+        prefix = await self._resolve_prefix(guild_id, ctx.author.id)
 
         canonical_cmd, category, unknown_q = self._resolve_command_query(command_name, locale)
         show_beta = await self._should_show_beta_note(ctx.author.id)

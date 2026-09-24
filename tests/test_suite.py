@@ -104,6 +104,7 @@ class MockTransaction:
         self.contracts = {}
         self.reminders = []
         self.prefixes = {}
+        self.user_prefixes = {}
         self.event_availability_logs = []
         self.executed_queries = []
         self.acquired_locks = []
@@ -171,9 +172,21 @@ class MockTransaction:
             count = sum(1 for r in self.reminders if r["discord_id"] == uid)
             return {"count": count}
 
+        if "FROM REMINDERS WHERE DISCORD_ID" in q and "REMINDER_TYPE = 'CLAIM'" in q:
+            uid = int(params[0])
+            for r in self.reminders:
+                if r["discord_id"] == uid and r["reminder_type"] == "claim":
+                    return dict(r)
+            return None
+
         if "SELECT PREFIX FROM GUILD_PREFIXES WHERE GUILD_ID" in q:
             gid = params[0]
             p = self.prefixes.get(gid)
+            return {"prefix": p} if p else None
+
+        if "SELECT PREFIX FROM USER_PREFIXES WHERE USER_ID" in q:
+            uid = params[0]
+            p = self.user_prefixes.get(uid)
             return {"prefix": p} if p else None
 
         if "SELECT LAST_FOUND_ON FROM EVENTS WHERE EVENT = 'DAILY_MODERATION_REPORT'" in q:
@@ -711,6 +724,16 @@ class MockTransaction:
             self.reminders = [r for r in self.reminders if r["id"] not in del_ids]
             return before - len(self.reminders)
 
+        if "UPDATE REMINDERS SET REMIND_AT =" in q and "REMINDER_TYPE = 'CLAIM'" in q:
+            new_at = params[0]
+            uid = int(params[1])
+            count = 0
+            for r in self.reminders:
+                if r["discord_id"] == uid and r["reminder_type"] == "claim":
+                    r["remind_at"] = new_at
+                    count += 1
+            return count
+
         if "INSERT INTO PVP_ATTACKS" in q:
             attacker_id, victim_id, attack_points, target = int(params[0]), int(params[1]), int(params[2]), str(params[3])
             started_at, resolves_at = params[4], params[5]
@@ -796,6 +819,15 @@ class MockTransaction:
 
         if "DELETE FROM GUILD_PREFIXES" in q:
             self.prefixes.pop(params[0], None)
+            return 1
+
+        if "INSERT INTO USER_PREFIXES" in q:
+            uid, prefix = params[0], params[1]
+            self.user_prefixes[uid] = prefix
+            return 1
+
+        if "DELETE FROM USER_PREFIXES" in q:
+            self.user_prefixes.pop(params[0], None)
             return 1
 
         return 0
@@ -901,11 +933,11 @@ class TestMathConfig(unittest.TestCase):
 
     def test_event_firewall_multipliers(self):
         self.assertEqual(MathConfig.get_event_firewall_multiplier(0), 1)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(1), 1)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(2), 2)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(3), 2)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(4), 3)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(5), 3)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(1), 2)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(2), 3)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(3), 4)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(4), 5)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(5), 6)
 
     def test_convert_rtm_to_usd_rate(self):
         """Conversion RTM → USD au taux configuré, arrondi à 2 décimales."""
@@ -1484,11 +1516,15 @@ class TestPlayerAndGameOperations(unittest.TestCase):
 
     def test_buy_insufficient_funds(self):
         # Solde de base : 1000 USD, 0 RTM
-        # bay_defense_t1 coûte 50 USD, firewall niveau 1 requis
-        # Si pare-feu est niveau 0 -> GameError('firewall_required')
+        # bay_defense_t1 est désormais autorisé au niveau 0 de pare-feu
+        quote_t1 = Player.buy(self.tx, self.actor, kind="bay_defense", tier=1, confirm=False)
+        self.assertTrue(quote_t1.get("buy_quote"))
+
+        # bay_defense_t2 requiert le pare-feu niveau 1
         with self.assertRaises(GameError) as cm:
-            Player.buy(self.tx, self.actor, kind="bay_defense", tier=1, confirm=False)
+            Player.buy(self.tx, self.actor, kind="bay_defense", tier=2, confirm=False)
         self.assertEqual(cm.exception.key, "firewall_required")
+        self.assertEqual(cm.exception.values["level"], 1)
 
         # Donner le niveau 1 de pare-feu au joueur
         self.tx.players[self.actor]["firewall_level"] = 1
@@ -3651,8 +3687,15 @@ class TestPreExistingGameCoverage(unittest.TestCase):
         usd_t2, _ = _calculate_module_price("firewall", 2)
         self.assertEqual(usd_t2, t1 * mult)
 
+        # Sans les fonds nécessaires, le devis est néanmoins retourné sans erreur
+        quote_broke = Player.upgrade(self.tx, self.actor, confirm=False)
+        self.assertTrue(quote_broke.get("upgrade_quote"))
+        self.assertFalse(quote_broke.get("can_afford"))
+        self.assertLess(quote_broke.get("remaining_usd"), 0)
+
+        # En revanche, la confirmation est bloquée et lève upgrade_insufficient_funds
         with self.assertRaises(GameError) as cm:
-            Player.upgrade(self.tx, self.actor, confirm=False)
+            Player.upgrade(self.tx, self.actor, confirm=True)
         self.assertEqual(cm.exception.key, "upgrade_insufficient_funds")
         self.assertEqual(cm.exception.values["level"], 1)
 
@@ -7744,6 +7787,24 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         embed2 = ctx.send.call_args[1]["embed"]
         self.assertIn("convert", embed2.title.lower())
 
+        # 3. Alias 'c' -> claim
+        ctx.send.reset_mock()
+        with patch("commands.utility.help.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                    await self.cog.prefix_help(ctx, command_name="c")
+        embed3 = ctx.send.call_args[1]["embed"]
+        self.assertIn("claim", embed3.title.lower())
+
+        # 4. Alias 'co' -> contract
+        ctx.send.reset_mock()
+        with patch("commands.utility.help.get_locale", return_value="fr"):
+            with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
+                with patch.object(self.cog.check, "beta_enabled", return_value=False):
+                    await self.cog.prefix_help(ctx, command_name="co")
+        embed4 = ctx.send.call_args[1]["embed"]
+        self.assertIn("contract", embed4.title.lower())
+
     async def test_unknown_or_admin_command_lookup(self):
         """Vérifie qu'une commande inconnue ou d'administration affiche l'embed générique sans rien révéler."""
         ctx = MagicMock()
@@ -8256,6 +8317,25 @@ class TestAutoclaimFeature(unittest.IsolatedAsyncioTestCase):
                 "Autoclaim credits" in sent_content_credits or "Crédits d'autoclaim" in sent_content_credits
             )
             self.assertIn("`3`", sent_content_credits)
+
+            # 3. Avec reminder_rescheduled = True
+            res_rmd = {
+                'claimed': True,
+                'amount': Decimal('0.05000'),
+                'new_rootium': Decimal('10.05000'),
+                'rate_per_min': Decimal('0.00010'),
+                'total_ram_formatted': '100 Ko',
+                'autoclaim_credits': 0,
+                'reminder_rescheduled': True,
+                'seconds_to_fill_total': 480,
+            }
+            cog._reply.reset_mock()
+            await cog._send(mock_ctx, 'claim', res_rmd)
+            sent_content_rmd = cog._reply.call_args[0][1]
+            self.assertTrue(
+                "Rappel /rmd claim" in sent_content_rmd or "Reminder /rmd claim" in sent_content_rmd
+            )
+            self.assertIn("8m", sent_content_rmd)
         finally:
             cog.cog_unload()
 
@@ -8269,6 +8349,9 @@ class TestAutoclaimFeature(unittest.IsolatedAsyncioTestCase):
         try:
             cog._invoke = AsyncMock()
             mock_ctx = MagicMock()
+            # 0. Vérification des alias préfixe
+            self.assertIn('c', cog.prefix_claim.aliases)
+            self.assertIn('cl', cog.prefix_claim.aliases)
 
             # 1. !claim -> claim
             await cog.prefix_claim.callback(cog, mock_ctx)
@@ -8558,6 +8641,34 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertIn(f"• Statut : ⏳ Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R>)", content)
         self.assertNotIn("dans dans", content)
 
+    async def test_event_send_includes_firewall_multiplier_banner(self):
+        from commands.game.event import Event
+        bot = MagicMock()
+        cog = Event(bot)
+        ctx = MagicMock()
+        ctx.interaction = None
+        ctx.clean_prefix = "+r"
+
+        result = {
+            "events": {
+                "pin": {"status": "active", "next_at": None, "remaining_seconds": 0},
+            },
+            "firewall_level": 2,
+            "firewall_multiplier": 3,
+        }
+
+        sent_embeds = []
+        async def mock_send_embed(c, action, content, view=None):
+            sent_embeds.append((action, content))
+
+        cog._send_embed = mock_send_embed
+        await cog._send(ctx, "event", result)
+
+        self.assertEqual(len(sent_embeds), 1)
+        _, content = sent_embeds[0]
+        self.assertIn("x3", content)
+        self.assertIn("2", content)
+
 
 class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
     """Tests unitaires et d'intégration pour la commande /hourly, son combo et la modération."""
@@ -8588,8 +8699,9 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res['streak'], 1)
         self.assertEqual(res['bonus_pct'], Decimal('0.00'))
         self.assertEqual(res['step_bonus_pct'], Decimal('0.00'))
-        self.assertGreaterEqual(res['base_usd'], Decimal('30.00'))
-        self.assertLessEqual(res['base_usd'], Decimal('90.00'))
+        # firewall_level = 1 -> multiplicateur x2 (30*2 à 90*2 USD)
+        self.assertGreaterEqual(res['base_usd'], Decimal('60.00'))
+        self.assertLessEqual(res['base_usd'], Decimal('180.00'))
         self.assertEqual(res['total_usd'], res['base_usd'])
         self.assertEqual(res['new_dollars'], Decimal('100.00') + res['total_usd'])
 
@@ -9039,25 +9151,43 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status['fidelity'], 5)
         self.assertTrue(status['offers_data']['is_special'])
 
-        # Les offres affichent +50 %
+        # Les offres affichent +40 %
         offers = status['offers_data']['offers']
-        self.assertEqual(offers['short']['reward_usd'], Decimal('112.50'))   # 75 * 1.5
-        self.assertEqual(offers['medium']['reward_usd'], Decimal('375.00'))  # 250 * 1.5
-        self.assertEqual(offers['long']['reward_usd'], Decimal('900.00'))    # 600 * 1.5
+        self.assertEqual(offers['short']['reward_usd'], Decimal('105.00'))   # 75 * 1.4
+        self.assertEqual(offers['medium']['reward_usd'], Decimal('350.00'))  # 250 * 1.4
+        self.assertEqual(offers['long']['reward_usd'], Decimal('840.00'))    # 600 * 1.4
 
         # Lancement de la mission spéciale
         start_spec = await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
         self.assertTrue(start_spec['is_special'])
-        self.assertEqual(start_spec['reward_usd'], Decimal('112.50'))
+        self.assertEqual(start_spec['reward_usd'], Decimal('105.00'))
 
         # Récupération de la mission spéciale
         self.mock_db.now += timedelta(seconds=1800)
         collect_spec = await self.service.execute(self.actor, None, 'contract', action='collect')
         self.assertTrue(collect_spec['was_special'])
-        self.assertEqual(collect_spec['reward_usd'], Decimal('112.50'))
-        # La jauge de fidélité revient à 0
-        self.assertEqual(collect_spec['contract_fidelity'], 0)
+        self.assertEqual(collect_spec['reward_usd'], Decimal('105.00'))
+        # La jauge de fidélité reste à 5 et ouvre une fenêtre de grâce de 45 minutes
+        self.assertEqual(collect_spec['contract_fidelity'], 5)
         self.assertEqual(collect_spec['contracts_completed'], 6)
+        self.assertIsNotNone(collect_spec['grace_ts'])
+
+        # Enchaînement sans plafond : relance dans les 45 min (ex: +20 min) -> mission spéciale conservée
+        self.mock_db.now += timedelta(minutes=20)
+        start_chained = await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        self.assertTrue(start_chained['is_special'])
+        self.assertEqual(start_chained['reward_usd'], Decimal('105.00'))
+
+        # Collecte du contrat chaîné
+        self.mock_db.now += timedelta(seconds=1800)
+        collect_chained = await self.service.execute(self.actor, None, 'contract', action='collect')
+        self.assertEqual(collect_chained['contract_fidelity'], 5)
+
+        # Si le joueur dépasse les 45 min sans relancer (ex: 46 min) -> reset à 0
+        self.mock_db.now += timedelta(minutes=46)
+        status_after_timeout = await self.service.execute(self.actor, None, 'contract', action='view')
+        self.assertEqual(status_after_timeout['fidelity'], 0)
+        self.assertFalse(status_after_timeout['offers_data']['is_special'])
 
     async def test_contract_no_decay_on_delayed_collection(self):
         """Une absence prolongée n'entraîne aucune pénalité de retard."""
@@ -9096,6 +9226,9 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         ctx.guild.id = 111222
         ctx.interaction = None
         ctx.send = AsyncMock()
+
+        # 0. Vérification des alias préfixe
+        self.assertIn('co', cog.prefix_contract.aliases)
 
         # 1. !contract -> affichage des offres
         await cog.prefix_contract.callback(cog, ctx)
@@ -9315,6 +9448,33 @@ class TestReminders(unittest.IsolatedAsyncioTestCase):
         self.mock_db.now += timedelta(seconds=480)
         res_full = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='claim')
         self.assertEqual(res_full['status'], 'already_available')
+
+    async def test_rmd_adaptive_claim_reschedule(self):
+        """Vérifie que récolter son minage (/claim) avant saturation décale automatiquement l'alerte."""
+        # 1. Programmation du rappel initial (RAM vide -> 480s de saturation)
+        res_create = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='claim')
+        self.assertEqual(res_create['status'], 'created')
+        initial_remind_at = self.mock_db.reminders[0]['remind_at']
+        self.assertEqual(initial_remind_at, self.mock_db.now + timedelta(seconds=480))
+
+        # 2. Le joueur attend 240s (RAM à 50 %) et fait un /claim prématuré
+        self.mock_db.now += timedelta(seconds=240)
+        claim_res = await self.service.execute(self.actor, None, 'claim')
+        self.assertTrue(claim_res['claimed'])
+        self.assertTrue(claim_res['reminder_rescheduled'])
+
+        # 3. L'échéance du rappel a été repoussée de 480s à partir du moment du claim (now + 480s)
+        updated_remind_at = self.mock_db.reminders[0]['remind_at']
+        expected_new_at = self.mock_db.now + timedelta(seconds=480)
+        self.assertEqual(updated_remind_at, expected_new_at)
+        self.assertGreater(updated_remind_at, initial_remind_at)
+
+        # 4. Nouveau claim alors que le rappel a été annulé : pas de reprogrammation
+        self.mock_db.reminders.clear()
+        self.mock_db.now += timedelta(seconds=240)
+        claim_no_rmd = await self.service.execute(self.actor, None, 'claim')
+        self.assertTrue(claim_no_rmd['claimed'])
+        self.assertFalse(claim_no_rmd['reminder_rescheduled'])
 
     async def test_rmd_smart_events(self):
         """Rappels intelligents sur les événements réseau."""
@@ -9559,8 +9719,8 @@ class TestDirectMessagesSupport(unittest.IsolatedAsyncioTestCase):
         self.bot = create_bot()
         self.check_fn = self.bot._checks[0]
 
-    async def test_prefix_command_in_dm_is_silently_rejected(self):
-        """Vérifie qu'une commande textuelle à préfixe en MP est ignorée."""
+    async def test_prefix_command_in_dm_is_allowed(self):
+        """Vérifie qu'une commande textuelle à préfixe en MP est acceptée par global_check."""
         mock_ctx = MagicMock()
         mock_ctx.guild = None
         mock_ctx.interaction = None
@@ -9568,8 +9728,11 @@ class TestDirectMessagesSupport(unittest.IsolatedAsyncioTestCase):
         mock_ctx.command.name = "ping"
         mock_ctx.command.module = "commands.utility.ping"
 
-        res = await self.check_fn(mock_ctx)
-        self.assertFalse(res)
+        with patch("utils.check.Check.is_banned", return_value=False):
+            with patch("utils.check.Check.maintenance_enabled", return_value=False):
+                with patch("utils.check.Check.beta_enabled", return_value=False):
+                    res = await self.check_fn(mock_ctx)
+                    self.assertTrue(res)
 
     async def test_slash_command_in_dm_is_allowed(self):
         """Vérifie qu'une Slash Command autorisée (/ping) s'exécute en MP."""
@@ -9604,33 +9767,35 @@ class TestDirectMessagesSupport(unittest.IsolatedAsyncioTestCase):
             await self.check_fn(mock_ctx)
         self.assertEqual(ctx_err.exception.key, "guild_only_command")
 
-    async def test_slash_prefix_in_dm_is_blocked(self):
-        """Vérifie que la commande /prefix est strictement bloquée en MP."""
-        from game.game_error import GameError
-
+    async def test_slash_prefix_in_dm_is_allowed(self):
+        """Vérifie que la commande /prefix n'est plus bloquée en MP."""
         mock_ctx = MagicMock()
         mock_ctx.guild = None
         mock_ctx.interaction = MagicMock()
+        mock_ctx.interaction.response.is_done.return_value = False
+        mock_ctx.defer = AsyncMock()
         mock_ctx.author.id = 12345
         mock_ctx.command.name = "prefix"
         mock_ctx.command.module = "commands.utility.prefix"
 
-        with self.assertRaises(GameError) as ctx_err:
-            await self.check_fn(mock_ctx)
-        self.assertEqual(ctx_err.exception.key, "guild_only_command")
+        with patch("utils.check.Check.is_banned", return_value=False):
+            with patch("utils.check.Check.maintenance_enabled", return_value=False):
+                with patch("utils.check.Check.beta_enabled", return_value=False):
+                    res = await self.check_fn(mock_ctx)
+                    self.assertTrue(res)
 
-    async def test_report_command_error_silent_for_text_in_dm(self):
-        """Vérifie que report_command_error reste totalement silencieux pour les erreurs texte en MP."""
+    async def test_report_command_error_responds_for_text_in_dm(self):
+        """Vérifie que report_command_error répond aux erreurs texte en MP."""
         mock_ctx = MagicMock()
         mock_ctx.guild = None
         mock_ctx.interaction = None
+        mock_ctx.author.id = 12345
         mock_ctx.respond = AsyncMock()
         mock_ctx.send = AsyncMock()
 
         handler = self.bot.on_command_error
         await handler(mock_ctx, Exception("boom"))
-        mock_ctx.respond.assert_not_called()
-        mock_ctx.send.assert_not_called()
+        mock_ctx.send.assert_awaited_once()
 
     async def test_report_command_error_responds_for_slash_in_dm(self):
         """Vérifie que report_command_error répond aux Slash Commands en MP."""
@@ -9678,6 +9843,390 @@ class TestDirectMessagesSupport(unittest.IsolatedAsyncioTestCase):
         mock_ctx.respond.reset_mock()
         await cog.rmd_cancel(mock_ctx, reminder_id="all")
         mock_ctx.respond.assert_called()
+
+
+class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
+    """Vérifie les fonctionnalités du hotfix pare-feu :
+    1. Achat défense T1 à firewall 0, T2 requiert firewall 1.
+    2. Récompenses /hourly multipliées par (firewall_level + 1).
+    3. Récompenses /contract multipliées par (firewall_level + 1).
+    4. Devis /upgrade accessible sans les fonds requis, rejeté uniquement à confirm=True.
+    5. Présence de tous les avantages dans le devis d'achat.
+    """
+
+    def setUp(self):
+        self.tx = MockTransaction()
+        self.actor = 555001
+        self.tx.players[self.actor] = {
+            "discord_id": self.actor,
+            "dollars": Decimal("1000.00"),
+            "rootium": Decimal("10.00000"),
+            "firewall_level": 0,
+            "hourly_last_at": None,
+            "hourly_combo_bonus": Decimal("0.00"),
+            "hourly_streak": 0,
+            "contract_fidelity": 0,
+            "contracts_completed": 0,
+            "mining_t1": 1,
+            "attack_t1": 0,
+            "bay_defense_t1": 0,
+            "bay_defense_t2": 0,
+            "network_defense": 0,
+            "reputation": 0,
+            "secret_id": "999001",
+            "lang": "fr",
+        }
+
+    def test_bay_defense_t1_available_at_firewall_0(self):
+        # Achat de bay_defense T1 avec firewall 0 -> autorisé
+        quote = Player.buy(self.tx, self.actor, kind="bay_defense", tier=1, confirm=False)
+        self.assertTrue(quote.get("buy_quote"))
+
+        res = Player.buy(self.tx, self.actor, kind="bay_defense", tier=1, confirm=True)
+        self.assertTrue(res.get("bought"))
+        self.assertEqual(self.tx.players[self.actor]["bay_defense_t1"], 1)
+
+        # bay_defense T2 requiert le firewall 1
+        with self.assertRaises(GameError) as cm:
+            Player.buy(self.tx, self.actor, kind="bay_defense", tier=2, confirm=False)
+        self.assertEqual(cm.exception.key, "firewall_required")
+        self.assertEqual(cm.exception.values["level"], 1)
+
+    def test_hourly_firewall_scaling(self):
+        # Niveau 0 : multiplicateur x1 (30-90 USD)
+        self.tx.players[self.actor]["firewall_level"] = 0
+        res0 = Player.hourly(self.tx, self.actor)
+        self.assertEqual(res0["firewall_multiplier"], 1)
+        self.assertGreaterEqual(res0["base_usd"], Decimal("30.00"))
+        self.assertLessEqual(res0["base_usd"], Decimal("90.00"))
+
+        # Niveau 1 : multiplicateur x2 (60-180 USD)
+        self.tx.players[self.actor]["firewall_level"] = 1
+        self.tx.players[self.actor]["hourly_last_at"] = None
+        res1 = Player.hourly(self.tx, self.actor)
+        self.assertEqual(res1["firewall_multiplier"], 2)
+        self.assertGreaterEqual(res1["base_usd"], Decimal("60.00"))
+        self.assertLessEqual(res1["base_usd"], Decimal("180.00"))
+
+        # Niveau 3 : multiplicateur x4 (120-360 USD)
+        self.tx.players[self.actor]["firewall_level"] = 3
+        self.tx.players[self.actor]["hourly_last_at"] = None
+        res3 = Player.hourly(self.tx, self.actor)
+        self.assertEqual(res3["firewall_multiplier"], 4)
+        self.assertGreaterEqual(res3["base_usd"], Decimal("120.00"))
+        self.assertLessEqual(res3["base_usd"], Decimal("360.00"))
+
+    def test_contracts_firewall_scaling(self):
+        from game.db.contracts import ContractsDB
+
+        # Offres à FW 0 (x1) : 75 USD, 250 USD, 600 USD
+        offers0 = ContractsDB.get_offers(0, firewall_level=0)
+        self.assertEqual(offers0["offers"]["short"]["reward_usd"], Decimal("75.00"))
+        self.assertEqual(offers0["offers"]["medium"]["reward_usd"], Decimal("250.00"))
+        self.assertEqual(offers0["offers"]["long"]["reward_usd"], Decimal("600.00"))
+
+        # Offres à FW 1 (x2) : 150 USD, 500 USD, 1200 USD
+        offers1 = ContractsDB.get_offers(0, firewall_level=1)
+        self.assertEqual(offers1["offers"]["short"]["reward_usd"], Decimal("150.00"))
+        self.assertEqual(offers1["offers"]["medium"]["reward_usd"], Decimal("500.00"))
+        self.assertEqual(offers1["offers"]["long"]["reward_usd"], Decimal("1200.00"))
+
+        # Démarrage de contrat avec joueur à FW 2 (x3) -> short = 225 USD
+        self.tx.players[self.actor]["firewall_level"] = 2
+        start_res = ContractsDB.start(self.tx, self.actor, "short")
+        self.assertEqual(start_res["reward_usd"], Decimal("225.00"))
+
+    def test_upgrade_quote_accessible_without_funds(self):
+        # Joueur avec 0 USD voulant upgrade de FW 0 vers FW 1 (coût 5000 USD)
+        self.tx.players[self.actor]["dollars"] = Decimal("0.00")
+        self.tx.players[self.actor]["firewall_level"] = 0
+
+        # Devis sans confirmation : retourne le devis complet
+        quote = Player.upgrade(self.tx, self.actor, confirm=False)
+        self.assertTrue(quote["upgrade_quote"])
+        self.assertEqual(quote["usd_price"], Decimal("5000.00"))
+        self.assertEqual(quote["remaining_usd"], Decimal("-5000.00"))
+        self.assertFalse(quote["can_afford"])
+
+        # Confirmation : refuse avec upgrade_insufficient_funds
+        with self.assertRaises(GameError) as cm:
+            Player.upgrade(self.tx, self.actor, confirm=True)
+        self.assertEqual(cm.exception.key, "upgrade_insufficient_funds")
+        self.assertEqual(cm.exception.values["level"], 1)
+
+    async def test_upgrade_view_and_embed_advantages(self):
+        from commands.game.upgrade import Upgrade
+        from game.root_service import RootService
+
+        mock_db = MockDatabase()
+        mock_db.players[self.actor] = dict(self.tx.players[self.actor])
+        mock_db.players[self.actor]["dollars"] = Decimal("100.00")
+        mock_db.players[self.actor]["firewall_level"] = 0
+
+        service = RootService(database=mock_db)
+        mock_bot = MagicMock()
+        mock_bot.root_service = service
+
+        cog = Upgrade(mock_bot)
+        cog.check_upgrades_loop.cancel()
+
+        captured = []
+        async def mock_send_embed(ctx, key, content, view=None):
+            captured.append((key, content, view))
+
+        cog._send_embed = mock_send_embed
+
+        mock_ctx = MagicMock()
+        mock_ctx.interaction = None
+        mock_ctx.locale = "fr"
+        mock_ctx.prefix = "!"
+        mock_ctx.author.id = self.actor
+        mock_ctx.guild = None
+
+        result = await service.execute(self.actor, None, "upgrade", confirm=False)
+        await cog._send(mock_ctx, "upgrade", result)
+
+        self.assertEqual(len(captured), 1)
+        action_key, content, view = captured[0]
+        self.assertEqual(action_key, "upgrade")
+        self.assertIsNotNone(view)
+        # Vérifie que les avantages figurent dans le texte du devis
+        self.assertIn("Niveau 0", content)
+        self.assertIn("Niveau 1", content)
+        self.assertIn("Défense Réseau", content)
+        self.assertIn("+100 DEF", content)
+        self.assertIn("Revenus Horaires & Contrats", content)
+        self.assertIn("x2", content)
+        self.assertIn("Bonus d'événement", content)
+        self.assertIn("actuellement x1", content)
+        self.assertIn("Attaque T1 & T2, Minage T2, Défense T2", content)
+        self.assertIn("Arène PvP active", content)
+        self.assertIn("Manque", content)
+
+    def test_event_rewards_firewall_scaling(self):
+        from game.challenge_utils import settle_challenge_win
+        from game.decode_manager import DecodeManager
+
+        # Niveau 0 : multiplicateur x1
+        self.tx.players[self.actor]["firewall_level"] = 0
+        settle0 = settle_challenge_win(self.tx, "decode", "decode_challenge", self.actor, 100, self.tx.now, "Guild")
+        self.assertEqual(settle0["multiplier"], 1)
+        self.assertEqual(settle0["final_reward"], Decimal("100.00"))
+
+        # Niveau 1 : multiplicateur x2
+        self.tx.players[self.actor]["firewall_level"] = 1
+        settle1 = settle_challenge_win(self.tx, "decode", "decode_challenge", self.actor, 100, self.tx.now, "Guild")
+        self.assertEqual(settle1["multiplier"], 2)
+        self.assertEqual(settle1["final_reward"], Decimal("200.00"))
+
+        # Niveau 5 : multiplicateur x6
+        self.tx.players[self.actor]["firewall_level"] = 5
+        settle5 = settle_challenge_win(self.tx, "decode", "decode_challenge", self.actor, 100, self.tx.now, "Guild")
+        self.assertEqual(settle5["multiplier"], 6)
+        self.assertEqual(settle5["final_reward"], Decimal("600.00"))
+
+    async def test_contracts_loyalty_grace_ui_embed(self):
+        from commands.game.contract import Contract
+        from game.root_service import RootService
+
+        mock_db = MockDatabase()
+        mock_db.now = self.tx.now
+        mock_db.players[self.actor] = dict(self.tx.players[self.actor])
+        mock_db.players[self.actor]["contract_fidelity"] = 5
+        mock_db.players[self.actor]["contract_grace_until"] = mock_db.now + timedelta(minutes=45)
+
+        service = RootService(database=mock_db)
+        mock_bot = MagicMock()
+        mock_bot.root_service = service
+
+        cog = Contract(mock_bot)
+        cog.check_contracts_loop.cancel()
+
+        captured = []
+        async def mock_send_embed(ctx, key, content, view=None):
+            captured.append((key, content, view))
+
+        cog._send_embed = mock_send_embed
+
+        mock_ctx = MagicMock()
+        mock_ctx.interaction = None
+        mock_ctx.locale = "fr"
+        mock_ctx.prefix = "!"
+        mock_ctx.author.id = self.actor
+        mock_ctx.guild = None
+
+        result = await service.execute(self.actor, None, "contract", action="view")
+        await cog._send(mock_ctx, "contract", result)
+
+        self.assertEqual(len(captured), 1)
+        action_key, content, view = captured[0]
+        self.assertEqual(action_key, "contract")
+        self.assertIn("Mission Spéciale (+40 % USD active)", content)
+        self.assertIn("**Mission spéciale active !** (Relancez avant", content)
+
+
+class TestUserPrefixSupport(unittest.IsolatedAsyncioTestCase):
+    """Vérifie le support complet des préfixes personnalisés en messages privés (MP)."""
+
+    def setUp(self):
+        from utils.prefix_manager import invalidate_prefix_cache
+        invalidate_prefix_cache()
+        self.tx = MockTransaction()
+        self.user_id = 999123456
+
+    def tearDown(self):
+        from utils.prefix_manager import invalidate_prefix_cache
+        invalidate_prefix_cache()
+
+    def test_prefix_db_user_methods(self):
+        """Vérifie get_user, set_user, delete_user dans PrefixDB."""
+        # 1. Préfixe par défaut quand aucun préfixe n'est configuré
+        self.assertEqual(PrefixDB.get_user(self.tx, self.user_id), data.DEFAULT_PREFIX)
+
+        # 2. Enregistrement d'un préfixe utilisateur
+        PrefixDB.set_user(self.tx, self.user_id, ".r")
+        self.assertEqual(self.tx.user_prefixes[self.user_id], ".r")
+        self.assertEqual(PrefixDB.get_user(self.tx, self.user_id), ".r")
+
+        # 3. Suppression du préfixe utilisateur
+        PrefixDB.delete_user(self.tx, self.user_id)
+        self.assertNotIn(self.user_id, self.tx.user_prefixes)
+        self.assertEqual(PrefixDB.get_user(self.tx, self.user_id), data.DEFAULT_PREFIX)
+
+    async def test_user_prefix_cache_and_expiration(self):
+        """Vérifie get_user_prefix_async, set_user_prefix et la gestion du cache TTL."""
+        from utils.prefix_manager import (
+            get_user_prefix_async,
+            set_user_prefix,
+            resolve_prefix_async,
+            _user_prefix_cache,
+        )
+        import utils.prefix_manager as pm
+
+        with patch.object(pm._prefix_db, "fetch_user", new=AsyncMock(return_value="?")) as mock_fetch:
+            # 1. Premier appel : interroge la BDD et met en cache
+            p1 = await get_user_prefix_async(self.user_id)
+            self.assertEqual(p1, "?")
+            self.assertEqual(mock_fetch.call_count, 1)
+
+            # 2. Deuxième appel immédiat : retourne depuis le cache
+            p2 = await get_user_prefix_async(self.user_id)
+            self.assertEqual(p2, "?")
+            self.assertEqual(mock_fetch.call_count, 1)
+
+            # 3. Expiration simulée du TTL
+            _user_prefix_cache[self.user_id] = ("?", time.monotonic() - 1.0)
+            mock_fetch.return_value = "!!"
+            p3 = await get_user_prefix_async(self.user_id)
+            self.assertEqual(p3, "!!")
+            self.assertEqual(mock_fetch.call_count, 2)
+
+        # 4. Modification immédiate via set_user_prefix
+        with patch.object(pm._prefix_db, "save_user", new=AsyncMock()) as mock_save:
+            await set_user_prefix(self.user_id, "$")
+            mock_save.assert_called_once_with(self.user_id, "$")
+            cached = await get_user_prefix_async(self.user_id)
+            self.assertEqual(cached, "$")
+
+        # 5. Résolution via resolve_prefix_async
+        # En MP (guild_id=None, user_id=self.user_id)
+        res_dm = await resolve_prefix_async(guild_id=None, user_id=self.user_id)
+        self.assertEqual(res_dm, "$")
+        # Sur un serveur (guild_id=111, user_id=self.user_id)
+        with patch("utils.prefix_manager.get_prefix_async", new=AsyncMock(return_value="!guild")):
+            res_guild = await resolve_prefix_async(guild_id=111, user_id=self.user_id)
+            self.assertEqual(res_guild, "!guild")
+
+    async def test_set_user_prefix_validation(self):
+        """Vérifie le rejet des préfixes invalides (espaces, vides, trop longs)."""
+        from utils.prefix_manager import set_user_prefix
+
+        # Avec espaces
+        with self.assertRaises(ValueError):
+            await set_user_prefix(self.user_id, "p x")
+
+        # Vide
+        with self.assertRaises(ValueError):
+            await set_user_prefix(self.user_id, "   ")
+
+        # Trop long (>32 caractères)
+        with self.assertRaises(ValueError):
+            await set_user_prefix(self.user_id, "x" * 33)
+
+    async def test_prefix_command_in_dm_success(self):
+        """Vérifie l'exécution de la commande de préfixe en MP (succès et message utilisateur)."""
+        from commands.utility.prefix import Prefix
+
+        mock_bot = MagicMock()
+        cog = Prefix(mock_bot)
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.author.id = self.user_id
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.interaction.locale = "fr"
+        mock_ctx.respond = AsyncMock()
+
+        with patch("commands.utility.prefix.set_user_prefix", new=AsyncMock()) as mock_set:
+            await cog._prefix_logic(mock_ctx, "!mp")
+            mock_set.assert_awaited_once_with(self.user_id, "!mp")
+            mock_ctx.respond.assert_awaited_once()
+            response_text = mock_ctx.respond.call_args[0][0]
+            self.assertIn("!mp", response_text)
+            self.assertIn("Votre préfixe personnel en MP est désormais", response_text)
+
+    async def test_prefix_command_in_dm_invalid(self):
+        """Vérifie le rejet d'un préfixe invalide dans la commande en MP."""
+        from commands.utility.prefix import Prefix
+
+        mock_bot = MagicMock()
+        cog = Prefix(mock_bot)
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.author.id = self.user_id
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.interaction.locale = "fr"
+        mock_ctx.respond = AsyncMock()
+
+        # Préfixe vide
+        await cog._prefix_logic(mock_ctx, "")
+        mock_ctx.respond.assert_awaited_once()
+        self.assertIn("Utilisation", mock_ctx.respond.call_args[0][0])
+
+        mock_ctx.respond.reset_mock()
+        # Préfixe avec espace
+        await cog._prefix_logic(mock_ctx, "bad prefix")
+        mock_ctx.respond.assert_awaited_once()
+        self.assertIn("invalide", mock_ctx.respond.call_args[0][0].lower())
+
+    async def test_get_prefix_for_bot_dispatch(self):
+        """Vérifie que main.py get_prefix_for_bot route correctement vers le préfixe user en MP."""
+        from main import get_prefix_for_bot
+
+        mock_bot = MagicMock()
+
+        # Message en MP
+        dm_msg = MagicMock()
+        dm_msg.guild = None
+        dm_msg.author.id = self.user_id
+        dm_msg.content = "?help"
+
+        with patch("main.get_user_prefix_async", new=AsyncMock(return_value="?")) as mock_get_user:
+            prefixes = await get_prefix_for_bot(mock_bot, dm_msg)
+            mock_get_user.assert_awaited_once_with(self.user_id)
+            self.assertIn("?", prefixes)
+
+        # Message en serveur
+        guild_msg = MagicMock()
+        guild_msg.guild.id = 777
+        guild_msg.author.id = self.user_id
+        guild_msg.content = "!help"
+
+        with patch("main.get_prefix_async", new=AsyncMock(return_value="!")) as mock_get_guild:
+            prefixes = await get_prefix_for_bot(mock_bot, guild_msg)
+            mock_get_guild.assert_awaited_once_with(777)
+            self.assertIn("!", prefixes)
 
 
 if __name__ == '__main__':

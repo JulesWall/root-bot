@@ -7,6 +7,7 @@ text = {
     "prefix_invalid": "> ⚠️ **Préfixe invalide** · Le préfixe doit contenir entre **1 et 32 caractères** (sans espaces).",
     "prefix_usage": "> ℹ️ **Utilisation** : `prefix <nouveau_prefixe>` (ex: `!`, `+r`)",
     "prefix_success": "> ✅ **Configuration mise à jour** · Le préfixe du serveur est désormais `{new_prefix}`",
+    "prefix_user_success": "> ✅ **Configuration mise à jour** · Votre préfixe personnel en MP est désormais `{new_prefix}`",
     "ban_already_banned": "> ⚠️ **Action impossible** · {user} est déjà banni du réseau Root.",
     "ban_success": "> 🔨 **Sanction appliquée** · {user} a été banni de l'accès au réseau Root.",
     "unban_not_banned": "> ℹ️ **Information** · {user} n'est pas banni du réseau Root.",

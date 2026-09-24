@@ -68,24 +68,28 @@ class ContractsDB:
         }
 
     @staticmethod
-    def get_offers(fidelity: int) -> dict:
-        """Construit les propositions de missions pour les 3 durées selon la fidélité."""
+    def get_offers(fidelity: int, firewall_level: int = 0, grace_ts: int | None = None) -> dict:
+        """Construit les propositions de missions pour les 3 durées selon la fidélité et le pare-feu."""
         cfg = MathConfig.get_contracts_config()
         threshold = int(cfg.get('fidelity_threshold', 5))
         is_special = (fidelity >= threshold)
-        mult = Decimal(str(cfg.get('special_bonus_multiplier', 1.5))) if is_special else Decimal('1')
+        mult = Decimal(str(cfg.get('special_bonus_multiplier', 1.4))) if is_special else Decimal('1')
         agency = cfg.get('agency_name', "Agence Root CyberSec")
+
+        fw_mult = Decimal(str(max(0, int(firewall_level or 0)) + 1))
 
         offers = {}
         for tier in ('short', 'medium', 'long'):
             tier_cfg = MathConfig.get_contract_tier(tier) or {}
-            base_reward = Decimal(str(tier_cfg.get('reward_usd', 0)))
+            raw_base = Decimal(str(tier_cfg.get('reward_usd', 0)))
+            base_reward = (raw_base * fw_mult).quantize(Decimal('0.01'))
             reward = (base_reward * mult).quantize(Decimal('0.01'))
+            hourly_rate = float((Decimal(str(tier_cfg.get('hourly_rate', 0))) * fw_mult).quantize(Decimal('0.01')))
             offers[tier] = {
                 'duration_seconds': int(tier_cfg.get('duration_seconds', 0)),
                 'reward_usd': reward,
                 'base_reward_usd': base_reward,
-                'hourly_rate': tier_cfg.get('hourly_rate', 0),
+                'hourly_rate': hourly_rate,
                 'is_special': is_special,
             }
 
@@ -95,6 +99,9 @@ class ContractsDB:
             'fidelity_threshold': threshold,
             'is_special': is_special,
             'offers': offers,
+            'firewall_level': int(firewall_level or 0),
+            'firewall_multiplier': int(fw_mult),
+            'grace_ts': grace_ts,
         }
 
     @staticmethod
@@ -107,8 +114,23 @@ class ContractsDB:
         )
         fidelity = int((player.get('contract_fidelity') if player else 0) or 0)
         completed = int((player.get('contracts_completed') if player else 0) or 0)
+        firewall_level = int((player.get('firewall_level') if player else 0) or 0)
+        grace_until = player.get('contract_grace_until') if player else None
 
-        offers_data = ContractsDB.get_offers(fidelity)
+        cfg = MathConfig.get_contracts_config()
+        threshold = int(cfg.get('fidelity_threshold', 5))
+
+        # Vérification expiration de la fenêtre de grâce (si fidélité >= 5 et aucun contrat actif)
+        if fidelity >= threshold and not active and grace_until:
+            if tx.now > grace_until:
+                fidelity = 0
+                grace_until = None
+                UpdatePlayer.set(tx, discord_id, contract_fidelity=0, contract_grace_until=None)
+
+        grace_ts = to_utc_timestamp(grace_until) if (grace_until and not active) else None
+        grace_remaining = max(0, int((grace_until - tx.now).total_seconds())) if (grace_until and not active) else None
+
+        offers_data = ContractsDB.get_offers(fidelity, firewall_level=firewall_level, grace_ts=grace_ts)
 
         if active:
             return {
@@ -118,6 +140,8 @@ class ContractsDB:
                 'fidelity_threshold': offers_data['fidelity_threshold'],
                 'contracts_completed': completed,
                 'offers_data': offers_data,
+                'grace_ts': None,
+                'grace_remaining_seconds': None,
             }
 
         return {
@@ -127,6 +151,8 @@ class ContractsDB:
             'fidelity_threshold': offers_data['fidelity_threshold'],
             'contracts_completed': completed,
             'offers_data': offers_data,
+            'grace_ts': grace_ts,
+            'grace_remaining_seconds': grace_remaining,
         }
 
     @staticmethod
@@ -147,18 +173,30 @@ class ContractsDB:
         if not player:
             raise GameError('no_network')
         fidelity = int(player.get('contract_fidelity') or 0)
+        firewall_level = int(player.get('firewall_level') or 0)
+        grace_until = player.get('contract_grace_until')
 
         cfg = MathConfig.get_contracts_config()
         threshold = int(cfg.get('fidelity_threshold', 5))
+
+        # Vérification expiration de la grâce avant le démarrage
+        if fidelity >= threshold and grace_until:
+            if tx.now > grace_until:
+                fidelity = 0
+                grace_until = None
+                UpdatePlayer.set(tx, discord_id, contract_fidelity=0, contract_grace_until=None)
+
+        fw_mult = Decimal(str(max(0, firewall_level) + 1))
         is_special = (fidelity >= threshold)
-        mult = Decimal(str(cfg.get('special_bonus_multiplier', 1.5))) if is_special else Decimal('1')
+        mult = Decimal(str(cfg.get('special_bonus_multiplier', 1.4))) if is_special else Decimal('1')
 
         tier_cfg = MathConfig.get_contract_tier(duration_type)
         if not tier_cfg:
             raise GameError('invalid_contract_duration')
 
         duration_sec = int(tier_cfg['duration_seconds'])
-        base_reward = Decimal(str(tier_cfg['reward_usd']))
+        raw_base = Decimal(str(tier_cfg['reward_usd']))
+        base_reward = (raw_base * fw_mult).quantize(Decimal('0.01'))
         reward_usd = (base_reward * mult).quantize(Decimal('0.01'))
 
         # Choix du titre
@@ -179,6 +217,10 @@ class ContractsDB:
                 1 if is_special else 0, tx.now, expires_at,
             ),
         )
+
+        # Dès qu'un contrat démarre, la grâce en attente est consommée
+        if grace_until is not None:
+            UpdatePlayer.set(tx, discord_id, contract_grace_until=None)
 
         expires_ts = to_utc_timestamp(expires_at)
         return {
@@ -215,22 +257,41 @@ class ContractsDB:
         cur_dollars = Decimal(str(player.get('dollars') or 0))
         cur_fidelity = int(player.get('contract_fidelity') or 0)
         cur_completed = int(player.get('contracts_completed') or 0)
+        firewall_level = int(player.get('firewall_level') or 0)
 
         new_dollars = cur_dollars + reward
         new_completed = cur_completed + 1
-        # Si c'était une mission spéciale, la jauge de fidélité se réinitialise à 0
-        new_fidelity = 0 if active.get('is_special') else (cur_fidelity + 1)
+
+        cfg = MathConfig.get_contracts_config()
+        threshold = int(cfg.get('fidelity_threshold', 5))
+        grace_sec = int(cfg.get('grace_period_seconds', 2700))
+
+        # Idée 1 : à la collecte d'une mission spéciale ou à l'atteinte du seuil (>=5),
+        # la fidélité est maintenue à 5 et le joueur a 45 minutes pour relancer !
+        if active.get('is_special'):
+            new_fidelity = max(threshold, cur_fidelity)
+            new_grace_until = tx.now + timedelta(seconds=grace_sec)
+        else:
+            new_fidelity = cur_fidelity + 1
+            if new_fidelity >= threshold:
+                new_grace_until = tx.now + timedelta(seconds=grace_sec)
+            else:
+                new_grace_until = None
 
         UpdatePlayer.set(
             tx, discord_id,
             dollars=new_dollars,
             contract_fidelity=new_fidelity,
             contracts_completed=new_completed,
+            contract_grace_until=new_grace_until,
         )
 
         tx.execute("DELETE FROM contracts WHERE discord_id = %s", (discord_id,))
 
-        offers_data = ContractsDB.get_offers(new_fidelity)
+        grace_ts = to_utc_timestamp(new_grace_until) if new_grace_until else None
+        grace_remaining = grace_sec if new_grace_until else None
+
+        offers_data = ContractsDB.get_offers(new_fidelity, firewall_level=firewall_level, grace_ts=grace_ts)
 
         return {
             'collected': True,
@@ -242,6 +303,9 @@ class ContractsDB:
             'title': active.get('title'),
             'duration_type': active.get('duration_type'),
             'offers_data': offers_data,
+            'grace_until': new_grace_until,
+            'grace_ts': grace_ts,
+            'grace_remaining_seconds': grace_remaining,
         }
 
     @staticmethod

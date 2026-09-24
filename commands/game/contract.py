@@ -52,11 +52,18 @@ def _build_contract_content(ctx, result: dict) -> str:
         bar = _format_fidelity_bar(fidelity, threshold)
 
         is_special_next = result.get("offers_data", {}).get("is_special", False)
-        fidelity_hint = (
-            (" · ⭐ **Special mission unlocked!**" if is_en else " · ⭐ **Mission spéciale débloquée !**")
-            if is_special_next
-            else (f" *(Tier {threshold}: +50% bonus)*" if is_en else f" *(Palier {threshold} : bonus +50%)*")
-        )
+        grace_ts = result.get("grace_ts") or result.get("offers_data", {}).get("grace_ts")
+        if is_special_next:
+            if grace_ts:
+                fidelity_hint = (
+                    f" · ⭐ **Special mission active!** (Relaunch before <t:{grace_ts}:R>)"
+                    if is_en else
+                    f" · ⭐ **Mission spéciale active !** (Relancez avant <t:{grace_ts}:R>)"
+                )
+            else:
+                fidelity_hint = (" · ⭐ **Special mission unlocked!**" if is_en else " · ⭐ **Mission spéciale débloquée !**")
+        else:
+            fidelity_hint = (f" *(Tier {threshold}: +40% bonus)*" if is_en else f" *(Palier {threshold} : bonus +40%)*")
 
         collected_msg = text.get(
             ctx,
@@ -131,11 +138,18 @@ def _build_contract_content(ctx, result: dict) -> str:
     bar = _format_fidelity_bar(fidelity, threshold)
     is_special = offers_data.get("is_special", False)
     special_badge = text.get(ctx, "g_contract_special_badge") if is_special else ""
-    fidelity_hint = (
-        (" · ⭐ **Special mission unlocked!**" if is_en else " · ⭐ **Mission spéciale débloquée !**")
-        if is_special
-        else (f" *(Tier {threshold}: +50% bonus)*" if is_en else f" *(Palier {threshold} : bonus +50%)*")
-    )
+    grace_ts = result.get("grace_ts") or offers_data.get("grace_ts")
+    if is_special:
+        if grace_ts:
+            fidelity_hint = (
+                f" · ⭐ **Special mission active!** (Relaunch before <t:{grace_ts}:R>)"
+                if is_en else
+                f" · ⭐ **Mission spéciale active !** (Relancez avant <t:{grace_ts}:R>)"
+            )
+        else:
+            fidelity_hint = (" · ⭐ **Special mission unlocked!**" if is_en else " · ⭐ **Mission spéciale débloquée !**")
+    else:
+        fidelity_hint = (f" *(Tier {threshold}: +40% bonus)*" if is_en else f" *(Palier {threshold} : bonus +40%)*")
 
     offers = offers_data.get("offers", {})
     short_usd = format_usd(offers.get("short", {}).get("reward_usd", 75))
@@ -452,9 +466,9 @@ class Contract(BaseGameCog):
         await self._invoke(ctx, "contract", action=action, duration=duration)
 
     # ── Commande Préfixe ─────────────────────────────────────────────────────
-    @commands.command(name="contract", help=FR["contract"])
+    @commands.command(name="contract", aliases=["co"], help=FR["contract"])
     async def prefix_contract(self, ctx, *args):
-        """Commande préfixe !contract [action] [duration]."""
+        """Commande préfixe !contract (alias !co) [action] [duration]."""
         action = "view"
         duration = None
 

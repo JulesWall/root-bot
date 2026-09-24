@@ -2,8 +2,8 @@ desc = {
     "ping": "Shows bot latency",
     "botinfo": "Displays information about the bot",
     "invite": "Get the bot invitation link",
-    "prefix": "Manage server prefix",
-    "new_prefix": "The new server prefix",
+    "prefix": "Manage server or DM prefix",
+    "new_prefix": "The new server or DM prefix",
     "confirm": "Validate directly without confirmation",
     "language": "Change your preferred language for the bot",
     "lang": "Change your preferred language for the bot",
@@ -45,7 +45,7 @@ desc_loc = {
     "botinfo": {
         "en-US": "Displays information about the bot",
         "en-GB": "Displays information about the bot",
-        "fr": "Affiche des informations sur le bot",
+        "fr": "Affiche les informations sur le bot",
     },
     "invite": {
         "en-US": "Get the bot invitation link",
@@ -53,14 +53,14 @@ desc_loc = {
         "fr": "Obtenir le lien d'invitation du bot",
     },
     "prefix": {
-        "en-US": "Manage server prefix",
-        "en-GB": "Manage server prefix",
-        "fr": "Gérer le préfixe du serveur",
+        "en-US": "Manage server or DM prefix",
+        "en-GB": "Manage server or DM prefix",
+        "fr": "Gérer le préfixe du serveur ou en MP",
     },
     "new_prefix": {
-        "en-US": "The new server prefix",
-        "en-GB": "The new server prefix",
-        "fr": "Le nouveau préfixe du serveur",
+        "en-US": "The new prefix",
+        "en-GB": "The new prefix",
+        "fr": "Le nouveau préfixe",
     },
     "confirm": {
         "en-US": "Validate directly without confirmation",

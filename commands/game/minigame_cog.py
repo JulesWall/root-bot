@@ -233,11 +233,14 @@ class MiniGameCog(BaseGameCog):
         # 5. Victoire (Unifiée pour tous les jeux)
         if status == "won":
             reward_usd = format_usd(result["reward"])
+            mult = int(result.get("multiplier", 1) or 1)
+            mult_note = text.get(ctx, "g_event_mult_bonus", mult=mult) if mult > 1 else ""
             send_kwargs = {
                 **result,
                 "reward": reward_usd,
                 "letter": result.get("winning_letter"),
                 "missing": result.get("missing_packet"),
+                "mult_note": mult_note,
             }
             content = text.get(ctx, f"g_{self.config.key}_won", **send_kwargs)
             win_msg = await self._reply_text(ctx, content)

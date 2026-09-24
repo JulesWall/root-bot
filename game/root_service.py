@@ -27,6 +27,7 @@ from game.buffer_manager import BufferManager
 from game.signal_manager import SignalManager
 from game.packet_manager import PacketManager
 from game.events_manager import EventsManager
+from game.math_config import MathConfig
 
 
 EVENT_REMINDER_ADVANCE_SECONDS = 30
@@ -324,7 +325,12 @@ class RootService:
 
         # 3. Mini-jeux Réseau (avec gestionnaire de ressource 2-phase)
         elif method == 'event':
-            return EventsManager.get_all_events_status(tx)
+            status = EventsManager.get_all_events_status(tx)
+            player = PlayerData.get(tx, actor)
+            fw_lvl = int(player.get('firewall_level', 0) or 0)
+            status['firewall_level'] = fw_lvl
+            status['firewall_multiplier'] = MathConfig.get_event_firewall_multiplier(fw_lvl)
+            return status
         elif manager := self._CHALLENGE_MANAGERS.get(method):
             return manager.process(tx, actor, args.get('guild_name'), args.get('guess'), resource=resource)
 
@@ -422,6 +428,14 @@ class RootService:
 
                 # 2. Claim (RAM)
                 if 'claim' in existing_map:
+                    stats = MathConfig.calculate_player_stats(p)
+                    if stats.get('total_hashrate_hs', 0) > 0:
+                        state = MathConfig.compute_mining_progress(p, stats, tx.now)
+                        sec_to_full = state.get('seconds_to_full', 0)
+                        if not state.get('is_full') and sec_to_full > 0:
+                            new_at = tx.now + timedelta(seconds=sec_to_full)
+                            RemindersDB.reschedule_claim_reminder(tx, actor, new_at)
+                            existing_map['claim']['remind_at'] = new_at
                     results.append({
                         'target': 'claim',
                         'status': 'already_scheduled',
@@ -590,10 +604,17 @@ class RootService:
                 if state.get('is_full') or sec_to_full <= 0:
                     return {'status': 'already_available', 'target': 'claim'}
                 remind_at = tx.now + timedelta(seconds=sec_to_full)
-                created = RemindersDB.create_reminder(
-                    tx, actor, remind_at=remind_at, message="Mémoire vive pleine ! Récolte /claim prête.",
-                    channel_id=channel_id, guild_id=guild_id, reminder_type='claim',
-                )
+                existing_reminders = RemindersDB.get_user_reminders(tx, actor)
+                existing_claim = next((r for r in existing_reminders if r.get('reminder_type') == 'claim'), None)
+                if existing_claim:
+                    RemindersDB.reschedule_claim_reminder(tx, actor, remind_at)
+                    created = dict(existing_claim)
+                    created['remind_at'] = remind_at
+                else:
+                    created = RemindersDB.create_reminder(
+                        tx, actor, remind_at=remind_at, message="Mémoire vive pleine ! Récolte /claim prête.",
+                        channel_id=channel_id, guild_id=guild_id, reminder_type='claim',
+                    )
                 return {'status': 'created', 'reminder': created, 'remind_at': remind_at, 'target': 'claim', 'remaining_seconds': sec_to_full}
 
             raise GameError('invalid_selection')
