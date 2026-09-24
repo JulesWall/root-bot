@@ -17,6 +17,7 @@ from decimal import Decimal
 import discord
 
 from lang.fr import text
+from utils.time_format import to_utc_timestamp
 
 # Mapping entre les clés logicielles et les noms des variables d'environnement
 LOG_CHANNELS = {
@@ -54,8 +55,10 @@ def _format_user_compact(user: discord.User | discord.Member) -> str:
 
 def _format_ts_compact(dt) -> str:
     """Formate une date en horodatage relatif Discord compact (<t:...:R>)."""
-    if dt and hasattr(dt, "timestamp"):
-        return f"<t:{int(dt.timestamp())}:R>"
+    if dt:
+        ts = to_utc_timestamp(dt)
+        if ts > 0:
+            return f"<t:{ts}:R>"
     return "Inconnu"
 
 
@@ -346,14 +349,15 @@ class Logger:
         )
         await self._send_embed("moderation_hourly", embed)
 
-    async def log_daily_hourly_report(self, summary: dict):
-        """Envoie le rapport quotidien /hourly dans LOG_MODERATION_HOURLY_STATS_CHANNEL_ID.
-
-        Toute erreur est propagée pour que l'historique ne soit pas purgé si l'envoi échoue.
+    async def log_daily_hourly_report(self, summary: list[dict] | dict):
         """
-        from utils.text import format_usd
-        from utils.time_format import format_duration
-
+        Envoie le rapport quotidien de modération des récoltes horaires (/hourly 24h) dans le salon dédié.
+        Harmonisé exactement avec log_daily_claim_report :
+        - Analyse statistique par joueur (moyenne, écart-type, régularité, streak suspect, 24/24h).
+        - Affiche jusqu'à 50 joueurs ordonnés par nombre de récoltes décroissant.
+        - Découpe en plusieurs messages si la longueur du texte le nécessite.
+        - Propage toute exception en cas d'échec pour empêcher la réinitialisation des logs.
+        """
         channel_id = self.channel_id("moderation_hourly_stats")
         if channel_id is None:
             logger.warning("LOG_MODERATION_HOURLY_STATS_CHANNEL_ID non configuré : rapport hourly 24h non envoyé.")
@@ -368,72 +372,143 @@ class Logger:
         if not channel or not callable(getattr(channel, "send", None)):
             raise RuntimeError(f"Salon invalide ou inaccessible pour le rapport hourly ({channel_id}).")
 
-        total_claims = summary.get("total_claims", 0)
-        total_usd = summary.get("total_usd", Decimal("0"))
-        unique_players = summary.get("unique_players", 0)
-        top_users = summary.get("top_users", [])
+        from utils.claim_analysis import calculate_player_hourly_metrics
+        from utils.text import format_usd
+        from utils.time_format import format_duration
 
-        embed = discord.Embed(
-            title="⏱️ Rapport Quotidien des Récompenses Horaires (24h)",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow(),
-        )
-        embed.description = (
-            f"**Total récoltes :** `{total_claims}` claims\n"
-            f"**Joueurs uniques :** `{unique_players}` joueurs\n"
-            f"**USD distribués :** 💵 `{format_usd(total_usd)}`\n"
-        )
-
-        if top_users:
-            rows = []
-            for i, u in enumerate(top_users[:15], 1):
-                uid = u["discord_id"]
-                cnt = u["claim_count"]
-                u_usd = format_usd(u["total_usd"])
-                streak = u.get("max_streak", 1)
-                bonus = Decimal(str(u.get("max_bonus_pct", 0)))
-                rows.append(f"**{i}.** <@{uid}> (`{uid}`) — `{cnt}` claims (🔥 `{streak}` · `+{bonus:.1f}%`) — `{u_usd}`")
-            embed.add_field(name="🏆 Top Joueurs Assidus (24h)", value="\n".join(rows), inline=False)
+        # Support rétrocompatible si summary est passé sous forme de dictionnaire {top_users: ...}
+        if isinstance(summary, dict):
+            players = summary.get("top_users", [])[:50]
         else:
-            embed.add_field(name="🏆 Top Joueurs Assidus (24h)", value="*Aucun claim horaire enregistré sur cette période.*", inline=False)
+            players = summary[:50] if summary else []
 
-        top_streaks = summary.get("top_streaks") or []
-        if top_streaks:
-            streak_rows = [
-                f"**{i}.** <@{s['discord_id']}> — 🔥 `{s['max_streak']}` (`{s['claim_count']}` claims)"
-                for i, s in enumerate(top_streaks[:5], 1)
+        header = "⏱️ **Bilan d'assiduité et régularité des récompenses horaires (hourly 24h)**\n\n"
+
+        if not players:
+            embed = discord.Embed(
+                title="⏱️ Rapport Quotidien des Récompenses Horaires (/hourly 24h)",
+                description=header + "*Aucune récolte horaire enregistrée sur cette période.*",
+                color=discord.Color.dark_teal(),
+                timestamp=discord.utils.utcnow(),
+            )
+            embed.set_footer(text="Root OS • Surveillance Hourly 24h")
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            return
+
+        has_high_risk = False
+        player_blocks = []
+        for idx, row in enumerate(players, 1):
+            user_id = row["discord_id"]
+            claim_count = row["claim_count"]
+            claims = row.get("claims", [])
+            max_streak = row.get("max_streak", 1)
+            max_bonus = Decimal(str(row.get("max_bonus_pct", 0)))
+            total_usd = Decimal(str(row.get("total_usd", 0)))
+
+            analysis = calculate_player_hourly_metrics(claims) if claims else {
+                "risk_level": "LOW",
+                "risk_badge": "🟢",
+                "mean_interval_sec": None,
+                "std_dev_sec": None,
+                "regularity_pct": None,
+                "alerts": [],
+                "suspicious_streak": None,
+                "active_24h": False,
+            }
+
+            if analysis["risk_level"] == "HIGH":
+                has_high_risk = True
+
+            user = self.bot.get_user(user_id)
+            if not user:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                except Exception:
+                    user = None
+
+            user_str = _format_user_compact(user) if user else f"<@{user_id}> (`{user_id}`)"
+            badge = analysis["risk_badge"]
+
+            mean_str = format_duration(analysis["mean_interval_sec"]) if analysis["mean_interval_sec"] is not None else "N/A"
+            reg_pct = analysis["regularity_pct"]
+            reg_str = f"{reg_pct:.1f}%" if reg_pct is not None else "N/A"
+            std_str = f"± {format_duration(analysis['std_dev_sec'])}" if analysis["std_dev_sec"] is not None else ""
+
+            lines = [
+                f"**{idx}.** {badge} {user_str}",
+                f"   ├ ⏱️ Récoltes : `{claim_count}` claims (🔥 `{max_streak}` · ⚡ `+{max_bonus:.1f}%`) · Total : `{format_usd(total_usd)}`",
+                f"   ├ ⏱️ Intervalle moyen : `{mean_str}` · Régularité : `{reg_str}` {f'(`{std_str}`)' if std_str else ''}",
             ]
-            embed.add_field(name="🔥 Plus longues séries", value="\n".join(streak_rows), inline=True)
 
-        top_bonuses = summary.get("top_bonuses") or []
-        if top_bonuses:
-            bonus_rows = [
-                f"**{i}.** <@{b['discord_id']}> — ⚡ `+{Decimal(str(b['max_bonus_pct'])):.1f}%`"
-                for i, b in enumerate(top_bonuses[:5], 1)
-            ]
-            embed.add_field(name="⚡ Plus hauts bonus cumulés", value="\n".join(bonus_rows), inline=True)
+            if analysis.get("active_24h"):
+                lines.append("   ├ ⚠️ **Alerte Sommeil** : activité observée sur 24h sans longue pause")
 
-        suspects = summary.get("suspects") or []
-        if suspects:
-            rows = []
-            for s in suspects[:10]:
-                uid = s["discord_id"]
-                badge = s.get("risk_badge", "🟡")
-                level = _HOURLY_RISK_LABELS.get(s.get("risk_level"), s.get("risk_level", "?"))
-                reg = s.get("regularity_pct")
-                reg_str = f"{reg:.1f}%" if reg is not None else "N/A"
-                std = s.get("std_dev_sec")
-                std_str = f"± {format_duration(std)}" if std is not None else "N/A"
-                rows.append(
-                    f"{badge} <@{uid}> (`{uid}`) — **{level}** · `{s.get('claim_count', 0)}` claims"
-                    f" · constance `{reg_str}` · dispersion `{std_str}`"
+            streak = analysis.get("suspicious_streak")
+            alerts = analysis.get("alerts", [])
+            if "CRITICAL_MACRO_STREAK" in alerts and streak:
+                s_mean = format_duration(streak["mean_sec"])
+                s_std = format_duration(streak["std_dev_sec"])
+                s_reg = f"{streak['regularity_pct']:.1f}%"
+                lines.append(
+                    f"   └ 🚨 **Phase automatisée (Macro)** : {streak['count']} claims consécutifs "
+                    f"à `{s_mean}` (± `{s_std}`) · Régularité locale : `{s_reg}`"
                 )
-            embed.add_field(name="⚠️ Profils suspects", value="\n".join(rows), inline=False)
-        else:
-            embed.add_field(name="⚠️ Profils suspects", value="*Aucun profil à intervalle anormalement constant.*", inline=False)
+            elif "SUSPECT_LOCAL_STREAK" in alerts and streak:
+                s_mean = format_duration(streak["mean_sec"])
+                s_reg = f"{streak['regularity_pct']:.1f}%"
+                lines.append(
+                    f"   └ ⚠️ **Séquence suspecte** : {streak['count']} claims consécutifs "
+                    f"à `{s_mean}` · Régularité locale : `{s_reg}`"
+                )
+            elif "VARIANCE_DROP_BURST" in alerts and streak:
+                s_mean = format_duration(streak["mean_sec"])
+                lines.append(
+                    f"   └ 🚨 **Rupture de régime** : chute brutale de variation sur {streak['count']} claims "
+                    f"à `{s_mean}`"
+                )
+            elif "GLOBAL_EXTREME_CONSTANCY" in alerts:
+                lines.append("   └ 🚨 **Constance globale extrême** : intervalles quasi invariables sur 24h")
+            elif analysis.get("status") == "INSUFFICIENT_DATA":
+                lines.append("   └ ⚪ Données insuffisantes")
+            else:
+                lines.append("   └ 🟢 Comportement d'apparence humaine normale")
 
-        embed.set_footer(text="Root OS • Hourly 24h")
-        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            player_blocks.append("\n".join(lines))
+
+        max_desc_len = 3500
+        pages = []
+        current_page_blocks = []
+        current_len = len(header)
+
+        for block in player_blocks:
+            block_len = len(block) + 2
+            if current_page_blocks and (current_len + block_len > max_desc_len):
+                pages.append(current_page_blocks)
+                current_page_blocks = [block]
+                current_len = len(header) + block_len
+            else:
+                current_page_blocks.append(block)
+                current_len += block_len
+
+        if current_page_blocks:
+            pages.append(current_page_blocks)
+
+        total_pages = len(pages)
+        report_color = discord.Color.red() if has_high_risk else discord.Color.dark_teal()
+
+        for page_idx, page_blocks in enumerate(pages, 1):
+            embed = discord.Embed(
+                title="⏱️ Rapport Quotidien des Récompenses Horaires (/hourly 24h)",
+                description=header + "\n\n".join(page_blocks),
+                color=report_color,
+                timestamp=discord.utils.utcnow(),
+            )
+            if total_pages > 1:
+                embed.set_footer(text=f"Root OS • Surveillance Hourly 24h • Page {page_idx}/{total_pages}")
+            else:
+                embed.set_footer(text="Root OS • Surveillance Hourly 24h")
+
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
     async def log_guild_join(self, guild: discord.Guild, total_guilds: int):
         """Consigne l'arrivée du bot sur un serveur en format compact."""
@@ -531,13 +606,14 @@ class Logger:
         details = [f"**Paquet manquant :** `Paquet #{missing_packet}`"]
         await self.log_challenge_won(ctx, winner, "🛰️ Paquet manquant identifié !", discord.Color.from_rgb(230, 126, 34), details, server_name)
 
-    async def log_daily_event_report(self, summary: list[dict]):
+    async def log_daily_event_report(self, summary: list[dict], resolution_map: dict[int, list[dict]] | None = None):
         """
         Envoie le rapport quotidien de modération des événements (24h) dans le salon dédié.
-        Conformément aux consignes :
-        - Affiche jusqu'à 50 joueurs.
+        Harmonisé avec topclaim et tophourly :
+        - Analyse statistique par joueur (ratio de victoires, résolutions instantanées <= 2s, vitesse moyenne).
+        - Affiche jusqu'à 50 joueurs ordonnés par nombre de victoires décroissant.
         - Découpe en plusieurs messages si la longueur du texte le nécessite.
-        - Propage toute exception en cas d'échec pour empêcher la réinitialisation des compteurs.
+        - Propage toute exception en cas d'échec pour empêcher la réinitialisation des données.
         """
         channel_id = self.channel_id("moderation_event_stats")
         if channel_id is None:
@@ -554,7 +630,9 @@ class Logger:
         if not channel or not callable(getattr(channel, "send", None)):
             raise RuntimeError(f"Salon invalide ou inaccessible pour le rapport quotidien ({channel_id}).")
 
-        header = "📊 **Bilan d'activité des mini-jeux sur les dernières 24 heures**\n\n"
+        from utils.event_analysis import calculate_player_event_metrics
+
+        header = "🏆 **Bilan d'activité et intégrité des événements réseau (24h)**\n\n"
         players = summary[:50] if summary else []
 
         if not players:
@@ -564,15 +642,21 @@ class Logger:
                 color=discord.Color.dark_teal(),
                 timestamp=discord.utils.utcnow(),
             )
-            embed.set_footer(text="Root OS • Événements 24h")
+            embed.set_footer(text="Root OS • Surveillance Événements 24h")
             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
             return
 
+        has_high_risk = False
         player_blocks = []
         for idx, row in enumerate(players, 1):
             user_id = row["discord_id"]
             won = int(row.get("events_won", 0))
             part = int(row.get("events_participated", 0))
+            recent_wins = resolution_map.get(user_id, []) if resolution_map else []
+
+            analysis = calculate_player_event_metrics(won, part, recent_wins)
+            if analysis["risk_level"] == "HIGH":
+                has_high_risk = True
 
             user = self.bot.get_user(user_id)
             if not user:
@@ -582,20 +666,49 @@ class Logger:
                     user = None
 
             user_str = _format_user_compact(user) if user else f"<@{user_id}> (`{user_id}`)"
-            block = (
-                f"**{idx}.** {user_str}\n"
-                f"   └ 🏆 Victoires : `{won}` · 🎯 Participations : `{part}`"
-            )
-            player_blocks.append(block)
+            badge = analysis["risk_badge"]
+            win_rate = analysis["win_rate_pct"]
 
-        # Découpage dynamique selon la longueur réelle du contenu (seuil de sécurité à 3500 car. par embed)
+            lines = [
+                f"**{idx}.** {badge} {user_str}",
+                f"   ├ 🏆 Victoires : `{won}` · 🎯 Participations : `{part}` · Ratio : `{win_rate:.1f}%`",
+            ]
+
+            if analysis["mean_duration_sec"] is not None:
+                lines.append(
+                    f"   ├ ⚡ Vitesse de résolution : Moyenne `{analysis['mean_duration_sec']:.1f}s` "
+                    f"(Record : `{analysis['min_duration_sec']}s`)"
+                )
+
+            alerts = analysis.get("alerts", [])
+            if "CRITICAL_INSTANT_SOLVE" in alerts:
+                lines.append(
+                    f"   └ 🚨 **Résolution quasi-instantanée** : {analysis['instant_wins_count']} victoires en <= 2s (Bot/Script)"
+                )
+            elif "ABNORMAL_WIN_RATE" in alerts:
+                lines.append(
+                    f"   └ 🚨 **Taux de victoire anormal** : {win_rate:.1f}% de réussite sur {part} défis"
+                )
+            elif "SUSPECT_FAST_SOLVE" in alerts:
+                lines.append(
+                    f"   └ ⚠️ **Vitesse suspecte** : résolution moyenne très rapide ({analysis['mean_duration_sec']:.1f}s)"
+                )
+            elif "HIGH_WIN_RATE" in alerts:
+                lines.append(
+                    f"   └ ⚠️ **Taux de victoire élevé** : {win_rate:.1f}%"
+                )
+            else:
+                lines.append("   └ 🟢 Comportement compétitif normal")
+
+            player_blocks.append("\n".join(lines))
+
         max_desc_len = 3500
         pages = []
         current_page_blocks = []
         current_len = len(header)
 
         for block in player_blocks:
-            block_len = len(block) + 1  # +1 pour le saut de ligne
+            block_len = len(block) + 2
             if current_page_blocks and (current_len + block_len > max_desc_len):
                 pages.append(current_page_blocks)
                 current_page_blocks = [block]
@@ -608,19 +721,20 @@ class Logger:
             pages.append(current_page_blocks)
 
         total_pages = len(pages)
+        report_color = discord.Color.red() if has_high_risk else discord.Color.dark_teal()
+
         for page_idx, page_blocks in enumerate(pages, 1):
             embed = discord.Embed(
                 title="🏆 Rapport Quotidien des Événements (24h)",
-                description=header + "\n".join(page_blocks),
-                color=discord.Color.dark_teal(),
+                description=header + "\n\n".join(page_blocks),
+                color=report_color,
                 timestamp=discord.utils.utcnow(),
             )
             if total_pages > 1:
-                embed.set_footer(text=f"Root OS • Événements 24h • Page {page_idx}/{total_pages}")
+                embed.set_footer(text=f"Root OS • Surveillance Événements 24h • Page {page_idx}/{total_pages}")
             else:
-                embed.set_footer(text="Root OS • Événements 24h")
+                embed.set_footer(text="Root OS • Surveillance Événements 24h")
 
-            # Si l'envoi échoue, l'exception est levée et non absorbée
             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
     async def log_daily_claim_report(self, summary: list[dict]):
@@ -685,7 +799,7 @@ class Logger:
 
             user_str = _format_user_compact(user) if user else f"<@{user_id}> (`{user_id}`)"
             badge = analysis["risk_badge"]
-            total_rtm = format_rtm(analysis["total_amount"])
+            total_rtm = format_rtm(row.get("total_amount", analysis["total_amount"]))
 
             mean_str = format_duration(analysis["mean_interval_sec"]) if analysis["mean_interval_sec"] is not None else "N/A"
             reg_pct = analysis["regularity_pct"]
@@ -703,7 +817,7 @@ class Logger:
             ]
 
             if analysis.get("active_24h"):
-                lines.append("   ├ ⚠️ **Absence de pause sommeil** : actif 24h/24 sans pause > 3h30")
+                lines.append("   ├ ⚠️ **Alerte Sommeil** : activité observée sur 24h sans longue pause")
 
             streak = analysis.get("suspicious_streak")
             alerts = analysis.get("alerts", [])
@@ -730,6 +844,8 @@ class Logger:
                 )
             elif "GLOBAL_EXTREME_CONSTANCY" in alerts:
                 lines.append("   └ 🚨 **Constance globale extrême** : intervalles quasi invariables sur 24h")
+            elif analysis.get("status") == "INSUFFICIENT_DATA":
+                lines.append("   └ ⚪ Données manuelles insuffisantes")
             else:
                 lines.append("   └ 🟢 Comportement d'apparence humaine normale")
 

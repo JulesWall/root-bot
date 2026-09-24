@@ -19,6 +19,7 @@ from discord.ext import commands
 
 import data
 from commands.game.commandgame import BaseGameCog
+from game.math_config import MathConfig
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
@@ -40,11 +41,19 @@ class TopView(discord.ui.View):
         self.ctx = ctx
         self.message = None
 
-        # Configuration des 3 catégories publiques avec leurs icônes respectives
+        if current_category in ('hs', 'h/s', 'mining', 'h'):
+            current_category = 'hashrate'
+        elif current_category in ('rep',):
+            current_category = 'reputation'
+        elif current_category in ('event', 'e'):
+            current_category = 'events'
+
+        # Configuration des 4 catégories publiques avec leurs icônes respectives
         categories = [
             ('reputation', '🌟 ' + text.get(ctx, 'g_top_btn_rep')),
             ('usd',        '💵 ' + text.get(ctx, 'g_top_btn_usd')),
             ('events',     '🏆 ' + text.get(ctx, 'g_top_btn_events')),
+            ('hashrate',   '⛏️ ' + text.get(ctx, 'g_top_btn_hs')),
         ]
 
         # Génération dynamique des boutons d'onglets
@@ -115,7 +124,7 @@ class Top(BaseGameCog):
     async def top(
         self,
         ctx,
-        category: discord.Option(str, choices=['reputation', 'usd', 'events']) = 'reputation',
+        category: discord.Option(str, choices=['reputation', 'usd', 'events', 'hashrate']) = 'reputation',
     ):
         """Affiche le classement des meilleurs joueurs selon la catégorie choisie."""
         await self._invoke(ctx, 'top', category=category)
@@ -125,12 +134,14 @@ class Top(BaseGameCog):
     async def prefix_top(self, ctx, category: str = 'reputation'):
         """Commande préfixe !top [catégorie]."""
         raw_cat = category.lower().strip()
-        if raw_cat == 'rep':
+        if raw_cat in ('rep', 'reputation'):
             cat = 'reputation'
         elif raw_cat in ('event', 'events', 'e'):
             cat = 'events'
-        elif raw_cat == 'usd':
+        elif raw_cat in ('usd', 'dollar', 'dollars', '$'):
             cat = 'usd'
+        elif raw_cat in ('hashrate', 'hs', 'h/s', 'mining', 'h'):
+            cat = 'hashrate'
         else:
             cat = 'reputation'
         await self._invoke(ctx, 'top', category=cat)
@@ -143,10 +154,15 @@ class Top(BaseGameCog):
         - Réputation : Or (Gold)
         - USD : Vert dollar (#2ECC71)
         - Événements : Cyan (#00B4F0)
+        - Hashrate : Ambre (#FFAA00)
         """
         category = result.get('category', 'reputation')
-        if category == 'rep':
+        if category in ('rep', 'reputation'):
             category = 'reputation'
+        elif category in ('event', 'events', 'e'):
+            category = 'events'
+        elif category in ('hashrate', 'hs', 'h/s', 'mining', 'h'):
+            category = 'hashrate'
         ranking = result.get('ranking', [])
 
         cat_name = text.get(ctx, f'g_top_cat_{category}')
@@ -156,6 +172,7 @@ class Top(BaseGameCog):
             'reputation': discord.Color.gold(),
             'usd':        discord.Color.from_rgb(46, 204, 113),
             'events':     discord.Color.from_rgb(0, 180, 240),
+            'hashrate':   discord.Color.from_rgb(255, 170, 0),
         }
         medals = {1: '🥇 **1er**', 2: '🥈 **2e** ', 3: '🥉 **3e** '}
 
@@ -179,6 +196,8 @@ class Top(BaseGameCog):
                 is_fr = text.get_locale(ctx) == 'fr'
                 vic_label = ("victoire" if vic_count <= 1 else "victoires") if is_fr else ("win" if vic_count <= 1 else "wins")
                 score_str = f"`{vic_count:,}` {vic_label}"
+            elif category == 'hashrate':
+                score_str = f"`{MathConfig.format_hashrate(score)}`"
             else:
                 score_str = f"`{score}`"
 

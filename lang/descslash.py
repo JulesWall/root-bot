@@ -19,6 +19,21 @@ desc = {
     "hack_attack_points": "ATK points to engage (integer)",
     "hack_target": "Target zone: mining or attack",
     "hourly": "Claim your hourly USD reward with streak combo bonus",
+    "contract": "Consult, start, or collect work contracts for guaranteed USD",
+    "contract_action": "Action to perform: view (default), start, or collect",
+    "contract_duration": "Mission duration: short (30m), medium (2h), or long (6h)",
+    "rmd": "Schedule, view, or cancel time-based reminders",
+    "rmd_sub_auto": "Activate automatic game reminders (hourly, claim, events, all)",
+    "rmd_sub_timer": "Set a custom countdown timer (e.g. 30m, 2h, 45s)",
+    "rmd_sub_list": "View all your active reminders and timers",
+    "rmd_sub_cancel": "Cancel a specific reminder by ID or delete all",
+    "rmd_sub_help": "Show reminder syntax, shortcuts, and documentation",
+    "rmd_action": "Action: create, list, or cancel",
+    "rmd_target": "Smart target to track (hourly, claim, events, all...)",
+    "rmd_duration": "Timer duration (e.g. 30m, 2h, 45s, 1d)",
+    "rmd_message": "Custom reminder note (e.g. Coffee break)",
+    "rmd_id": "Reminder ID to cancel, or 'all'",
+    "rmd_timer": "Duration (e.g. 30m, 2h) or smart target (hourly, claim, events)",
 }
 
 desc_loc = {
@@ -121,6 +136,81 @@ desc_loc = {
         "en-US": "Claim your hourly USD reward with streak combo bonus",
         "en-GB": "Claim your hourly USD reward with streak combo bonus",
         "fr": "Réclamer sa récompense horaire en USD avec bonus de combo",
+    },
+    "contract": {
+        "en-US": "Consult, start, or collect work contracts for guaranteed USD",
+        "en-GB": "Consult, start, or collect work contracts for guaranteed USD",
+        "fr": "Consulter, lancer ou récupérer des contrats de travail garantis en USD",
+    },
+    "contract_action": {
+        "en-US": "Action to perform: view (default), start, or collect",
+        "en-GB": "Action to perform: view (default), start, or collect",
+        "fr": "Action à exécuter : view (par défaut), start ou collect",
+    },
+    "contract_duration": {
+        "en-US": "Mission duration: short (30m), medium (2h), or long (6h)",
+        "en-GB": "Mission duration: short (30m), medium (2h), or long (6h)",
+        "fr": "Durée de la mission : short (30m), medium (2h) ou long (6h)",
+    },
+    "rmd": {
+        "en-US": "Schedule, view, or cancel time-based reminders",
+        "en-GB": "Schedule, view, or cancel time-based reminders",
+        "fr": "Programmer, consulter ou annuler des rappels et alertes temporelles",
+    },
+    "rmd_sub_auto": {
+        "en-US": "Activate automatic game reminders (hourly, claim, events, all)",
+        "en-GB": "Activate automatic game reminders (hourly, claim, events, all)",
+        "fr": "Activer un rappel automatique de jeu (hourly, claim, events, all)",
+    },
+    "rmd_sub_timer": {
+        "en-US": "Set a custom countdown timer (e.g. 30m, 2h, 45s)",
+        "en-GB": "Set a custom countdown timer (e.g. 30m, 2h, 45s)",
+        "fr": "Programmer un minuteur personnalisé (ex: 30m, 2h, 45s)",
+    },
+    "rmd_sub_list": {
+        "en-US": "View all your active reminders and timers",
+        "en-GB": "View all your active reminders and timers",
+        "fr": "Consulter la liste de tous vos rappels et minuteurs actifs",
+    },
+    "rmd_sub_cancel": {
+        "en-US": "Cancel a specific reminder by ID or delete all",
+        "en-GB": "Cancel a specific reminder by ID or delete all",
+        "fr": "Annuler un rappel spécifique par son ID ou tout supprimer",
+    },
+    "rmd_sub_help": {
+        "en-US": "Show reminder syntax, shortcuts, and documentation",
+        "en-GB": "Show reminder syntax, shortcuts, and documentation",
+        "fr": "Afficher la documentation complète et les syntaxes des rappels",
+    },
+    "rmd_action": {
+        "en-US": "Action: create, list, or cancel",
+        "en-GB": "Action: create, list, or cancel",
+        "fr": "Action : create, list ou cancel",
+    },
+    "rmd_target": {
+        "en-US": "Smart target: hourly, events, claim",
+        "en-GB": "Smart target: hourly, events, claim",
+        "fr": "Cible intelligente : hourly, events, claim",
+    },
+    "rmd_duration": {
+        "en-US": "Timer duration (e.g. 30min, 2h, 45s)",
+        "en-GB": "Timer duration (e.g. 30min, 2h, 45s)",
+        "fr": "Durée du minuteur (ex: 30min, 2h, 45s)",
+    },
+    "rmd_message": {
+        "en-US": "Custom message or subject for the reminder",
+        "en-GB": "Custom message or subject for the reminder",
+        "fr": "Message ou sujet personnalisé du rappel",
+    },
+    "rmd_id": {
+        "en-US": "Reminder ID to cancel (or 'all')",
+        "en-GB": "Reminder ID to cancel (or 'all')",
+        "fr": "ID du rappel à annuler (ou 'all')",
+    },
+    "rmd_timer": {
+        "en-US": "Duration (e.g. 30m, 2h) or smart target (all, hourly, claim, events)",
+        "en-GB": "Duration (e.g. 30m, 2h) or smart target (all, hourly, claim, events)",
+        "fr": "Durée (ex: 30m, 2h) ou cible de jeu (all, hourly, claim, events)",
     },
 }
 

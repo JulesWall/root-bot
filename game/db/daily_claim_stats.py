@@ -35,8 +35,19 @@ class DailyClaimStatsDB:
         )
 
     @staticmethod
-    def get_summary(tx, limit_users: int = 50) -> list[dict]:
-        """Retourne la liste ordonnée des joueurs de la journée avec leurs claims respectifs.
+    def get_summary(
+        tx,
+        limit_users: int = 50,
+        since_dt: datetime | None = None,
+        claims_since_dt: datetime | None = None,
+    ) -> list[dict]:
+        """Retourne la liste ordonnée des joueurs de la période avec leurs claims respectifs.
+
+        Args:
+            tx: Transaction MySQL active.
+            limit_users: Nombre maximum d'utilisateurs à renvoyer.
+            since_dt: Borne inférieure facultative pour les totaux (ex: dernières 24h).
+            claims_since_dt: Borne inférieure facultative pour l'historique de claims (ex: dernières 48h).
 
         Returns:
             Une liste de dictionnaires au format :
@@ -53,16 +64,33 @@ class DailyClaimStatsDB:
             ]
         """
         # 1. Récupération des joueurs les plus actifs par nombre de claims décroissant
-        top_users = tx.all(
-            """
-            SELECT discord_id, COUNT(*) AS claim_count, SUM(amount) AS total_amount
-            FROM daily_claim_logs
-            GROUP BY discord_id
-            ORDER BY claim_count DESC
-            LIMIT %s
-            """,
-            (limit_users,),
-        )
+        if since_dt is not None:
+            top_users = tx.all(
+                """
+                SELECT discord_id, COUNT(*) AS claim_count, SUM(amount) AS total_amount,
+                       SUM(CASE WHEN is_auto = 1 THEN 1 ELSE 0 END) AS auto_count,
+                       SUM(CASE WHEN is_auto = 0 THEN 1 ELSE 0 END) AS manual_count
+                FROM daily_claim_logs
+                WHERE claimed_at >= %s
+                GROUP BY discord_id
+                ORDER BY claim_count DESC
+                LIMIT %s
+                """,
+                (since_dt, limit_users),
+            )
+        else:
+            top_users = tx.all(
+                """
+                SELECT discord_id, COUNT(*) AS claim_count, SUM(amount) AS total_amount,
+                       SUM(CASE WHEN is_auto = 1 THEN 1 ELSE 0 END) AS auto_count,
+                       SUM(CASE WHEN is_auto = 0 THEN 1 ELSE 0 END) AS manual_count
+                FROM daily_claim_logs
+                GROUP BY discord_id
+                ORDER BY claim_count DESC
+                LIMIT %s
+                """,
+                (limit_users,),
+            )
 
         if not top_users:
             return []
@@ -72,16 +100,29 @@ class DailyClaimStatsDB:
             return []
 
         # 2. Récupération de tous les claims chronologiques pour ces utilisateurs
+        actual_claims_since = claims_since_dt if claims_since_dt is not None else since_dt
         placeholders = ", ".join(["%s"] * len(user_ids))
-        rows = tx.all(
-            f"""
-            SELECT discord_id, claimed_at, interval_seconds, amount, is_auto
-            FROM daily_claim_logs
-            WHERE discord_id IN ({placeholders})
-            ORDER BY claimed_at ASC
-            """,
-            tuple(user_ids),
-        )
+        if actual_claims_since is not None:
+            params = tuple(user_ids) + (actual_claims_since,)
+            rows = tx.all(
+                f"""
+                SELECT discord_id, claimed_at, interval_seconds, amount, is_auto
+                FROM daily_claim_logs
+                WHERE discord_id IN ({placeholders}) AND claimed_at >= %s
+                ORDER BY claimed_at ASC
+                """,
+                params,
+            )
+        else:
+            rows = tx.all(
+                f"""
+                SELECT discord_id, claimed_at, interval_seconds, amount, is_auto
+                FROM daily_claim_logs
+                WHERE discord_id IN ({placeholders})
+                ORDER BY claimed_at ASC
+                """,
+                tuple(user_ids),
+            )
 
         claims_by_user = {uid: [] for uid in user_ids}
         for row in rows:
@@ -97,8 +138,8 @@ class DailyClaimStatsDB:
         for user_row in top_users:
             uid = user_row["discord_id"]
             user_claims = claims_by_user.get(uid, [])
-            auto_count = sum(1 for c in user_claims if c.get("is_auto"))
-            manual_count = len(user_claims) - auto_count
+            auto_count = int(user_row.get("auto_count") if user_row.get("auto_count") is not None else sum(1 for c in user_claims if c.get("is_auto")))
+            manual_count = int(user_row.get("manual_count") if user_row.get("manual_count") is not None else (len(user_claims) - auto_count))
             summary.append({
                 "discord_id": uid,
                 "claim_count": int(user_row["claim_count"]),
@@ -111,17 +152,28 @@ class DailyClaimStatsDB:
         return summary
 
     @staticmethod
-    def get_user_claims(tx, discord_id: int) -> list[dict]:
-        """Retourne la liste chronologique complète des claims d'un joueur pour la journée en cours."""
-        rows = tx.all(
-            """
-            SELECT claimed_at, interval_seconds, amount, is_auto
-            FROM daily_claim_logs
-            WHERE discord_id = %s
-            ORDER BY claimed_at ASC
-            """,
-            (discord_id,),
-        )
+    def get_user_claims(tx, discord_id: int, since_dt: datetime | None = None) -> list[dict]:
+        """Retourne la liste chronologique complète des claims d'un joueur."""
+        if since_dt is not None:
+            rows = tx.all(
+                """
+                SELECT claimed_at, interval_seconds, amount, is_auto
+                FROM daily_claim_logs
+                WHERE discord_id = %s AND claimed_at >= %s
+                ORDER BY claimed_at ASC
+                """,
+                (discord_id, since_dt),
+            )
+        else:
+            rows = tx.all(
+                """
+                SELECT claimed_at, interval_seconds, amount, is_auto
+                FROM daily_claim_logs
+                WHERE discord_id = %s
+                ORDER BY claimed_at ASC
+                """,
+                (discord_id,),
+            )
         return [
             {
                 "claimed_at": r["claimed_at"],
@@ -133,8 +185,13 @@ class DailyClaimStatsDB:
         ]
 
     @staticmethod
+    def purge_older_than(tx, cutoff_dt: datetime) -> None:
+        """Supprime les logs antérieurs à la date limite (rétention 48h)."""
+        tx.execute("DELETE FROM daily_claim_logs WHERE claimed_at < %s", (cutoff_dt,))
+
+    @staticmethod
     def reset(tx) -> None:
-        """Réinitialise tous les logs de la table pour une nouvelle journée."""
+        """Réinitialise tous les logs de la table (purge complète)."""
         tx.execute("DELETE FROM daily_claim_logs")
 
     @staticmethod

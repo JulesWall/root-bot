@@ -33,6 +33,8 @@ UI = {
     "sec_advice": "Advice",
     "sec_aliases": "Text Aliases",
     "sec_linked": "Related Commands",
+    "select_cmd_part1_placeholder": "Commands (Network, Combat, Events)...",
+    "select_cmd_part2_placeholder": "Commands (Trade, Utility, Info)...",
 }
 
 CATEGORIES = [
@@ -46,7 +48,7 @@ CATEGORIES = [
         "id": "all",
         "emoji": "📜",
         "label": "All Commands",
-        "description": "Complete index of all 24 commands",
+        "description": "Complete index of all 27 commands",
     },
     {
         "id": "network",
@@ -135,11 +137,13 @@ PAGES = {
     "all": {
         "title": "📜 ROOT — All Commands",
         "body_slash": (
-            "Complete index of all 24 public player commands in Root.\n\n"
+            "Complete index of all 27 public player commands in Root.\n\n"
             "**⛏️ Develop Network**\n"
             "• **/network** — Initialize profile or inspect balances & hardware\n"
             "• **/buy** — Purchase hardware (mining, attack, defense)\n"
             "• **/claim** — Claim mined Rootium and clear RAM\n"
+            "• **/hourly** — Claim hourly USD reward and build combo streak\n"
+            "• **/contract** — View and accept guaranteed Root CyberSec missions\n"
             "• **/convert** — Sell Rootium for USD at current rate\n"
             "• **/upgrade** — Upgrade firewall tier\n\n"
             "**⚔️ Attack & Defend**\n"
@@ -162,17 +166,20 @@ PAGES = {
             "• **/top** — View top player leaderboards\n\n"
             "**⚙️ Language & Info**\n"
             "• **/lang** — Configure display language (fr/en)\n"
+            "• **/rmd** — Set custom or automated game reminders\n"
             "• **/ping** — Measure bot latency & Gateway heartbeat\n"
             "• **/botinfo** — System statistics and uptime\n"
             "• **/invite** — Get official bot invitation link\n\n"
             "👉 *Select any command below to open its detailed sheet.*"
         ),
         "body_text": (
-            "Complete index of all 24 public player commands in Root.\n\n"
+            "Complete index of all 27 public player commands in Root.\n\n"
             "**⛏️ Develop Network**\n"
             "• **{prefix}network** (alias `{prefix}n`) — Inspect balances & hardware\n"
             "• **{prefix}buy** — Purchase hardware (mining, attack, defense)\n"
             "• **{prefix}claim** (alias `{prefix}cl`) — Claim mined Rootium\n"
+            "• **{prefix}hourly** (alias `{prefix}hr`) — Claim hourly USD reward\n"
+            "• **{prefix}contract** — Accept guaranteed paid missions\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Sell RTM for USD\n"
             "• **{prefix}upgrade** — Upgrade firewall tier\n\n"
             "**⚔️ Attack & Defend**\n"
@@ -195,6 +202,7 @@ PAGES = {
             "• **{prefix}top** (alias `{prefix}leaderboard`) — View leaderboards\n\n"
             "**⚙️ Language & Info**\n"
             "• **{prefix}lang** (alias `{prefix}language`) — Configure language\n"
+            "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`) — Schedule reminders\n"
             "• **{prefix}ping** — Measure bot latency\n"
             "• **{prefix}botinfo** — System statistics\n"
             "• **{prefix}invite** — Get official invite link\n\n"
@@ -208,6 +216,8 @@ PAGES = {
             "• **/network**: Initialize your profile or inspect your hardware and memory state.\n"
             "• **/buy**: Open catalog or purchase mining, offensive, or defensive modules directly.\n"
             "• **/claim**: Claim mined Rootium to your wallet and free up RAM.\n"
+            "• **/hourly**: Claim your hourly cash reward and stack up your combo for massive USD payouts.\n"
+            "• **/contract**: Work for Root CyberSec and complete guaranteed missions for steady income.\n"
             "• **/convert**: Convert RTM to USD at the current market rate.\n"
             "• **/upgrade**: Start upgrading your firewall tier.\n\n"
             "👉 *Select a command in the dropdown menu below for complete details.*"
@@ -217,6 +227,8 @@ PAGES = {
             "• **{prefix}network** (alias `{prefix}n`): Initialize your profile or inspect your hardware.\n"
             "• **{prefix}buy**: Open catalog or purchase modules directly.\n"
             "• **{prefix}claim** (alias `{prefix}cl`): Claim mined Rootium and free up RAM.\n"
+            "• **{prefix}hourly** (alias `{prefix}hr`): Claim your hourly reward and maintain your streak.\n"
+            "• **{prefix}contract**: Accept guaranteed cybersecurity missions paid in USD.\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`): Sell RTM for USD.\n"
             "• **{prefix}upgrade**: Upgrade your firewall tier.\n\n"
             "👉 *Select a command in the dropdown menu below for complete details.*"
@@ -277,7 +289,7 @@ PAGES = {
             "• **/rep**: Award a daily reputation point to another player.\n"
             "• **/trade**: Propose a secure bilateral resource swap.\n"
             "• **/attest**: Publicly prove your balance meets a threshold without disclosing exact figures.\n"
-            "• **/top**: Check top hacker rankings (reputation, wealth, event wins).\n\n"
+            "• **/top**: Check top hacker rankings (reputation, wealth, event wins, hashrate H/s).\n\n"
             "👉 *Select a command below to explore its parameters.*"
         ),
         "body_text": (
@@ -285,7 +297,7 @@ PAGES = {
             "• **{prefix}rep** (alias `{prefix}reputation`): Give reputation to a player.\n"
             "• **{prefix}trade**: Propose a bilateral trade.\n"
             "• **{prefix}attest** (alias `{prefix}certify`, `{prefix}proof`): Attest minimum balance.\n"
-            "• **{prefix}top** (alias `{prefix}leaderboard`): View top players.\n\n"
+            "• **{prefix}top** (alias `{prefix}leaderboard`): View rankings (reputation, wealth, events, H/s).\n\n"
             "👉 *Select a command below to explore its parameters.*"
         ),
     },
@@ -294,6 +306,7 @@ PAGES = {
         "body_slash": (
             "Set your preferred language and check Root bot statistics.\n\n"
             "• **/lang**: Set or check your display language (French or English).\n"
+            "• **/rmd**: Set a custom timer or sync automatic reminders (hourly, claim, events, or all).\n"
             "• **/ping**: Measure bot latency and Discord Gateway responsiveness.\n"
             "• **/botinfo**: View general bot stats, uptime, and system status.\n"
             "• **/invite**: Get the official link to invite Root to your Discord server.\n\n"
@@ -302,6 +315,7 @@ PAGES = {
         "body_text": (
             "Set your preferred language and check Root bot statistics.\n\n"
             "• **{prefix}lang** (alias `{prefix}language`): Set language (fr/en).\n"
+            "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`): Schedule an automated reminder or timer.\n"
             "• **{prefix}ping**: Check bot latency.\n"
             "• **{prefix}botinfo**: System stats and uptime.\n"
             "• **{prefix}invite**: Official Root bot invite link.\n\n"
@@ -401,6 +415,39 @@ COMMANDS = {
         "advice": "When RAM fills up, mining stops completely! Check `/network` to track your gauge. Autoclaim results are delivered via DM.",
         "aliases": ["{prefix}cl"],
         "linked_commands": ["convert", "network"],
+    },
+    "hourly": {
+        "name": "hourly",
+        "category": "network",
+        "title": "⏱️ `/hourly` — Hourly Reward & Combo",
+        "description": "Claim a USD cash bonus every 60 minutes. Claiming during the combo window (between 1h00 and 1h20 after your previous claim) grants an uncapped stacking percentage bonus!",
+        "slash_syntax": "/hourly",
+        "text_syntax": "{prefix}hourly",
+        "parameters": "None.",
+        "slash_example": "/hourly",
+        "text_example": "{prefix}hourly",
+        "prerequisites": "Must have initialized your network with `/network`.",
+        "advice": "Set a reminder with `/rmd timer:hourly` so you never miss the 20-minute window and protect your combo streak.",
+        "aliases": ["{prefix}hr"],
+        "linked_commands": ["network", "rmd", "contract"],
+    },
+    "contract": {
+        "name": "contract",
+        "category": "network",
+        "title": "📋 `/contract` — Root CyberSec Missions",
+        "description": "Accept guaranteed cybersecurity contracts for Root CyberSec with 100% success rate. Choose between 3 durations (short 30m, medium 2h, long 6h) and build fidelity to unlock special missions (+50%).",
+        "slash_syntax": "/contract [action] [duration]",
+        "text_syntax": "{prefix}contract [action] [duration]",
+        "parameters": (
+            "• `action` (optional): `view` (inspect state), `start` (accept contract), or `collect` (claim payout).\n"
+            "• `duration` (optional): `short` (30 min), `medium` (2h), or `long` (6h)."
+        ),
+        "slash_example": "/contract action:start duration:short",
+        "text_example": "{prefix}contract start short",
+        "prerequisites": "Must have initialized your network with `/network`.",
+        "advice": "Use the interactive buttons below the message interface to accept missions or collect payouts in one click.",
+        "aliases": [],
+        "linked_commands": ["network", "hourly", "buy"],
     },
     "convert": {
         "name": "convert",
@@ -522,7 +569,7 @@ COMMANDS = {
         "slash_example": "/hash guess:500",
         "text_example": "{prefix}hash 500",
         "prerequisites": "An active hash mining event.",
-        "advice": "Use binary search based on the displayed interval to narrow down the answer.",
+        "advice": "Cooldown of 1 guess every 8 minutes per player. Rely on the displayed interval to narrow down efficiently.",
         "aliases": ["{prefix}h"],
         "linked_commands": ["event"],
     },
@@ -680,13 +727,13 @@ COMMANDS = {
         "category": "trade",
         "title": "🏆 `/top` — View Leaderboards",
         "description": "Displays the hall of fame for top network hackers across multiple categories.",
-        "slash_syntax": "/top [category:<reputation|usd|events>]",
-        "text_syntax": "{prefix}top [reputation|usd|events]",
+        "slash_syntax": "/top [category:<reputation|usd|events|hashrate>]",
+        "text_syntax": "{prefix}top [reputation|usd|events|hashrate|hs]",
         "parameters": (
-            "• `category`: Ranking metric (`reputation` by default, `usd` for wealth, `events` for victories)."
+            "• `category`: Ranking metric (`reputation` by default, `usd` for wealth, `events` for victories, `hashrate` for H/s power)."
         ),
-        "slash_example": "/top category:events",
-        "text_example": "{prefix}top events",
+        "slash_example": "/top category:hashrate",
+        "text_example": "{prefix}top hs",
         "prerequisites": "None to view.",
         "advice": "You can toggle between leaderboard categories using buttons below the message.",
         "aliases": ["{prefix}leaderboard"],
@@ -711,6 +758,27 @@ COMMANDS = {
         "advice": "Your language setting is stored with your account and follows you across Discord servers.",
         "aliases": ["{prefix}language"],
         "linked_commands": ["botinfo"],
+    },
+    "rmd": {
+        "name": "rmd",
+        "category": "info",
+        "title": "⏰ `/rmd` — Root OS Timers & Reminders",
+        "description": "Schedule smart automated reminders synced with your in-game cooldowns (hourly bonus, claim RAM, event challenges) or set custom timers with personalized reminder notes.",
+        "slash_syntax": "/rmd <auto|timer|list|cancel|help>",
+        "text_syntax": "{prefix}rmd [duration|target|action] [options...]",
+        "parameters": (
+            "• `/rmd auto [target]`: activate game reminders (`all`, `hourly`, `claim`, `events`...).\n"
+            "• `/rmd timer <duration> [message]`: custom timer from 10s to 30d (e.g. `30m`, `2h`, `45s`).\n"
+            "• `/rmd list`: display all your active reminders and timers.\n"
+            "• `/rmd cancel [reminder_id]`: cancel a reminder by ID or delete all (`all`).\n"
+            "• `/rmd help`: display documentation and shortcuts."
+        ),
+        "slash_example": "/rmd auto target:all",
+        "text_example": "{prefix}rmd 30m Collect contract",
+        "prerequisites": "Allow direct messages (DMs) from the bot if you want DM delivery.",
+        "advice": "Type `/rmd auto` to instantly schedule all available game reminders with a single click!",
+        "aliases": ["{prefix}remind", "{prefix}reminder"],
+        "linked_commands": ["hourly", "claim", "event"],
     },
     "ping": {
         "name": "ping",
@@ -762,6 +830,7 @@ COMMANDS = {
 COMMAND_ALIASES = {
     "n": "network",
     "cl": "claim",
+    "hr": "hourly",
     "cv": "convert",
     "sell": "convert",
     "cp": "compile",
@@ -780,5 +849,7 @@ COMMAND_ALIASES = {
     "proof": "attest",
     "leaderboard": "top",
     "language": "lang",
+    "remind": "rmd",
+    "reminder": "rmd",
 }
 

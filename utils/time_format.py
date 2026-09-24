@@ -6,6 +6,53 @@ des comptes à rebours et durées restantes sous forme claire et compacte (ex: '
 """
 
 from datetime import datetime, timezone
+import re
+
+_DURATION_TOKEN_REGEX = re.compile(
+    r"(\d+)\s*(jours?|days?|j|d|heures?|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)",
+    re.IGNORECASE,
+)
+
+
+def parse_duration(duration_str: str) -> int | None:
+    """
+    Parse une chaîne de durée en nombre total de secondes.
+
+    Exemples supportés :
+    - '30s', '45sec' -> 30, 45
+    - '15m', '15min', '30 minutes' -> 900, 900, 1800
+    - '2h', '1h30m', '1h 30min' -> 7200, 5400, 5400
+    - '1j', '2d', '1d12h' -> 86400, 172800, 129600
+
+    Renvoie None si la chaîne ne correspond pas à un format de durée valide.
+    """
+    if not duration_str or not isinstance(duration_str, str):
+        return None
+
+    s = duration_str.strip().lower()
+    matches = list(_DURATION_TOKEN_REGEX.finditer(s))
+    if not matches:
+        return None
+
+    # Vérifie qu'aucun caractère parasite hors espaces ne subsiste
+    remaining = _DURATION_TOKEN_REGEX.sub("", s).strip()
+    if remaining:
+        return None
+
+    total_seconds = 0
+    for match in matches:
+        val = int(match.group(1))
+        unit = match.group(2)
+        if unit.startswith(('j', 'd')):
+            total_seconds += val * 86400
+        elif unit.startswith('h'):
+            total_seconds += val * 3600
+        elif unit.startswith('m'):
+            total_seconds += val * 60
+        elif unit.startswith('s'):
+            total_seconds += val
+
+    return total_seconds
 
 
 def format_duration(seconds: int | float) -> str:
@@ -55,4 +102,24 @@ def format_remaining_time(until, now=None) -> str:
 
     seconds = (until - now).total_seconds()
     return format_duration(seconds)
+
+
+def to_utc_timestamp(dt) -> int:
+    """
+    Convertit un datetime (naïf supposé UTC ou timezone-aware) ou une chaîne ISO en timestamp Unix UTC (secondes).
+
+    Indispensable pour l'affichage Discord <t:{ts}:R> / <t:{ts}:t> car Python traite
+    les datetimes naïfs comme de l'heure locale lors de l'appel à .timestamp(), causant
+    un décalage d'affichage dans Discord.
+    """
+    if dt is None:
+        return 0
+    if not hasattr(dt, "timestamp"):
+        try:
+            dt = datetime.fromisoformat(str(dt))
+        except Exception:
+            return 0
+    if getattr(dt, "tzinfo", None) is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
 

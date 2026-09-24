@@ -9,6 +9,7 @@ text = {
     'g_cancelled': '> 🚫 **Opération annulée** · L\'action a été interrompue.',
     'g_empty': '*Aucun*',
     'g_line': '> 🔹 **{label}** : {value}',
+    'g_error_guild_only_command': '> ⛔ **Action impossible en message privé** · Cette commande ne peut être exécutée que sur un serveur Discord.',
     'g_error_no_network': '> 🌐 **Réseau introuvable** · Tu n’as pas encore de réseau actif. Utilise `/network` pour initialiser ton profil de jeu.',
     'g_error_database_unconfigured': '> ⚙️ **Maintenance requise** · La base de données Root doit être configurée et initialisée par un administrateur.',
     'g_error_database_unavailable': '> 🔌 **Connexion perdue** · La base de données est momentanément indisponible. Réessaie dans un instant.',
@@ -169,20 +170,24 @@ text = {
     'g_top_cat_usd': '💵 Trésorerie USD',
     'g_top_cat_rtm': '◈ Réserve Rootium',
     'g_top_cat_events': '🏆 Victoires d\'Événements',
+    'g_top_cat_hashrate': '⛏️ Puissance de hachage (H/s)',
+    'g_top_cat_hs': '⛏️ Puissance de hachage (H/s)',
     'g_top_btn_rep': 'Réputation',
     'g_top_btn_usd': 'USD',
     'g_top_btn_rtm': 'Rootium',
     'g_top_btn_events': 'Événements',
+    'g_top_btn_hs': 'H/s',
     'g_top_footer': 'Root Leaderboard • Top 10 en direct',
     'g_top_footer_user': 'Root Leaderboard • Ta position : #{rank} du Top 10',
     'g_hash_title': '🧩 HASH CHALLENGE',
-    'g_hash_active_info': '🧩 **HASH CHALLENGE**\nValeur recherchée entre **{current_min}** et **{current_max}**.\n👥 **Joueurs en compétition :** `{players_count}`\n*Tente ta chance avec `{prefix}hash <valeur>`*',
+    'g_hash_active_info': '🧩 **HASH CHALLENGE**\nValeur recherchée entre **{current_min}** et **{current_max}**.\n👥 **Joueurs en compétition :** `{players_count}`\n⏱️ **Cadence :** 1 proposition toutes les 8 minutes par joueur.\n*Tente ta chance avec `{prefix}hash <valeur>`*',
+    'g_hash_player_cooldown': '⏳ **Cadence respectée !** Tu as déjà proposé une valeur pour ce hash.\nTu pourras retenter ta chance {remaining_ts} (`{remaining}`).\n📊 Zone actuelle : **{current_min} — {current_max}**',
     'g_hash_too_low': '❌ **Trop faible.** (*Plus haut !*)\nIl reste donc :\n**{current_min} — {current_max}**\n👥 **Joueurs en compétition :** `{players_count}`',
     'g_hash_too_high': '❌ **Trop élevé.** (*Plus bas !*)\nIl reste donc :\n**{current_min} — {current_max}**\n👥 **Joueurs en compétition :** `{players_count}`',
     'g_hash_won': '✅ **HASH VALIDÉ**\n<@{winner}> remporte **${reward} USD** !',
     'g_hash_cooldown': '⏳ Le dernier hash a été trouvé par {last_found_by} depuis le serveur **{last_found_on}**.\nLe prochain sera disponible dans **{remaining}**.',
     'g_hash_cooldown_no_winner': '⏳ Le prochain hash sera disponible dans **{remaining}**.',
-    'g_error_hash_usage': '⚠️ **Syntaxe invalide** · Utilisation :\n• `{prefix}hash` ➔ Voir le défi en cours et la zone restante\n• `{prefix}hash <valeur>` ➔ Proposer un nombre',
+    'g_error_hash_usage': '⚠️ **Syntaxe invalide** · Utilisation :\n• `{prefix}hash` ➔ Voir le défi en cours et la zone restante\n• `{prefix}hash <valeur>` ➔ Proposer un nombre (1 essai / 8 min)',
     'g_pin_title': '🔐 CODE PIN',
     'g_pin_active_info': '🔐 **CODE PIN**\nTa zone de recherche personnelle : **{current_min}** et **{current_max}**.\n🎯 Essais effectués : `{tries}` · 👥 **Joueurs en compétition :** `{players_count}`\n*Tente ta chance avec `{prefix}pin <valeur>`*',
     'g_pin_too_low': '❌ **Trop faible.** (*Plus haut !*)\nTa zone restante :\n**{current_min} — {current_max}**\n🎯 Essais : `{tries}` · 👥 **Joueurs en compétition :** `{players_count}`',
@@ -291,6 +296,56 @@ text = {
     'g_reputation_beta_granted': '\n🎉 **Accès Bêta accordé !** <@{recipient}> a été ajouté aux joueurs autorisés et peut désormais accéder à l\'ensemble du jeu.',
     'g_reputation_beta_autoclaim': '🎫 <@{giver}> reçoit **{credits} crédits d\'autoclaim** pour ce parrainage.',
     'g_reputation_dm_beta_granted': '🎉 **Félicitations !** Tu as également reçu un accès permanent au mode Bêta de Root ! Toutes les fonctionnalités te sont maintenant ouvertes.',
+    'g_error_contract_in_progress': '> ⏳ **Contrat en cours** · Tu as déjà un contrat de travail actif (échéance : <t:{timestamp}:R>).',
+    'g_error_no_active_contract': '> 📄 **Aucun contrat actif** · Tu n\'as aucun contrat en cours. Utilise `/contract` pour choisir une mission.',
+    'g_error_contract_not_ready': '> ⏱️ **Contrat en cours** · Ta mission n\'est pas encore terminée. Reviens dans **{remaining}** !',
+    'g_error_invalid_contract_duration': '> ⚠️ **Durée invalide** · Choisis une durée valide : `short` (30m), `medium` (2h) ou `long` (6h).',
+    'g_contract_special_badge': '⭐ **Mission Spéciale (+50 % USD active)**\n',
+    'g_contract_offers': '{special_badge}**{agency}** · Offres de contrats disponibles :\n\n> ⏱️ **Court** (30 min) : `{short_usd} USD`\n> ⏱️ **Moyen** (2 heures) : `{medium_usd} USD`\n> ⏱️ **Long** (6 heures) : `{long_usd} USD`\n\nFidélité agence : `{fidelity_bar}` **{fidelity}/{threshold}**{fidelity_hint}',
+    'g_contract_active': '{special_badge}**{agency}** · Contrat en cours :\n\n> 💼 **Mission** : {title}\n> 💵 **Rémunération** : `{reward_usd} USD`\n> ⏱️ **Échéance** : <t:{expires_ts}:R> *(vers <t:{expires_ts}:t>)*',
+    'g_contract_ready': '{special_badge}**{agency}** · Contrat accompli !\n\n> 💼 **Mission** : {title}\n> 💵 **Rémunération** : `{reward_usd} USD`\n\nClique ci-dessous pour encaisser ton salaire.',
+    'g_contract_collected': '💵 **Paiement encaissé !** Mission *{title}* validée chez **{agency}**.\n> 💵 **Gain** : `+{reward_usd} USD`\n> 💰 **Nouveau solde** : `{new_dollars} USD`',
+    'g_contract_btn_short': 'Court (30m)',
+    'g_contract_btn_medium': 'Moyen (2h)',
+    'g_contract_btn_long': 'Long (6h)',
+    'g_contract_btn_collect': 'Récupérer {usd} USD',
+    # ── Reminders (/rmd) & Contrats ───────────────────────────────────────────
+    'g_rmd_syntax': (
+        "### 🔔 Syntaxe de la commande `{prefix}rmd`\n\n"
+        "**⚡ Rappels automatiques de jeu :**\n"
+        "> • `{prefix}rmd all` — Activer tous les rappels possibles (hourly, claim, events).\n"
+        "> • `{prefix}rmd hourly` — Alerte dès que la prime horaire est disponible.\n"
+        "> • `{prefix}rmd claim` — Alerte dès que la mémoire vive (RAM) est saturée à 100 %.\n"
+        "> • `{prefix}rmd events` — Alerte au lancement du prochain mini-jeu réseau.\n\n"
+        "**⏱️ Minuteurs personnalisés :**\n"
+        "> • `{prefix}rmd <durée> [sujet]` — Minuteur libre de 10s à 30 jours.\n"
+        "> *(Exemples : `{prefix}rmd 30m pause`, `{prefix}rmd 2h check contrat`, `{prefix}rmd 45s`)*\n\n"
+        "**📋 Gestion de tes rappels :**\n"
+        "> • `{prefix}rmd list` — Afficher tous tes rappels actifs.\n"
+        "> • `{prefix}rmd cancel <id>` — Annuler un rappel spécifique.\n"
+        "> • `{prefix}rmd cancel all` — Annuler tous tes rappels d'un coup.\n\n"
+        "💡 *Délivrance automatique en MP (avec repli salon si tes MP sont fermés).*"
+    ),
+    'g_rmd_created_smart': '> 🔔 **Rappel programmé** · {target_name} dans **{duration}** (<t:{ts}:R>).',
+    'g_rmd_created_custom': '> 🔔 **Rappel programmé** · Dans **{duration}** (<t:{ts}:R>) : **{message}**.',
+    'g_rmd_created_all_title': '🔔 **Activation des rappels Root (/rmd all)**',
+    'g_rmd_created_all_created': '> • ✅ **{target_name}** : programmé dans **{duration}** (<t:{ts}:R>)',
+    'g_rmd_created_all_available': '> • ℹ️ **{target_name}** : déjà disponible ! ({cmd})',
+    'g_rmd_created_all_already': '> • ⏳ **{target_name}** : déjà en cours (<t:{ts}:R>)',
+    'g_rmd_created_all_no_miner': '> • ⚠️ **{target_name}** : aucun mineur actif',
+    'g_rmd_already_available': '> ℹ️ **{target_name} est déjà disponible !** Tu peux l\'utiliser dès maintenant avec `{cmd}`.',
+    'g_rmd_list_title': '🔔 **Tes Rappels Actifs**',
+    'g_rmd_list_empty': '> ℹ️ Tu n\'as aucun rappel actif en attente.',
+    'g_rmd_list_item': '> • **#{id}** · <t:{ts}:R> · `{type}` : {message}',
+    'g_rmd_cancel_success': '> ✅ **Rappel #{id} annulé** avec succès.',
+    'g_rmd_cancel_all_success': '> ✅ **Tous tes rappels ({count}) ont été annulés**.',
+    'g_rmd_dm_notification': '🔔 **RAPPEL ROOT OS**\n> {message}\n> ⏱️ *Programmé pour <t:{ts}:t>*',
+    'g_rmd_fallback_notification': '{user} 🔔 **Rappel** : {message}',
+    'g_contract_expired_dm': '💼 **MISSION TERMINÉE** · Ton contrat de travail pour **{agency}** (*{title}*) est arrivé à échéance !\n> 💵 Rémunération disponible : **{reward_usd} USD**\n> 💡 Récupère ton paiement dès maintenant avec `/contract collect`.',
+    'g_error_reminder_limit_reached': '> ⛔ **Limite atteinte** · Tu as déjà {max_count} rappels actifs en attente. Utilise `{prefix}rmd cancel <id|all>` pour faire de la place.',
+    'g_error_invalid_duration': '> ⚠️ **Format de durée invalide** · Exemples valides : `30s`, `15min`, `2h`, `1h30m`, `1d`.',
+    'g_error_duration_out_of_range': '> ⚠️ **Durée hors limites** · La durée doit être comprise entre 10 secondes et 30 jours.',
+    'g_error_reminder_not_found': '> ❌ **Rappel introuvable** ou déjà expiré.',
 }
 
 descriptions = {
@@ -314,6 +369,8 @@ descriptions = {
     'scan': 'Scanner le réseau d\'un joueur pour découvrir son identifiant secret.',
     'hack': 'Lancer une cyberattaque PvP contre un réseau adverse.',
     'hourly': 'Réclamer sa récompense horaire en USD avec bonus de combo.',
+    'contract': 'Consulter, accepter ou récupérer des contrats de travail garantis en USD.',
+    'rmd': 'Programmer, consulter ou annuler un rappel automatique ou personnalisé.',
 }
 
 labels = {
@@ -356,4 +413,6 @@ labels = {
     'act_compile': '⚔️ Production d\'ATK',
     'act_scan': '🔍 Scan Réseau',
     'act_hack': '⚔️ Attaque PvP',
+    'act_contract': '💼 Contrats de Travail',
+    'act_rmd': '🔔 Rappel & Alerte',
 }

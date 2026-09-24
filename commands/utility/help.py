@@ -24,13 +24,13 @@ from utils.text import get_locale
 
 logger = logging.getLogger(__name__)
 
-# Liste canonique des 24 commandes publiques autorisées
+# Liste canonique des 27 commandes publiques autorisées
 PUBLIC_COMMANDS = [
-    "network", "buy", "claim", "convert", "upgrade",
+    "network", "buy", "claim", "hourly", "contract", "convert", "upgrade",
     "compile", "scan", "hack",
     "event", "hash", "pin", "decode", "anomaly", "buffer", "signal", "packet",
     "rep", "trade", "attest", "top",
-    "lang", "ping", "botinfo", "invite",
+    "lang", "rmd", "ping", "botinfo", "invite",
 ]
 
 
@@ -168,7 +168,13 @@ class HelpCategorySelect(discord.ui.Select):
 class HelpCommandSelect(discord.ui.Select):
     """Menu déroulant pour afficher en détail une commande de la rubrique courante."""
 
-    def __init__(self, view: "HelpView", commands_in_category: list[dict]):
+    def __init__(
+        self,
+        view: "HelpView",
+        commands_in_category: list[dict],
+        row: int = 1,
+        placeholder: Optional[str] = None,
+    ):
         self.help_view = view
         lang = _get_help_module(view.locale)
         options = []
@@ -186,11 +192,11 @@ class HelpCommandSelect(discord.ui.Select):
                 )
             )
         super().__init__(
-            placeholder=lang.UI["select_command_placeholder"],
+            placeholder=placeholder or lang.UI["select_command_placeholder"],
             min_values=1,
             max_values=1,
             options=options,
-            row=1,
+            row=row,
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -206,7 +212,7 @@ class HelpCommandSelect(discord.ui.Select):
 class HelpHomeButton(discord.ui.Button):
     """Bouton pour revenir à la page d'accueil (Page 0)."""
 
-    def __init__(self, view: "HelpView"):
+    def __init__(self, view: "HelpView", row: int = 2):
         self.help_view = view
         lang = _get_help_module(view.locale)
         is_home = (view.current_category == "home" and view.current_command is None and view.unknown_query is None)
@@ -215,7 +221,7 @@ class HelpHomeButton(discord.ui.Button):
             emoji="🏠",
             style=discord.ButtonStyle.secondary,
             disabled=is_home,
-            row=2,
+            row=row,
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -228,14 +234,14 @@ class HelpHomeButton(discord.ui.Button):
 class HelpBackCategoryButton(discord.ui.Button):
     """Bouton pour revenir à l'index de la rubrique depuis une fiche de commande."""
 
-    def __init__(self, view: "HelpView"):
+    def __init__(self, view: "HelpView", row: int = 2):
         self.help_view = view
         lang = _get_help_module(view.locale)
         super().__init__(
             label=lang.UI["btn_back_category"],
             emoji="↩️",
             style=discord.ButtonStyle.secondary,
-            row=2,
+            row=row,
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -247,7 +253,7 @@ class HelpBackCategoryButton(discord.ui.Button):
 class HelpSyntaxToggleButton(discord.ui.Button):
     """Bouton pour basculer entre l'affichage Slash et Texte."""
 
-    def __init__(self, view: "HelpView"):
+    def __init__(self, view: "HelpView", row: int = 2):
         self.help_view = view
         lang = _get_help_module(view.locale)
         next_label = lang.UI["btn_view_text"] if view.mode == "slash" else lang.UI["btn_view_slash"]
@@ -255,7 +261,7 @@ class HelpSyntaxToggleButton(discord.ui.Button):
             label=next_label,
             emoji="🔄",
             style=discord.ButtonStyle.primary,
-            row=2,
+            row=row,
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -298,29 +304,46 @@ class HelpView(discord.ui.View):
         # 1. Sélecteur de catégorie (toujours présent)
         self.add_item(HelpCategorySelect(self))
 
-        # 2. Sélecteur de commande (toutes les commandes si rubrique "all", ou filtrées par rubrique)
+        # 2. Sélecteur(s) de commande
+        button_row = 2
         if self.current_category == "all":
-            commands_in_cat = list(lang.COMMANDS.values())
+            all_cmds = list(lang.COMMANDS.values())
+            # Discord restreint les menus déroulants à 25 options maximum.
+            # Avec 27 commandes, nous séparons en 2 menus cohérents :
+            # Partie 1 : Réseau, Combat, Événements (18 commandes)
+            # Partie 2 : Échange, Utilitaires & Infos (9 commandes)
+            p1_cmds = [c for c in all_cmds if c["category"] in ("network", "combat", "events")]
+            p2_cmds = [c for c in all_cmds if c["category"] in ("trade", "info")]
+
+            p1_placeholder = lang.UI.get("select_cmd_part1_placeholder", lang.UI["select_command_placeholder"])
+            p2_placeholder = lang.UI.get("select_cmd_part2_placeholder", lang.UI["select_command_placeholder"])
+
+            self.add_item(HelpCommandSelect(self, p1_cmds, row=1, placeholder=p1_placeholder))
+            self.add_item(HelpCommandSelect(self, p2_cmds, row=2, placeholder=p2_placeholder))
+            button_row = 3
         else:
             commands_in_cat = [
                 cmd for cmd in lang.COMMANDS.values()
                 if cmd["category"] == self.current_category
             ]
-        if commands_in_cat:
-            self.add_item(HelpCommandSelect(self, commands_in_cat))
+            if commands_in_cat:
+                self.add_item(HelpCommandSelect(self, commands_in_cat, row=1))
+                button_row = 2
+            else:
+                button_row = 1
 
         # 3. Ligne de boutons
-        self.add_item(HelpHomeButton(self))
+        self.add_item(HelpHomeButton(self, row=button_row))
         if self.current_command is not None or self.unknown_query is not None:
-            self.add_item(HelpBackCategoryButton(self))
-        self.add_item(HelpSyntaxToggleButton(self))
+            self.add_item(HelpBackCategoryButton(self, row=button_row))
+        self.add_item(HelpSyntaxToggleButton(self, row=button_row))
         self.add_item(
             discord.ui.Button(
                 label=lang.UI["btn_server"],
                 url=data.OFFICIAL_SERVER_URL,
                 style=discord.ButtonStyle.link,
                 emoji="💬",
-                row=2,
+                row=button_row,
             )
         )
 

@@ -81,7 +81,7 @@ from utils.presence_manager import (
 )
 from commands.admin.claim_moderation import ClaimModeration
 from game.db.daily_claim_stats import DailyClaimStatsDB
-from utils.claim_analysis import calculate_player_claim_metrics, extract_claim_intervals
+from utils.claim_analysis import calculate_player_claim_metrics, calculate_player_hourly_metrics, extract_claim_intervals
 from game.db.economy_stats import EconomyStatsDB, _PERIODS
 from tools.simulate_balance import DAY, PROFILES, STRESS_PROFILE, Profile, Simulation, aggregate, price
 
@@ -101,7 +101,10 @@ class MockTransaction:
         self.hourly_logs = []
         self.pvp_attacks = []
         self.consequences = []
+        self.contracts = {}
+        self.reminders = []
         self.prefixes = {}
+        self.event_availability_logs = []
         self.executed_queries = []
         self.acquired_locks = []
 
@@ -158,6 +161,16 @@ class MockTransaction:
                     return dict(row)
             return None
 
+        if "FROM CONTRACTS WHERE DISCORD_ID" in q:
+            uid = int(params[0])
+            row = self.contracts.get(uid)
+            return dict(row) if row else None
+
+        if "FROM REMINDERS WHERE DISCORD_ID" in q and "COUNT(*)" in q:
+            uid = int(params[0])
+            count = sum(1 for r in self.reminders if r["discord_id"] == uid)
+            return {"count": count}
+
         if "SELECT PREFIX FROM GUILD_PREFIXES WHERE GUILD_ID" in q:
             gid = params[0]
             p = self.prefixes.get(gid)
@@ -202,6 +215,25 @@ class MockTransaction:
                     return {"1": 1}
             return None
 
+        if "FROM DAILY_EVENT_STATS WHERE DISCORD_ID =" in q:
+            uid = params[0]
+            since_date_str = params[1] if len(params) > 1 and "DATE_KEY >=" in q else None
+            won = 0
+            part = 0
+            found = False
+            for k, row in self.daily_stats.items():
+                if row.get("discord_id") == uid:
+                    if since_date_str and row.get("date_key") and str(row.get("date_key")) < str(since_date_str):
+                        continue
+                    won += row.get("events_won", 0)
+                    part += row.get("events_participated", 0)
+                    found = True
+            if "COALESCE(SUM" in q:
+                return {"total_won": won, "total_participated": part}
+            if found:
+                return {"events_won": won, "events_participated": part}
+            return None
+
         return None
 
     def all(self, query: str, params=()):
@@ -232,17 +264,50 @@ class MockTransaction:
                     score = p.get("rootium", Decimal("0"))
                 elif "EVENTS_WON AS SCORE" in q:
                     score = p.get("events_won", 0)
+                elif "MINING_T" in q or "HASHRATE" in q:
+                    stats = MathConfig.calculate_player_stats(p)
+                    score = stats["total_hashrate_hs"]
                 else:
                     score = p.get("reputation", 0)
                 rows.append({"discord_id": uid, "score": score})
             rows.sort(key=lambda r: r["score"], reverse=True)
             return rows[:10]
 
-        if "SELECT DISCORD_ID, EVENTS_WON, EVENTS_PARTICIPATED FROM DAILY_EVENT_STATS" in q:
-            rows = [dict(v) for v in self.daily_stats.values() if v["events_won"] > 0 or v["events_participated"] > 0]
-            rows.sort(key=lambda r: (r["events_won"], r["events_participated"]), reverse=True)
-            limit = params[0] if params else 50
+        if "FROM DAILY_EVENT_STATS" in q:
+            date_key_filter = params[0] if ("DATE_KEY = %S" in q or "DATE_KEY =" in q) and params else None
+            seen_ids = set()
+            rows = []
+            for v in self.daily_stats.values():
+                if id(v) in seen_ids:
+                    continue
+                seen_ids.add(id(v))
+                if date_key_filter and v.get("date_key") and str(v.get("date_key")) != str(date_key_filter):
+                    continue
+                if v.get("events_won", 0) > 0 or v.get("events_participated", 0) > 0:
+                    rows.append(dict(v))
+            rows.sort(key=lambda r: (r.get("events_won", 0), r.get("events_participated", 0)), reverse=True)
+            limit = params[-1] if params and isinstance(params[-1], int) else 50
             return rows[:limit]
+
+        if "FROM EVENT_AVAILABILITY_LOGS WHERE WINNER_ID =" in q:
+            wid = params[0]
+            since_dt = params[1] if len(params) > 1 and "SOLVED_AT >=" in q else None
+            limit = params[-1] if len(params) > 1 and isinstance(params[-1], int) else 20
+            matched = [
+                dict(r) for r in self.event_availability_logs
+                if r.get("winner_id") == wid and (not since_dt or r.get("solved_at") >= since_dt)
+            ]
+            matched.sort(key=lambda r: r.get("solved_at", datetime.min), reverse=True)
+            return matched[:limit]
+
+        if "FROM EVENT_AVAILABILITY_LOGS WHERE WINNER_ID IS NOT NULL" in q:
+            since_dt = params[0] if params and "SOLVED_AT >=" in q else None
+            matched = [
+                dict(r) for r in self.event_availability_logs
+                if r.get("winner_id") is not None and (not since_dt or r.get("solved_at") >= since_dt)
+            ]
+            matched.sort(key=lambda r: r.get("solved_at", datetime.min))
+            return matched
 
         if "SELECT * FROM UPGRADES WHERE EXPIRES_AT <=" in q:
             cutoff = params[0]
@@ -254,35 +319,60 @@ class MockTransaction:
 
         if "GROUP BY DISCORD_ID" in q and "DAILY_CLAIM_LOGS" in q:
             from collections import defaultdict
-            user_counts = defaultdict(lambda: {"claim_count": 0, "total_amount": Decimal("0")})
+            user_counts = defaultdict(lambda: {"claim_count": 0, "total_amount": Decimal("0"), "manual_count": 0, "auto_count": 0})
+            since_dt = params[0] if "CLAIMED_AT >=" in q else None
+            limit = params[1] if since_dt is not None and len(params) > 1 else (params[0] if params else 50)
             for c in self.daily_claim_logs:
+                if since_dt and c.get("claimed_at") and c["claimed_at"] < since_dt:
+                    continue
                 uid = c["discord_id"]
                 user_counts[uid]["claim_count"] += 1
                 user_counts[uid]["total_amount"] += c.get("amount", Decimal("0"))
+                if c.get("is_auto"):
+                    user_counts[uid]["auto_count"] += 1
+                else:
+                    user_counts[uid]["manual_count"] += 1
             rows = [
-                {"discord_id": uid, "claim_count": data["claim_count"], "total_amount": data["total_amount"]}
+                {
+                    "discord_id": uid,
+                    "claim_count": data["claim_count"],
+                    "total_amount": data["total_amount"],
+                    "manual_count": data["manual_count"],
+                    "auto_count": data["auto_count"],
+                }
                 for uid, data in user_counts.items()
             ]
             rows.sort(key=lambda r: r["claim_count"], reverse=True)
-            limit = params[0] if params else 50
             return rows[:limit]
 
         if "FROM DAILY_CLAIM_LOGS WHERE DISCORD_ID =" in q:
             uid = params[0]
-            matched = [dict(c) for c in self.daily_claim_logs if c["discord_id"] == uid]
+            since_dt = params[1] if len(params) > 1 and "CLAIMED_AT >=" in q else None
+            matched = [
+                dict(c) for c in self.daily_claim_logs
+                if c["discord_id"] == uid and (not since_dt or c.get("claimed_at") >= since_dt)
+            ]
             matched.sort(key=lambda r: r["claimed_at"])
             return matched
 
         if "FROM DAILY_CLAIM_LOGS WHERE DISCORD_ID IN" in q:
-            uids = set(params)
-            matched = [dict(c) for c in self.daily_claim_logs if c["discord_id"] in uids]
+            since_dt = params[-1] if "CLAIMED_AT >=" in q else None
+            uids = set(params[:-1] if since_dt else params)
+            matched = [
+                dict(c) for c in self.daily_claim_logs
+                if c["discord_id"] in uids and (not since_dt or c.get("claimed_at") >= since_dt)
+            ]
             matched.sort(key=lambda r: r["claimed_at"])
             return matched
 
         if "GROUP BY DISCORD_ID" in q and "HOURLY_LOGS" in q:
             from collections import defaultdict
             user_counts = defaultdict(lambda: {"claim_count": 0, "total_usd": Decimal("0"), "max_streak": 0, "max_bonus_pct": Decimal("0")})
+            since_dt = params[0] if "CLAIMED_AT >=" in q else None
+            limit = params[1] if since_dt is not None and len(params) > 1 else (params[0] if params else 50)
             for h in self.hourly_logs:
+                if since_dt and h.get("claimed_at") and h["claimed_at"] < since_dt:
+                    continue
                 uid = h["discord_id"]
                 user_counts[uid]["claim_count"] += 1
                 user_counts[uid]["total_usd"] += h.get("total_usd", Decimal("0"))
@@ -299,15 +389,28 @@ class MockTransaction:
                 for uid, data in user_counts.items()
             ]
             rows.sort(key=lambda r: (r["claim_count"], r["total_usd"]), reverse=True)
-            limit = params[0] if params else 50
             return rows[:limit]
 
         if "FROM HOURLY_LOGS WHERE DISCORD_ID =" in q:
             uid = params[0]
-            matched = [dict(h) for h in self.hourly_logs if h["discord_id"] == uid]
+            since_dt = params[1] if len(params) > 1 and "CLAIMED_AT >=" in q else None
+            limit = params[-1] if len(params) > 1 else 50
+            matched = [
+                dict(h) for h in self.hourly_logs
+                if h["discord_id"] == uid and (not since_dt or h.get("claimed_at") >= since_dt)
+            ]
             matched.sort(key=lambda r: r["claimed_at"], reverse=("DESC" in q))
-            limit = params[1] if len(params) > 1 else 50
             return matched[:limit]
+
+        if "FROM HOURLY_LOGS" in q and "WHERE DISCORD_ID IN" in q:
+            since_dt = params[-1] if "CLAIMED_AT >=" in q else None
+            uids = set(params[:-1] if since_dt else params)
+            matched = [
+                dict(h) for h in self.hourly_logs
+                if h["discord_id"] in uids and (not since_dt or h.get("claimed_at") >= since_dt)
+            ]
+            matched.sort(key=lambda r: r["claimed_at"])
+            return matched
 
         if "FROM HOURLY_LOGS" in q and "GROUP BY" not in q and "WHERE DISCORD_ID =" not in q:
             return [dict(h) for h in self.hourly_logs]
@@ -329,6 +432,24 @@ class MockTransaction:
 
         if "SELECT SECRET_ID FROM PLAYERS WHERE SECRET_ID IS NOT NULL" in q:
             return [{"secret_id": p.get("secret_id")} for p in self.players.values() if p.get("secret_id")]
+
+        if "FROM CONTRACTS" in q and "EXPIRES_AT <=" in q:
+            rows = [
+                dict(c) for c in self.contracts.values()
+                if c.get("expires_at") <= self.now and not c.get("notified")
+            ]
+            return rows
+
+        if "FROM REMINDERS WHERE DISCORD_ID =" in q:
+            uid = int(params[0])
+            res = [dict(r) for r in self.reminders if r["discord_id"] == uid]
+            res.sort(key=lambda x: x["remind_at"])
+            return res
+
+        if "FROM REMINDERS WHERE REMIND_AT <=" in q:
+            res = [dict(r) for r in self.reminders if r["remind_at"] <= self.now]
+            res.sort(key=lambda x: x["remind_at"])
+            return res
 
         return []
 
@@ -365,6 +486,8 @@ class MockTransaction:
                 "hourly_last_at": None,
                 "hourly_combo_bonus": Decimal("0.00"),
                 "hourly_streak": 0,
+                "contract_fidelity": 0,
+                "contracts_completed": 0,
             }
             return 1
 
@@ -443,16 +566,32 @@ class MockTransaction:
 
         if "INSERT INTO DAILY_EVENT_STATS" in q:
             uid = params[0]
-            if uid not in self.daily_stats:
-                self.daily_stats[uid] = {"discord_id": uid, "events_won": 0, "events_participated": 0}
+            date_key = params[1] if len(params) > 1 and "DATE_KEY" in q else None
+            entry = self.daily_stats.get(uid) or (self.daily_stats.get((uid, date_key)) if date_key else None)
+            if entry is None:
+                entry = {"discord_id": uid, "date_key": date_key, "events_won": 0, "events_participated": 0}
+                self.daily_stats[uid] = entry
+                if date_key:
+                    self.daily_stats[(uid, date_key)] = entry
+            else:
+                if date_key:
+                    entry["date_key"] = date_key
+                    self.daily_stats[(uid, date_key)] = entry
             if "EVENTS_PARTICIPATED = EVENTS_PARTICIPATED + 1" in q:
-                self.daily_stats[uid]["events_participated"] += 1
+                entry["events_participated"] += 1
             if "EVENTS_WON = EVENTS_WON + 1" in q:
-                self.daily_stats[uid]["events_won"] += 1
+                entry["events_won"] += 1
             return 1
 
         if "DELETE FROM DAILY_EVENT_STATS" in q:
-            self.daily_stats.clear()
+            if "WHERE DATE_KEY <" in q and params:
+                cutoff = str(params[0])
+                self.daily_stats = {
+                    k: v for k, v in self.daily_stats.items()
+                    if not (v.get("date_key") and str(v.get("date_key")) < cutoff)
+                }
+            else:
+                self.daily_stats.clear()
             return 1
 
         if "INSERT INTO DAILY_CLAIM_LOGS" in q:
@@ -466,7 +605,11 @@ class MockTransaction:
             return 1
 
         if "DELETE FROM DAILY_CLAIM_LOGS" in q:
-            self.daily_claim_logs.clear()
+            if "WHERE CLAIMED_AT <" in q and params:
+                cutoff = params[0]
+                self.daily_claim_logs = [c for c in self.daily_claim_logs if c.get("claimed_at") and c["claimed_at"] >= cutoff]
+            else:
+                self.daily_claim_logs.clear()
             return 1
 
         if "INSERT INTO HOURLY_LOGS" in q:
@@ -484,7 +627,11 @@ class MockTransaction:
             return 1
 
         if "DELETE FROM HOURLY_LOGS" in q:
-            self.hourly_logs.clear()
+            if "WHERE CLAIMED_AT <" in q and params:
+                cutoff = params[0]
+                self.hourly_logs = [h for h in self.hourly_logs if h.get("claimed_at") and h["claimed_at"] >= cutoff]
+            else:
+                self.hourly_logs.clear()
             return 1
 
         if "INSERT INTO UPGRADES" in q:
@@ -503,6 +650,66 @@ class MockTransaction:
             up_id = params[0]
             self.upgrades = [u for u in self.upgrades if u["id"] != up_id]
             return 1
+
+        if "INSERT INTO CONTRACTS" in q:
+            uid = int(params[0])
+            self.contracts[uid] = {
+                "discord_id": uid,
+                "duration_type": str(params[1]),
+                "title": str(params[2]),
+                "reward_usd": Decimal(str(params[3])),
+                "is_special": bool(params[4]),
+                "started_at": params[5],
+                "expires_at": params[6],
+                "notified": False,
+            }
+            return 1
+
+        if "UPDATE CONTRACTS SET NOTIFIED = 1" in q:
+            for uid in params:
+                if int(uid) in self.contracts:
+                    self.contracts[int(uid)]["notified"] = True
+            return len(params)
+
+        if "DELETE FROM CONTRACTS WHERE DISCORD_ID" in q:
+            uid = int(params[0])
+            self.contracts.pop(uid, None)
+            return 1
+
+        if "INSERT INTO REMINDERS" in q:
+            new_id = max([r["id"] for r in self.reminders], default=0) + 1
+            row = {
+                "id": new_id,
+                "discord_id": int(params[0]),
+                "channel_id": params[1],
+                "guild_id": params[2],
+                "reminder_type": str(params[3]),
+                "target_event": params[4],
+                "message": str(params[5]),
+                "created_at": params[6],
+                "remind_at": params[7],
+            }
+            self.reminders.append(row)
+            return new_id
+
+        if "DELETE FROM REMINDERS WHERE ID =" in q and "AND DISCORD_ID =" in q:
+            rid = int(params[0])
+            uid = int(params[1])
+            before = len(self.reminders)
+            self.reminders = [r for r in self.reminders if not (r["id"] == rid and r["discord_id"] == uid)]
+            return before - len(self.reminders)
+
+        if "DELETE FROM REMINDERS WHERE DISCORD_ID =" in q:
+            uid = int(params[0])
+            before = len(self.reminders)
+            self.reminders = [r for r in self.reminders if r["discord_id"] != uid]
+            return before - len(self.reminders)
+
+        if "DELETE FROM REMINDERS WHERE ID IN" in q:
+            del_ids = set(int(p) for p in params)
+            before = len(self.reminders)
+            self.reminders = [r for r in self.reminders if r["id"] not in del_ids]
+            return before - len(self.reminders)
 
         if "INSERT INTO PVP_ATTACKS" in q:
             attacker_id, victim_id, attack_points, target = int(params[0]), int(params[1]), int(params[2]), str(params[3])
@@ -962,10 +1169,19 @@ class TestChallengeManagers(unittest.TestCase):
             self.assertEqual(res["status"], "too_low")
             self.assertEqual(res["current_min"], target)
 
+            # Vérifie le cooldown individuel si on retente immédiatement
+            blocked = HashManager.process(self.tx, self.actor, "TestGuild", target - 1)
+            self.assertEqual(blocked["status"], "player_cooldown")
+            self.assertGreater(blocked["remaining_seconds"], 0)
+
+            # Avance le temps de 9 minutes pour dépasser le cooldown de 8 minutes
+            self.tx.now += timedelta(minutes=9)
+
         if target < HashManager._active_challenge["current_max"]:
             res = HashManager.process(self.tx, self.actor, "TestGuild", target + 1)
             self.assertEqual(res["status"], "too_high")
             self.assertEqual(res["current_max"], target)
+            self.tx.now += timedelta(minutes=9)
 
         win = HashManager.process(self.tx, self.actor, "TestGuild", target)
         self.assertEqual(win["status"], "won")
@@ -1010,6 +1226,46 @@ class TestChallengeManagers(unittest.TestCase):
         reward = Decimal(str(hash_ch["reward"]))
         self.assertGreaterEqual(reward, hash_min)
         self.assertLessEqual(reward, hash_max)
+
+    def test_hash_player_cooldown_and_consultation(self):
+        """Vérifie le cooldown individuel de 8 minutes et la gratuité de consultation."""
+        HashManager._active_challenge = None
+        # Consultation gratuite sans proposition
+        info = HashManager.process(self.tx, self.actor, "TestGuild", None)
+        self.assertEqual(info["status"], "active_info")
+
+        target = HashManager._active_challenge["target"]
+        wrong_guess = target - 1 if target > HashManager._active_challenge["current_min"] else target + 1
+
+        # Première proposition : acceptée
+        res1 = HashManager.process(self.tx, self.actor, "TestGuild", wrong_guess)
+        self.assertIn(res1["status"], ("too_low", "too_high"))
+
+        # Consultation après proposition : toujours gratuite et autorisée
+        info2 = HashManager.process(self.tx, self.actor, "TestGuild", None)
+        self.assertEqual(info2["status"], "active_info")
+
+        # Seconde proposition immédiate (0s écoulées) : bloquée par player_cooldown
+        res2 = HashManager.process(self.tx, self.actor, "TestGuild", wrong_guess)
+        self.assertEqual(res2["status"], "player_cooldown")
+        self.assertEqual(res2["remaining_seconds"], 480)
+
+        # Un autre joueur peut proposer sans être bloqué (cooldown individuel)
+        other_actor = 987654321
+        self.tx.players[other_actor] = {
+            "discord_id": other_actor,
+            "dollars": Decimal("1000.00"),
+            "rootium": Decimal("0.00000"),
+            "firewall_level": 0,
+            "events_won": 0,
+        }
+        res_other = HashManager.process(self.tx, other_actor, "TestGuild", wrong_guess)
+        self.assertIn(res_other["status"], ("too_low", "too_high"))
+
+        # Avance le temps de 481 secondes : le premier joueur peut à nouveau proposer
+        self.tx.now += timedelta(seconds=481)
+        res3 = HashManager.process(self.tx, self.actor, "TestGuild", wrong_guess)
+        self.assertIn(res3["status"], ("too_low", "too_high"))
 
     def test_challenge_win_records_daily_stats_and_events(self):
         DecodeManager._active_challenge = None
@@ -2004,6 +2260,9 @@ class MockDatabase:
         self.prefixes = {}
         self.upgrades = []
         self.hacks = []
+        self.contracts = {}
+        self.reminders = []
+        self.event_availability_logs = []
         self.released_locks = []
         self.acquired_locks = []
         self.committed_count = 0
@@ -2024,6 +2283,9 @@ class MockDatabase:
             tx.prefixes = self.prefixes
             tx.upgrades = self.upgrades
             tx.hacks = self.hacks
+            tx.contracts = self.contracts
+            tx.reminders = self.reminders
+            tx.event_availability_logs = self.event_availability_logs
             return function(tx)
 
         with self.lock:
@@ -2038,6 +2300,9 @@ class MockDatabase:
             tx.prefixes = copy.deepcopy(self.prefixes)
             tx.upgrades = copy.deepcopy(self.upgrades)
             tx.hacks = copy.deepcopy(self.hacks)
+            tx.contracts = copy.deepcopy(self.contracts)
+            tx.reminders = copy.deepcopy(self.reminders)
+            tx.event_availability_logs = copy.deepcopy(self.event_availability_logs)
 
             commit_started = False
             committed = False
@@ -2061,6 +2326,9 @@ class MockDatabase:
                 self.prefixes = tx.prefixes
                 self.upgrades = tx.upgrades
                 self.hacks = tx.hacks
+                self.contracts = tx.contracts
+                self.reminders = tx.reminders
+                self.event_availability_logs = tx.event_availability_logs
                 committed = True
                 self.committed_count += 1
                 if resource:
@@ -2391,12 +2659,15 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         self.assertIn(101, mock_db.daily_stats)
 
     async def test_report_success_resets_stats(self):
-        """Vérifie qu'un envoi réussi purge les statistiques journalières."""
+        """Vérifie qu'un envoi réussi purge les statistiques antérieures à 48h mais préserve les récentes."""
         from commands.admin.event_moderation import EventModeration
 
         mock_bot = MagicMock()
         mock_db = MockDatabase()
-        mock_db.daily_stats[200] = {"discord_id": 200, "events_won": 5, "events_participated": 10}
+        old_date = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%d")
+        recent_date = datetime.now().strftime("%Y-%m-%d")
+        mock_db.daily_stats[(200, old_date)] = {"discord_id": 200, "date_key": old_date, "events_won": 5, "events_participated": 10}
+        mock_db.daily_stats[(201, recent_date)] = {"discord_id": 201, "date_key": recent_date, "events_won": 2, "events_participated": 3}
 
         mock_bot.root_service.database = mock_db
         mock_bot.discord_logger.log_daily_event_report = AsyncMock(return_value=None)
@@ -2405,7 +2676,8 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         status = await cog._run_daily_report()
 
         self.assertEqual(status, 'success')
-        self.assertEqual(len(mock_db.daily_stats), 0, "La table daily_event_stats doit être vidée après succès.")
+        self.assertNotIn((200, old_date), mock_db.daily_stats, "Les données > 48h doivent être purgées.")
+        self.assertIn((201, recent_date), mock_db.daily_stats, "Les données < 48h doivent être conservées.")
 
     async def test_concurrent_daily_reports_prevented(self):
         """Vérifie que deux rapports simultanés ne peuvent pas s'exécuter en parallèle."""
@@ -2416,7 +2688,7 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         mock_db = MockDatabase()
         mock_bot.root_service.database = mock_db
 
-        async def slow_send(summary):
+        async def slow_send(summary, resolution_map):
             await asyncio.sleep(0.05)
 
         mock_bot.discord_logger.log_daily_event_report = AsyncMock(side_effect=slow_send)
@@ -2431,12 +2703,14 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         self.assertIn('success', results)
         self.assertIn('busy', results, "Le second rapport simultané doit retourner 'busy'.")
 
-    async def test_manual_daily_report_distinguishes_outcomes(self):
-        """Vérifie les annonces de manual_daily_report pour succès, échec et busy."""
+    async def test_eventaudit_command(self):
+        """Vérifie le fonctionnement de la commande !eventaudit."""
         from commands.admin.event_moderation import EventModeration
 
         mock_bot = MagicMock()
         mock_db = MockDatabase()
+        today = datetime.now().strftime("%Y-%m-%d")
+        mock_db.daily_stats[(300, today)] = {"discord_id": 300, "date_key": today, "events_won": 5, "events_participated": 5}
         mock_bot.root_service.database = mock_db
 
         cog = EventModeration(mock_bot)
@@ -2446,26 +2720,17 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         mock_ctx.author.id = 999
         mock_ctx.send = AsyncMock()
 
-        # 1. Succès
-        cog._run_daily_report = AsyncMock(return_value='success')
-        await cog.manual_daily_report.callback(cog, mock_ctx)
-        last_msg = mock_ctx.send.call_args[0][0]
-        self.assertIn("✅", last_msg)
+        mock_user = MagicMock()
+        mock_user.id = 300
+        mock_user.name = "ProPlayer"
+        mock_user.mention = "<@300>"
+        mock_user.display_avatar.url = "http://example.com/avatar.png"
 
-        # 2. Échec
-        mock_ctx.send.reset_mock()
-        cog._run_daily_report = AsyncMock(side_effect=RuntimeError("Erreur d'envoi"))
-        await cog.manual_daily_report.callback(cog, mock_ctx)
-        last_msg = mock_ctx.send.call_args[0][0]
-        self.assertIn("❌", last_msg)
-        self.assertIn("n'ont pas été réinitialisés", last_msg)
-
-        # 3. Déjà en cours
-        mock_ctx.send.reset_mock()
-        cog._run_daily_report = AsyncMock(return_value='busy')
-        await cog.manual_daily_report.callback(cog, mock_ctx)
-        last_msg = mock_ctx.send.call_args[0][0]
-        self.assertIn("⚠️", last_msg)
+        await cog.audit_player_event.callback(cog, mock_ctx, user=mock_user)
+        mock_ctx.send.assert_called_once()
+        embed = mock_ctx.send.call_args[1]["embed"]
+        self.assertIn("Audit Anti-Triche Événements", embed.title)
+        self.assertIn("Taux de Réussite", [f.name for f in embed.fields])
 
 
 class TestPrefixAndLanguageCacheTTL(unittest.IsolatedAsyncioTestCase):
@@ -2962,6 +3227,7 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
         self.assertIn("top_cat_reputation", cat_ids)
         self.assertIn("top_cat_usd", cat_ids)
         self.assertIn("top_cat_events", cat_ids)
+        self.assertIn("top_cat_hashrate", cat_ids)
 
         embed = top_cog._build_top_embed(mock_ctx, {
             "category": "usd",
@@ -2969,6 +3235,12 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
         })
         self.assertNotIn("Voici les meilleurs joueurs", embed.description)
         self.assertIn("`100.00` USD", embed.description)
+
+        embed_hs = top_cog._build_top_embed(mock_ctx, {
+            "category": "hashrate",
+            "ranking": [{"discord_id": 123456, "score": 25}]
+        })
+        self.assertIn("25 H/s", embed_hs.description)
 
     async def test_challenge_tracker(self):
         """Vérifie l'enregistrement et la notification automatique de victoire dans ChallengeTracker."""
@@ -2988,6 +3260,76 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
         call_kwargs = mock_msg.edit.call_args[1]
         self.assertIn("<@111>", call_kwargs["content"])
         self.assertIn("résolu le défi", call_kwargs["content"])
+
+    async def test_challenge_tracker_capping_and_deduplication(self):
+        """Vérifie le plafonnement à MAX_ACTIVE_MESSAGES et la déduplication par ID."""
+        import discord
+        from game.challenge_tracker import ChallengeTracker, MAX_ACTIVE_MESSAGES
+
+        ChallengeTracker._active_messages.pop("capping_test", None)
+        messages = []
+        for i in range(1, 16):
+            m = AsyncMock(spec=discord.Message)
+            m.id = i
+            m.edit = AsyncMock()
+            messages.append(m)
+            await ChallengeTracker.register_message("capping_test", m)
+
+        active = ChallengeTracker._active_messages.get("capping_test", [])
+        self.assertEqual(len(active), MAX_ACTIVE_MESSAGES)
+        # Vérifie que ce sont les plus récents (id 6 à 15)
+        self.assertEqual([m.id for m in active], list(range(6, 16)))
+
+        # Test déduplication : ré-enregistrer le message id 15
+        await ChallengeTracker.register_message("capping_test", messages[-1])
+        active_after = ChallengeTracker._active_messages.get("capping_test", [])
+        self.assertEqual(len(active_after), MAX_ACTIVE_MESSAGES)
+        self.assertEqual([m.id for m in active_after].count(15), 1)
+
+    async def test_challenge_tracker_ttl_pruning(self):
+        """Vérifie que les messages ayant dépassé le TTL sont ignorés lors de notify_win."""
+        import discord
+        import time
+        from game.challenge_tracker import ChallengeTracker
+
+        ChallengeTracker._active_messages.pop("ttl_test", None)
+        old_msg = AsyncMock(spec=discord.Message)
+        old_msg.id = 101
+        old_msg.edit = AsyncMock()
+
+        fresh_msg = AsyncMock(spec=discord.Message)
+        fresh_msg.id = 102
+        fresh_msg.edit = AsyncMock()
+
+        await ChallengeTracker.register_message("ttl_test", old_msg)
+        # Vieillir artificiellement old_msg au-delà du TTL
+        old_msg._challenge_registered_at = time.monotonic() - 7200
+
+        await ChallengeTracker.register_message("ttl_test", fresh_msg)
+
+        await ChallengeTracker.notify_win("ttl_test", winner_id=222, next_at=None)
+
+        old_msg.edit.assert_not_called()
+        fresh_msg.edit.assert_called_once()
+
+    async def test_challenge_tracker_message_with_slots_no_dict(self):
+        """Vérifie que les objets discord.Message avec __slots__ sans __dict__ ne lèvent pas d'AttributeError."""
+        import discord
+        from game.challenge_tracker import ChallengeTracker
+
+        class StrictSlottedMessage(discord.Message):
+            __slots__ = ("id", "edit")
+            def __init__(self, mid):
+                object.__setattr__(self, "id", mid)
+                object.__setattr__(self, "edit", AsyncMock())
+
+        slotted = StrictSlottedMessage(555)
+        # Ne doit pas lever d'AttributeError: 'StrictSlottedMessage' object has no attribute ... and no __dict__
+        await ChallengeTracker.register_message("slots_test", slotted)
+        self.assertIn(slotted, ChallengeTracker._active_messages.get("slots_test", []))
+
+        await ChallengeTracker.notify_win("slots_test", winner_id=777, next_at=None)
+        slotted.edit.assert_called_once()
 
     async def test_ui_components_buttons(self):
         """Vérifie la création unifiée des boutons."""
@@ -3323,6 +3665,7 @@ class TestPreExistingGameCoverage(unittest.TestCase):
         Player.network(self.tx, other)
         self.tx.players[other]["rootium"] = Decimal("9.00000")
         self.tx.players[other]["events_won"] = 7
+        self.tx.players[other]["mining_t1"] = 2
         self.tx.players[self.actor]["reputation"] = 3
 
         top_rep = Player.top(self.tx, "rep")
@@ -3336,6 +3679,14 @@ class TestPreExistingGameCoverage(unittest.TestCase):
         top_ev = Player.top(self.tx, "e")
         self.assertEqual(top_ev["category"], "events")
         self.assertEqual(top_ev["ranking"][0]["score"], 7)
+
+        top_hs = Player.top(self.tx, "hs")
+        self.assertEqual(top_hs["category"], "hashrate")
+        self.assertEqual(top_hs["ranking"][0]["discord_id"], other)
+        self.assertEqual(top_hs["ranking"][0]["score"], 50)
+
+        top_hr = Player.top(self.tx, "hashrate")
+        self.assertEqual(top_hr["category"], "hashrate")
 
         unknown = Player.top(self.tx, "gold")
         self.assertEqual(unknown["category"], "reputation")
@@ -3422,12 +3773,12 @@ class TestPreExistingGameCoverage(unittest.TestCase):
         night_dt = datetime(2026, 1, 15, 8, 0, tzinfo=timezone.utc)
         self.assertTrue(is_paris_day(day_dt))
         self.assertFalse(is_paris_day(night_dt))
-        with patch("game.challenge_utils.random.randint", return_value=15):
-            self.assertEqual(calculate_next_interval_seconds(day_dt, "hash_challenge"), 15 * 60)
-        with patch("game.challenge_utils.random.randint", return_value=25):
-            self.assertEqual(calculate_next_interval_seconds(night_dt, "hash_challenge"), 25 * 60)
-        self.assertEqual(int(cfg["day_interval_min_minutes"]), 15)
-        self.assertEqual(int(cfg["night_interval_min_minutes"]), 25)
+        with patch("game.challenge_utils.random.randint", return_value=int(cfg["day_interval_min_minutes"])):
+            self.assertEqual(calculate_next_interval_seconds(day_dt, "hash_challenge"), int(cfg["day_interval_min_minutes"]) * 60)
+        with patch("game.challenge_utils.random.randint", return_value=int(cfg["night_interval_min_minutes"])):
+            self.assertEqual(calculate_next_interval_seconds(night_dt, "hash_challenge"), int(cfg["night_interval_min_minutes"]) * 60)
+        self.assertEqual(int(cfg["day_interval_min_minutes"]), 3)
+        self.assertEqual(int(cfg["night_interval_min_minutes"]), 5)
 
     def test_formatters_and_locale_fallbacks(self):
         now = datetime(2026, 1, 1, 12, 0, 0)
@@ -5700,6 +6051,212 @@ class TestClaimAnalysis(unittest.TestCase):
         self.assertTrue(res["active_24h"])
         self.assertIn("NO_SLEEP_24H", res["alerts"])
 
+    def test_claims_pure_autoclaims_insufficient_data(self):
+        """Uniquement des autoclaims réguliers doit renvoyer INSUFFICIENT_DATA sans alerte macro."""
+        base = datetime(2026, 9, 22, 0, 0, 0)
+        claims = []
+        for i in range(15):
+            claims.append({
+                "claimed_at": base + timedelta(seconds=900 * i),
+                "interval_seconds": 900 if i > 0 else 0,
+                "amount": Decimal("1"),
+                "is_auto": True,
+            })
+        res = calculate_player_claim_metrics(claims)
+        self.assertEqual(res["status"], "INSUFFICIENT_DATA")
+        self.assertEqual(res["manual_claim_count"], 0)
+        self.assertEqual(res["auto_claim_count"], 15)
+        self.assertEqual(res["claim_count"], 15)
+        self.assertEqual(res["total_amount"], Decimal("15"))
+        self.assertEqual(res["risk_level"], "LOW")
+        self.assertEqual(res["risk_badge"], "🟢")
+        self.assertEqual(res["alerts"], [])
+        self.assertFalse(res["active_24h"])
+
+    def test_claims_single_manual_among_autoclaims(self):
+        """Un claim manuel parmi 10 autoclaims doit renvoyer INSUFFICIENT_DATA sans alerte."""
+        base = datetime(2026, 9, 22, 0, 0, 0)
+        claims = []
+        for i in range(10):
+            claims.append({
+                "claimed_at": base + timedelta(seconds=900 * i),
+                "interval_seconds": 900 if i > 0 else 0,
+                "amount": Decimal("1"),
+                "is_auto": (i != 3),  # Seul le claim 3 est manuel
+            })
+        res = calculate_player_claim_metrics(claims)
+        self.assertEqual(res["status"], "INSUFFICIENT_DATA")
+        self.assertEqual(res["manual_claim_count"], 1)
+        self.assertEqual(res["auto_claim_count"], 9)
+        self.assertEqual(res["risk_level"], "LOW")
+        self.assertEqual(res["alerts"], [])
+
+    def test_claims_two_manual_with_many_autoclaims(self):
+        """Deux claims manuels et beaucoup d'autoclaims : analyse sur les 2 manuels uniquement."""
+        base = datetime(2026, 9, 22, 0, 0, 0)
+        claims = [
+            {"claimed_at": base, "interval_seconds": 0, "amount": Decimal("1"), "is_auto": False},
+        ]
+        # 15 autoclaims très réguliers intercalés
+        for i in range(1, 16):
+            claims.append({
+                "claimed_at": base + timedelta(seconds=900 * i),
+                "interval_seconds": 900,
+                "amount": Decimal("1"),
+                "is_auto": True,
+            })
+        # 2e claim manuel 5 heures plus tard
+        claims.append({
+            "claimed_at": base + timedelta(hours=5),
+            "interval_seconds": 18000,
+            "amount": Decimal("2"),
+            "is_auto": False,
+        })
+        res = calculate_player_claim_metrics(claims)
+        self.assertEqual(res["manual_claim_count"], 2)
+        self.assertEqual(res["auto_claim_count"], 15)
+        self.assertEqual(res["intervals_count"], 1)
+        self.assertEqual(res["mean_interval_sec"], 18000.0)
+        self.assertEqual(res["risk_level"], "LOW")
+        self.assertEqual(res["alerts"], [])
+
+    def test_claims_genuine_manual_macro_streak_still_detected(self):
+        """Une véritable séquence manuelle régulière reste détectée malgré la présence d'autoclaims."""
+        base = datetime(2026, 9, 22, 10, 0, 0)
+        claims = []
+        cur = base
+        # 10 claims manuels réguliers à 900s
+        for i in range(10):
+            cur += timedelta(seconds=900)
+            claims.append({"claimed_at": cur, "interval_seconds": 900, "amount": Decimal("1"), "is_auto": False})
+        # 3 autoclaims ultérieurs
+        for i in range(3):
+            cur += timedelta(seconds=1800)
+            claims.append({"claimed_at": cur, "interval_seconds": 1800, "amount": Decimal("1"), "is_auto": True})
+
+        res = calculate_player_claim_metrics(claims)
+        self.assertEqual(res["risk_level"], "HIGH")
+        self.assertEqual(res["risk_badge"], "🔴")
+        self.assertIn("CRITICAL_MACRO_STREAK", res["alerts"])
+
+    def test_sleep_alert_twelve_claims_in_55_minutes_no_alert(self):
+        """12 claims manuels rapprochés sur 55 minutes ne doivent PAS déclencher NO_SLEEP_24H."""
+        base = datetime(2026, 9, 22, 12, 0, 0)
+        claims = []
+        for i in range(12):
+            claims.append({
+                "claimed_at": base + timedelta(minutes=5 * i),
+                "interval_seconds": 300 if i > 0 else 0,
+                "amount": Decimal("1"),
+                "is_auto": False,
+            })
+        res = calculate_player_claim_metrics(claims)
+        self.assertFalse(res["active_24h"])
+        self.assertNotIn("NO_SLEEP_24H", res["alerts"])
+
+    def test_sleep_alert_thirteen_hourly_in_twelve_hours_no_alert(self):
+        """13 hourly logs sur 12 heures ne doivent PAS déclencher NO_SLEEP_24H."""
+        base = datetime(2026, 9, 22, 8, 0, 0)
+        logs = []
+        for i in range(13):
+            logs.append({
+                "claimed_at": base + timedelta(hours=i),
+                "interval_seconds": 3600 if i > 0 else 0,
+                "total_usd": Decimal("50.00"),
+                "streak": i + 1,
+            })
+        res = calculate_player_hourly_metrics(logs)
+        self.assertFalse(res["active_24h"])
+        self.assertNotIn("NO_SLEEP_24H", res["alerts"])
+
+    def test_sleep_alert_period_just_under_24h_no_alert(self):
+        """Une séquence continue sur 23h55m ne doit PAS déclencher NO_SLEEP_24H."""
+        base = datetime(2026, 9, 22, 0, 0, 0)
+        claims = [{"claimed_at": base, "interval_seconds": 0, "amount": Decimal("1"), "is_auto": False}]
+        cur = base
+        # 14 claims espacés de 1h50 (6600s < 12600s), durée totale = 13 * 6600 = 85800s = 23h50m < 24h
+        for _ in range(13):
+            cur += timedelta(seconds=6600)
+            claims.append({"claimed_at": cur, "interval_seconds": 6600, "amount": Decimal("1"), "is_auto": False})
+
+        res = calculate_player_claim_metrics(claims)
+        self.assertFalse(res["active_24h"])
+        self.assertNotIn("NO_SLEEP_24H", res["alerts"])
+
+    def test_sleep_alert_sequence_reaching_24h_triggers(self):
+        """Une séquence continue couvrant au moins 24h sans pause >= 3h30 DOIT déclencher NO_SLEEP_24H."""
+        base = datetime(2026, 9, 22, 0, 0, 0)
+        claims = [{"claimed_at": base, "interval_seconds": 0, "amount": Decimal("1"), "is_auto": False}]
+        cur = base
+        # 15 claims espacés de 1h45 (6300s < 12600s), durée totale = 14 * 6300 = 88200s = 24h30m >= 24h
+        for _ in range(14):
+            cur += timedelta(seconds=6300)
+            claims.append({"claimed_at": cur, "interval_seconds": 6300, "amount": Decimal("1"), "is_auto": False})
+
+        res = calculate_player_claim_metrics(claims)
+        self.assertTrue(res["active_24h"])
+        self.assertIn("NO_SLEEP_24H", res["alerts"])
+
+    def test_sleep_alert_pause_exactly_at_threshold_cuts_streak(self):
+        """Une pause atteignant exactement le seuil (3h30 pour claim, 2h30 pour hourly) coupe la séquence."""
+        base = datetime(2026, 9, 22, 0, 0, 0)
+        # Pour /claim : seuil = 12600s (3h30). Deux blocs de 8 claims sur 14h chacun
+        claims = [{"claimed_at": base, "interval_seconds": 0, "amount": Decimal("1"), "is_auto": False}]
+        cur = base
+        for _ in range(7):
+            cur += timedelta(hours=2)
+            claims.append({"claimed_at": cur, "interval_seconds": 7200, "amount": Decimal("1"), "is_auto": False})
+        # Pause exactement au seuil de 3h30 (12600s)
+        cur += timedelta(seconds=12600)
+        claims.append({"claimed_at": cur, "interval_seconds": 12600, "amount": Decimal("1"), "is_auto": False})
+        for _ in range(7):
+            cur += timedelta(hours=2)
+            claims.append({"claimed_at": cur, "interval_seconds": 7200, "amount": Decimal("1"), "is_auto": False})
+
+        res_claim = calculate_player_claim_metrics(claims)
+        self.assertFalse(res_claim["active_24h"])
+        self.assertNotIn("NO_SLEEP_24H", res_claim["alerts"])
+
+        # Pour /hourly : seuil = 9000s (2h30). Deux blocs de 8 hourly avec pause de 9000s pile
+        h_logs = [{"claimed_at": base, "interval_seconds": 0, "total_usd": Decimal("10")}]
+        cur = base
+        for _ in range(7):
+            cur += timedelta(minutes=70)
+            h_logs.append({"claimed_at": cur, "interval_seconds": 4200, "total_usd": Decimal("10")})
+        # Pause pile au seuil de 2h30 (9000s)
+        cur += timedelta(seconds=9000)
+        h_logs.append({"claimed_at": cur, "interval_seconds": 9000, "total_usd": Decimal("10")})
+        for _ in range(7):
+            cur += timedelta(minutes=70)
+            h_logs.append({"claimed_at": cur, "interval_seconds": 4200, "total_usd": Decimal("10")})
+
+        res_hourly = calculate_player_hourly_metrics(h_logs)
+        self.assertFalse(res_hourly["active_24h"])
+        self.assertNotIn("NO_SLEEP_24H", res_hourly["alerts"])
+
+    def test_sleep_alert_autoclaims_during_long_manual_break_no_alert(self):
+        """Des autoclaims durant une longue pause manuelle ne comblent pas l'absence manuelle."""
+        base = datetime(2026, 9, 22, 6, 0, 0)
+        claims = []
+        cur = base
+        # 6 claims manuels le matin
+        for _ in range(6):
+            cur += timedelta(hours=1)
+            claims.append({"claimed_at": cur, "interval_seconds": 3600, "amount": Decimal("1"), "is_auto": False})
+        # Pause manuelle de 8h durant laquelle 8 autoclaims sont exécutés
+        for _ in range(8):
+            cur += timedelta(hours=1)
+            claims.append({"claimed_at": cur, "interval_seconds": 3600, "amount": Decimal("1"), "is_auto": True})
+        # 7 claims manuels l'après-midi / soir
+        for _ in range(7):
+            cur += timedelta(hours=1)
+            claims.append({"claimed_at": cur, "interval_seconds": 3600, "amount": Decimal("1"), "is_auto": False})
+
+        res = calculate_player_claim_metrics(claims)
+        # La pause entre les claims manuels est de 8h (28800s >= 12600s), donc la séquence manuelle est coupée
+        self.assertFalse(res["active_24h"])
+        self.assertNotIn("NO_SLEEP_24H", res["alerts"])
+
 
 class TestDailyClaimStatsDB(unittest.TestCase):
     """Vérifie le fonctionnement de la persistance SQL des claims journaliers."""
@@ -5763,6 +6320,26 @@ class TestDailyClaimStatsDB(unittest.TestCase):
         self.assertEqual(logged["amount"], res["amount"])
         self.assertEqual(res["amount"], Decimal("0.00002"))
 
+    def test_daily_claim_stats_summary_with_claims_since_dt_48h(self):
+        """Vérifie que get_summary avec claims_since_dt retourne les totaux 24h et les claims 48h."""
+        now = datetime(2026, 9, 22, 14, 0, 0)
+        # Claim ancien (à 30h)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor1, now - timedelta(hours=30), 900, Decimal("1.0"), is_auto=False)
+        # 2 claims récents (< 24h)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor1, now - timedelta(hours=10), 900, Decimal("1.5"), is_auto=False)
+        DailyClaimStatsDB.record_claim(self.tx, self.actor1, now - timedelta(hours=2), 900, Decimal("2.0"), is_auto=True)
+
+        summary = DailyClaimStatsDB.get_summary(
+            self.tx,
+            since_dt=now - timedelta(hours=24),
+            claims_since_dt=now - timedelta(hours=48),
+        )
+        self.assertEqual(len(summary), 1)
+        # Le count 24h ne doit compter que les 2 claims récents
+        self.assertEqual(summary[0]["claim_count"], 2)
+        # Les claims doivent contenir les 3 claims de l'historique 48h
+        self.assertEqual(len(summary[0]["claims"]), 3)
+
 
 class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
     """Teste le cycle de vie, la résilience aux pannes et le rattrapage du Cog ClaimModeration."""
@@ -5775,21 +6352,22 @@ class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
         self._loop_patch.stop()
 
     async def test_run_report_success_resets_database(self):
-        """Un envoi réussi doit vider la table et enregistrer la date."""
+        """Un envoi réussi doit purger les logs de plus de 48h et enregistrer la date."""
         mock_bot = MagicMock()
         mock_db = MockDatabase()
         now = datetime(2026, 9, 22, 12, 0, 0)
+        mock_db.now = now
 
-        # Insérer 2 claims
+        # Insérer 1 claim ancien (> 48h) et 1 claim récent (< 48h)
         mock_db.daily_claim_logs.append({
             "discord_id": 999,
-            "claimed_at": now,
+            "claimed_at": now - timedelta(hours=50),
             "interval_seconds": 900,
             "amount": Decimal("2"),
         })
         mock_db.daily_claim_logs.append({
             "discord_id": 999,
-            "claimed_at": now + timedelta(minutes=15),
+            "claimed_at": now - timedelta(hours=10),
             "interval_seconds": 900,
             "amount": Decimal("2"),
         })
@@ -5801,7 +6379,8 @@ class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
         status = await cog._run_daily_report()
         self.assertEqual(status, "success")
         mock_bot.discord_logger.log_daily_claim_report.assert_called_once()
-        self.assertEqual(len(mock_db.daily_claim_logs), 0, "La table doit être vidée après succès d'envoi.")
+        self.assertEqual(len(mock_db.daily_claim_logs), 1, "Seuls les logs > 48h doivent être purgés.")
+        self.assertEqual(mock_db.daily_claim_logs[0]["claimed_at"], now - timedelta(hours=10))
 
     async def test_run_report_failure_preserves_database(self):
         """Si l'envoi Discord échoue, les logs NE doivent PAS être purgés."""
@@ -5823,6 +6402,57 @@ class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
             await cog._run_daily_report()
 
         self.assertEqual(len(mock_db.daily_claim_logs), 1, "Les logs doivent être préservés en cas d'erreur API.")
+
+    async def test_log_daily_claim_report_renders_insufficient_data_and_sleep_alert(self):
+        """Vérifie que le rapport quotidien de claims affiche 'Données manuelles insuffisantes' et l'alerte sommeil."""
+        from utils.logger import Logger
+        mock_bot = MagicMock()
+        mock_bot.get_channel = MagicMock()
+        mock_channel = MagicMock()
+        mock_channel.send = AsyncMock()
+        mock_bot.get_channel.return_value = mock_channel
+        mock_bot.get_user.return_value = None
+        mock_bot.fetch_user = AsyncMock(return_value=None)
+
+        logger_inst = Logger(mock_bot)
+        now = datetime(2026, 9, 22, 12, 0, 0)
+
+        # Joueur 1 : uniquement des autoclaims -> Données manuelles insuffisantes
+        # Joueur 2 : séquence manuelle continue de 25h -> Alerte Sommeil
+        claims_user2 = [
+            {"claimed_at": now - timedelta(hours=25 - i * 1.5), "interval_seconds": 5400, "amount": Decimal("1"), "is_auto": False}
+            for i in range(17)
+        ]
+
+        summary = [
+            {
+                "discord_id": 1001,
+                "claim_count": 5,
+                "manual_count": 0,
+                "auto_count": 5,
+                "total_amount": Decimal("10.0"),
+                "claims": [
+                    {"claimed_at": now - timedelta(hours=i), "interval_seconds": 3600, "amount": Decimal("2"), "is_auto": True}
+                    for i in range(5)
+                ],
+            },
+            {
+                "discord_id": 1002,
+                "claim_count": 17,
+                "manual_count": 17,
+                "auto_count": 0,
+                "total_amount": Decimal("17.0"),
+                "claims": claims_user2,
+            },
+        ]
+
+        logger_inst.channel_id = MagicMock(return_value=123456)
+        await logger_inst.log_daily_claim_report(summary)
+        mock_channel.send.assert_called_once()
+        embed = mock_channel.send.call_args.kwargs.get("embed")
+        self.assertIsNotNone(embed)
+        self.assertIn("Données manuelles insuffisantes", embed.description)
+        self.assertIn("activité observée sur 24h sans longue pause", embed.description)
 
 # ── 5. Suivi Économique & Rapports ─────────────────────────────────────────
 
@@ -6209,6 +6839,18 @@ class TestBuildIncrements(unittest.TestCase):
         self.assertIn(456, inc)
         self.assertEqual(inc[456], {})
 
+    def test_hourly(self):
+        result = {'claimed': True, 'total_usd': _d('65.50')}
+        inc = EconomyStatsDB.build_increments('hourly', 123, result)
+        self.assertEqual(inc[123]['hourly_claims'], 1)
+        self.assertEqual(inc[123]['hourly_usd'], _d('65.50'))
+
+    def test_contract(self):
+        result = {'collected': True, 'reward_usd': _d('250.00')}
+        inc = EconomyStatsDB.build_increments('contract', 123, result)
+        self.assertEqual(inc[123]['contracts_collected'], 1)
+        self.assertEqual(inc[123]['contracts_usd'], _d('250.00'))
+
     def test_unknown_method(self):
         inc = EconomyStatsDB.build_increments('top', 123, {'ranking': []})
         self.assertEqual(inc, {})
@@ -6514,6 +7156,35 @@ class TestEconomyEmbed(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[pin]      10min (2 manches • moy. 5min)", avail_field.value)
         # en cours
         self.assertIn("[signal]   20min (en cours)", avail_field.value)
+
+    def test_economy_embed_numbers_no_commas_and_hourly_contracts(self):
+        """Vérifie l'absence totale de virgule dans les nombres (formatage lisible) et la présence de hourly/contrats."""
+        from commands.admin.economy_reports import _build_embed
+        start = datetime(2026, 9, 21, 14, 0, 0)
+        end = datetime(2026, 9, 21, 15, 0, 0)
+        data = {
+            'active_players': 10,
+            'mining_rtm': Decimal('12345.67890'),
+            'event_hash_usd': Decimal('1500.00'),
+            'grant_usd': Decimal('3000.00'),
+            'hourly_usd': Decimal('450.50'),
+            'hourly_claims': 5,
+            'contracts_usd': Decimal('1250.00'),
+            'contracts_collected': 3,
+            'miners_usd': Decimal('2000.00'),
+        }
+        embed = _build_embed(1, data, start, end)
+        gains_field = next(f for f in embed.fields if "Gains" in f.name)
+        # Vérifie la présence de Hourly et Contrats
+        self.assertIn("Hourly     : 450.50 USD (5 claims)", gains_field.value)
+        self.assertIn("Contrats   : 1250.00 USD (3 contrats)", gains_field.value)
+        # Vérifie qu'il n'y a pas de virgule dans les montants
+        self.assertIn("12345.67890 RTM", gains_field.value)
+        self.assertIn("1500.00 USD", gains_field.value)
+        self.assertNotIn("12,345", gains_field.value)
+        self.assertNotIn("1,500", gains_field.value)
+        self.assertNotIn("3,000", gains_field.value)
+        self.assertNotIn("2,000", gains_field.value)
 
     def test_settle_challenge_win_availability(self):
         """Vérifie que settle_challenge_win enregistre la durée disponible dans les logs."""
@@ -6882,10 +7553,10 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         from lang import help_fr, help_en
         from commands.utility.help import PUBLIC_COMMANDS
 
-        # 24 commandes publiques
-        self.assertEqual(len(PUBLIC_COMMANDS), 24)
-        self.assertEqual(len(help_fr.COMMANDS), 24)
-        self.assertEqual(len(help_en.COMMANDS), 24)
+        # 27 commandes publiques
+        self.assertEqual(len(PUBLIC_COMMANDS), 27)
+        self.assertEqual(len(help_fr.COMMANDS), 27)
+        self.assertEqual(len(help_en.COMMANDS), 27)
 
         for cmd_name in PUBLIC_COMMANDS:
             self.assertIn(cmd_name, help_fr.COMMANDS)
@@ -6918,19 +7589,23 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
             self.assertIn(target, PUBLIC_COMMANDS, f"L'alias {alias} pointe vers {target} qui n'est pas dans PUBLIC_COMMANDS")
 
     async def test_all_commands_page(self):
-        """Vérifie que la page 'Toutes les commandes' liste les 24 commandes et alimente le menu déroulant."""
+        """Vérifie que la page 'Toutes les commandes' liste les 27 commandes et alimente les menus déroulants (max 25 options chacun)."""
         from commands.utility.help import HelpView, HelpCommandSelect, PUBLIC_COMMANDS, render_help_embed
 
         view = HelpView(author_id=12345, locale="fr", prefix="+r", initial_category="all")
         self.assertEqual(view.current_category, "all")
 
-        # Vérifie que le sélecteur de commandes contient bien les 24 commandes
-        cmd_select = next(item for item in view.children if isinstance(item, HelpCommandSelect))
-        self.assertEqual(len(cmd_select.options), 24)
-        option_values = {opt.value for opt in cmd_select.options}
-        self.assertEqual(option_values, set(PUBLIC_COMMANDS))
+        # Vérifie que les sélecteurs de commandes respectent la limite Discord de 25 options et couvrent les 27 commandes
+        cmd_selects = [item for item in view.children if isinstance(item, HelpCommandSelect)]
+        self.assertEqual(len(cmd_selects), 2)
+        total_options = []
+        for cs in cmd_selects:
+            self.assertLessEqual(len(cs.options), 25)
+            total_options.extend(opt.value for opt in cs.options)
+        self.assertEqual(len(total_options), 27)
+        self.assertEqual(set(total_options), set(PUBLIC_COMMANDS))
 
-        # Vérifie que l'embed de la page liste toutes les 24 commandes
+        # Vérifie que l'embed de la page liste toutes les 27 commandes
         embed = render_help_embed(locale="fr", prefix="+r", mode="slash", category="all")
         self.assertIn("Toutes les commandes", embed.title)
         for cmd_name in PUBLIC_COMMANDS:
@@ -7170,13 +7845,13 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Navigation expirée", edited_embed.description)
 
     async def test_help_autocomplete(self):
-        """Vérifie que l'autocomplétion propose les 24 commandes et filtre la saisie."""
+        """Vérifie que l'autocomplétion propose les commandes publiques (plafonnées à 25 par Discord) et filtre la saisie."""
         from commands.utility.help import help_command_autocomplete
 
         ctx = MagicMock()
         ctx.value = ""
         results = await help_command_autocomplete(ctx)
-        self.assertEqual(len(results), 24)
+        self.assertEqual(len(results), 25)
 
         ctx.value = "ha"
         results_ha = await help_command_autocomplete(ctx)
@@ -8030,12 +8705,10 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             })
 
         summary = self.mock_db.run_sync(lambda tx: HourlyStatsDB.get_summary(tx, limit_users=50), readonly=True)
-        self.assertEqual(summary['total_claims'], 5)
-        self.assertEqual(summary['unique_players'], 1)
-        self.assertEqual(summary['total_usd'], Decimal("250.00"))
-        self.assertEqual(len(summary['top_users']), 1)
-        self.assertEqual(summary['suspects'][0]['discord_id'], bot_user)
-        self.assertEqual(summary['suspects'][0]['risk_level'], 'HIGH')
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0]['discord_id'], bot_user)
+        self.assertEqual(summary[0]['claim_count'], 5)
+        self.assertEqual(summary[0]['total_usd'], Decimal("250.00"))
 
         user_logs = self.mock_db.run_sync(lambda tx: HourlyStatsDB.get_user_hourly_logs(tx, discord_id=bot_user, limit=50), readonly=True)
         self.assertEqual(len(user_logs), 5)
@@ -8067,18 +8740,20 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         audit_embed = mod_ctx.send.call_args[1]['embed']
         self.assertIn("Audit Anti-Triche Hourly", audit_embed.title)
         field_names = [field.name for field in audit_embed.fields]
-        self.assertIn("Série actuelle", field_names)
-        self.assertIn("Chronologie des 10 derniers claims", field_names)
+        self.assertIn("Série actuelle / max", field_names)
+        self.assertIn("Derniers intervalles enregistrés", field_names)
         blob = "\n".join(field.value for field in audit_embed.fields)
-        self.assertIn("ÉLEVÉ", blob)
+        self.assertIn("HIGH", blob)
         self.assertIn("`5`", blob)
 
     async def test_tophourly_report(self):
-        """!tophourly envoie le rapport au salon de logs puis supprime hourly_logs."""
+        """_run_daily_report envoie le rapport au salon de logs puis purge les hourly_logs > 48h."""
         from commands.admin.hourly_moderation import HourlyModeration
 
         bot_user = 9990001
-        last_at = datetime(2026, 1, 1, 4, 0, 0)
+        now = datetime(2026, 1, 3, 12, 0, 0)
+        self.mock_db.now = now
+        last_at = now - timedelta(hours=1)
         self.mock_db.players[bot_user] = {
             "discord_id": bot_user,
             "dollars": Decimal("200.00"),
@@ -8087,7 +8762,19 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             "hourly_streak": 4,
             "lang": "fr",
         }
-        base_time = datetime(2026, 1, 1, 0, 0, 0)
+        # 1 log vieux (> 48h) et 5 logs récents (< 24h)
+        self.mock_db.hourly_logs.append({
+            "id": 99,
+            "discord_id": bot_user,
+            "claimed_at": now - timedelta(hours=55),
+            "interval_seconds": 3600,
+            "base_usd": Decimal("40.00"),
+            "bonus_pct": Decimal("0.00"),
+            "total_usd": Decimal("40.00"),
+            "streak": 1,
+            "combo_lost": False,
+        })
+        base_time = now - timedelta(hours=5)
         for i in range(5):
             self.mock_db.hourly_logs.append({
                 "id": i + 1,
@@ -8107,20 +8794,16 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         mock_bot.discord_logger.log_daily_hourly_report = AsyncMock()
         with patch.object(HourlyModeration, "daily_hourly_report_loop"):
             mod_cog = HourlyModeration(mock_bot)
-        mod_cog.check.is_op = AsyncMock(return_value=True)
-        mod_ctx = MagicMock()
-        mod_ctx.send = AsyncMock()
 
-        await mod_cog.manual_hourly_report.callback(mod_cog, mod_ctx)
-
-        messages = [call.args[0] for call in mod_ctx.send.await_args_list]
-        self.assertTrue(any("Génération" in msg for msg in messages))
-        self.assertTrue(any("Historique supprimé" in msg for msg in messages))
+        status = await mod_cog._run_daily_report()
+        self.assertEqual(status, "success")
+        mock_bot.discord_logger.log_daily_hourly_report.assert_called_once()
         summary = mock_bot.discord_logger.log_daily_hourly_report.await_args.args[0]
-        self.assertEqual(summary["total_claims"], 5)
-        self.assertEqual(summary["suspects"][0]["discord_id"], bot_user)
-        self.assertEqual(summary["suspects"][0]["risk_level"], "HIGH")
-        self.assertEqual(self.mock_db.hourly_logs, [])
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0]["discord_id"], bot_user)
+        self.assertEqual(summary[0]["claim_count"], 5)
+        # Le log vieux (> 48h) a été purgé, les 5 logs récents sont conservés pour audit
+        self.assertEqual(len(self.mock_db.hourly_logs), 5)
         player = self.mock_db.players[bot_user]
         self.assertEqual(player["hourly_streak"], 4)
         self.assertEqual(player["hourly_combo_bonus"], Decimal("18.00"))
@@ -8158,20 +8841,780 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         mock_bot.discord_logger.log_daily_hourly_report = AsyncMock(side_effect=RuntimeError("Discord API Error"))
         with patch.object(HourlyModeration, "daily_hourly_report_loop"):
             mod_cog = HourlyModeration(mock_bot)
-        mod_cog.check.is_op = AsyncMock(return_value=True)
-        mod_ctx = MagicMock()
-        mod_ctx.send = AsyncMock()
 
-        await mod_cog.manual_hourly_report.callback(mod_cog, mod_ctx)
+        with self.assertRaises(RuntimeError):
+            await mod_cog._run_daily_report()
 
         self.assertEqual(len(self.mock_db.hourly_logs), 1)
         self.assertEqual(self.mock_db.players[bot_user]["hourly_streak"], 2)
         self.assertEqual(self.mock_db.players[bot_user]["hourly_combo_bonus"], Decimal("8.00"))
         self.assertNotIn("daily_hourly_report", self.mock_db.events)
-        messages = [call.args[0] for call in mod_ctx.send.await_args_list]
-        self.assertTrue(any("n'a pas été supprimé" in msg for msg in messages))
+
+    async def test_log_daily_hourly_report_renders_sleep_alert(self):
+        """Vérifie que le rapport quotidien hourly affiche correctement l'alerte sommeil."""
+        from utils.logger import Logger
+        mock_bot = MagicMock()
+        mock_bot.get_channel = MagicMock()
+        mock_channel = MagicMock()
+        mock_channel.send = AsyncMock()
+        mock_bot.get_channel.return_value = mock_channel
+        mock_bot.get_user.return_value = None
+        mock_bot.fetch_user = AsyncMock(return_value=None)
+
+        logger_inst = Logger(mock_bot)
+        now = datetime(2026, 9, 22, 12, 0, 0)
+
+        # 25 logs horaires espacés de 1h couvrant 24h
+        hourly_claims = [
+            {
+                "claimed_at": now - timedelta(hours=24 - i),
+                "interval_seconds": 3600,
+                "base_usd": Decimal("50.0"),
+                "bonus_pct": Decimal("0.0"),
+                "total_usd": Decimal("50.0"),
+                "streak": i + 1,
+            }
+            for i in range(25)
+        ]
+
+        summary = [
+            {
+                "discord_id": 9990002,
+                "claim_count": 24,
+                "total_usd": Decimal("1200.0"),
+                "max_streak": 24,
+                "max_bonus_pct": Decimal("0.0"),
+                "claims": hourly_claims,
+            },
+        ]
+
+        logger_inst.channel_id = MagicMock(return_value=654321)
+        await logger_inst.log_daily_hourly_report(summary)
+        mock_channel.send.assert_called_once()
+        embed = mock_channel.send.call_args.kwargs.get("embed")
+        self.assertIsNotNone(embed)
+        self.assertIn("activité observée sur 24h sans longue pause", embed.description)
+
+
+class TestContracts(unittest.IsolatedAsyncioTestCase):
+    """Tests unitaires et d'intégration pour le système de contrats de travail (/contract)."""
+
+    async def asyncSetUp(self):
+        from game.root_service import RootService
+        self.mock_db = MockDatabase()
+        self.mock_db.now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
+        self.service = RootService(database=self.mock_db)
+        self.actor = 888777666
+        self.mock_db.players[self.actor] = {
+            "discord_id": self.actor,
+            "dollars": Decimal("100.00"),
+            "rootium": Decimal("0.00000"),
+            "firewall_level": 0,
+            "contract_fidelity": 0,
+            "contracts_completed": 0,
+            "lang": "fr",
+        }
+
+    async def test_contract_view_offers(self):
+        """Vérifie la consultation initiale des offres sans contrat actif."""
+        res = await self.service.execute(self.actor, None, 'contract', action='view')
+        self.assertFalse(res['has_active'])
+        self.assertIsNone(res['contract'])
+        self.assertEqual(res['fidelity'], 0)
+        self.assertEqual(res['fidelity_threshold'], 5)
+        self.assertEqual(res['contracts_completed'], 0)
+
+        offers = res['offers_data']['offers']
+        self.assertEqual(offers['short']['reward_usd'], Decimal('75.00'))
+        self.assertEqual(offers['short']['duration_seconds'], 1800)
+        self.assertEqual(offers['short']['hourly_rate'], 150)
+
+        self.assertEqual(offers['medium']['reward_usd'], Decimal('250.00'))
+        self.assertEqual(offers['medium']['duration_seconds'], 7200)
+        self.assertEqual(offers['medium']['hourly_rate'], 125)
+
+        self.assertEqual(offers['long']['reward_usd'], Decimal('600.00'))
+        self.assertEqual(offers['long']['duration_seconds'], 21600)
+        self.assertEqual(offers['long']['hourly_rate'], 100)
+
+    async def test_contract_start_and_view_active(self):
+        """Démarre un contrat court et vérifie son statut actif."""
+        start_res = await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        self.assertEqual(start_res['discord_id'], self.actor)
+        self.assertEqual(start_res['duration_type'], 'short')
+        self.assertEqual(start_res['reward_usd'], Decimal('75.00'))
+        self.assertFalse(start_res['is_special'])
+        self.assertEqual(start_res['expires_at'], self.mock_db.now + timedelta(seconds=1800))
+
+        # Consultation en cours
+        status = await self.service.execute(self.actor, None, 'contract', action='view')
+        self.assertTrue(status['has_active'])
+        self.assertIsNotNone(status['contract'])
+        self.assertFalse(status['contract']['is_ready'])
+        self.assertEqual(status['contract']['remaining_seconds'], 1800)
+
+    async def test_contract_cannot_start_multiple(self):
+        """Impossible de lancer deux contrats simultanément."""
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        with self.assertRaises(GameError) as ctx:
+            await self.service.execute(self.actor, None, 'contract', action='start', duration='medium')
+        self.assertEqual(ctx.exception.key, 'contract_in_progress')
+
+    async def test_contract_collect_too_early(self):
+        """Tentative de récupération avant échéance -> GameError('contract_not_ready')."""
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        self.mock_db.now += timedelta(minutes=15)  # Seulement 15 min écoulées sur 30 min
+        with self.assertRaises(GameError) as ctx:
+            await self.service.execute(self.actor, None, 'contract', action='collect')
+        self.assertEqual(ctx.exception.key, 'contract_not_ready')
+
+    async def test_contract_collect_success(self):
+        """Récupération à échéance -> crédit des USD, incrément fidélité et suppression du contrat."""
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        self.mock_db.now += timedelta(seconds=1800)
+
+        collect_res = await self.service.execute(self.actor, None, 'contract', action='collect')
+        self.assertTrue(collect_res['collected'])
+        self.assertEqual(collect_res['reward_usd'], Decimal('75.00'))
+        self.assertEqual(collect_res['new_dollars'], Decimal('175.00'))
+        self.assertEqual(collect_res['contract_fidelity'], 1)
+        self.assertEqual(collect_res['contracts_completed'], 1)
+
+        # Vérification en BDD
+        player = self.mock_db.players[self.actor]
+        self.assertEqual(player['dollars'], Decimal('175.00'))
+        self.assertEqual(player['contract_fidelity'], 1)
+        self.assertEqual(player['contracts_completed'], 1)
+        self.assertNotIn(self.actor, self.mock_db.contracts)
+
+    async def test_contract_fidelity_progression_and_special_mission(self):
+        """Après 5 contrats validés, le suivant reçoit le bonus spécial (+50%).
+        Après avoir récupéré la mission spéciale, la jauge revient à 0/5.
+        """
+        for i in range(5):
+            await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+            self.mock_db.now += timedelta(seconds=1800)
+            c_res = await self.service.execute(self.actor, None, 'contract', action='collect')
+            self.assertEqual(c_res['contract_fidelity'], i + 1)
+            self.assertEqual(c_res['contracts_completed'], i + 1)
+
+        # Jauge à 5/5 -> Mission spéciale débloquée
+        status = await self.service.execute(self.actor, None, 'contract', action='view')
+        self.assertEqual(status['fidelity'], 5)
+        self.assertTrue(status['offers_data']['is_special'])
+
+        # Les offres affichent +50 %
+        offers = status['offers_data']['offers']
+        self.assertEqual(offers['short']['reward_usd'], Decimal('112.50'))   # 75 * 1.5
+        self.assertEqual(offers['medium']['reward_usd'], Decimal('375.00'))  # 250 * 1.5
+        self.assertEqual(offers['long']['reward_usd'], Decimal('900.00'))    # 600 * 1.5
+
+        # Lancement de la mission spéciale
+        start_spec = await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        self.assertTrue(start_spec['is_special'])
+        self.assertEqual(start_spec['reward_usd'], Decimal('112.50'))
+
+        # Récupération de la mission spéciale
+        self.mock_db.now += timedelta(seconds=1800)
+        collect_spec = await self.service.execute(self.actor, None, 'contract', action='collect')
+        self.assertTrue(collect_spec['was_special'])
+        self.assertEqual(collect_spec['reward_usd'], Decimal('112.50'))
+        # La jauge de fidélité revient à 0
+        self.assertEqual(collect_spec['contract_fidelity'], 0)
+        self.assertEqual(collect_spec['contracts_completed'], 6)
+
+    async def test_contract_no_decay_on_delayed_collection(self):
+        """Une absence prolongée n'entraîne aucune pénalité de retard."""
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='medium')
+        # Avance le temps de 48 heures
+        self.mock_db.now += timedelta(hours=48)
+        res = await self.service.execute(self.actor, None, 'contract', action='collect')
+        self.assertTrue(res['collected'])
+        self.assertEqual(res['reward_usd'], Decimal('250.00'))
+        self.assertEqual(res['new_dollars'], Decimal('350.00'))
+
+    async def test_contract_invalid_duration(self):
+        """Lancement avec une durée inconnue -> GameError('invalid_contract_duration')."""
+        with self.assertRaises(GameError) as ctx:
+            await self.service.execute(self.actor, None, 'contract', action='start', duration='super_long')
+        self.assertEqual(ctx.exception.key, 'invalid_contract_duration')
+
+    async def test_contract_collect_without_active(self):
+        """Récupération sans contrat actif -> GameError('no_active_contract')."""
+        with self.assertRaises(GameError) as ctx:
+            await self.service.execute(self.actor, None, 'contract', action='collect')
+        self.assertEqual(ctx.exception.key, 'no_active_contract')
+
+    async def test_contract_cog_prefix_commands(self):
+        """Teste les commandes textuelles !contract, !contract start short, !contract collect."""
+        from commands.game.contract import Contract
+
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_bot.wait_until_ready = AsyncMock()
+        cog = Contract(mock_bot)
+        cog.check_contracts_loop.cancel()
+
+        ctx = MagicMock()
+        ctx.author.id = self.actor
+        ctx.guild.id = 111222
+        ctx.interaction = None
+        ctx.send = AsyncMock()
+
+        # 1. !contract -> affichage des offres
+        await cog.prefix_contract.callback(cog, ctx)
+        ctx.send.assert_called_once()
+        embed = ctx.send.call_args[1]['embed']
+        self.assertTrue("Offres de contrats" in embed.description or "Available Contracts" in embed.description)
+
+        # 2. !contract start short -> démarrage
+        ctx.send.reset_mock()
+        await cog.prefix_contract.callback(cog, ctx, "start", "short")
+        ctx.send.assert_called_once()
+        embed_start = ctx.send.call_args[1]['embed']
+        self.assertTrue("Contrat en cours" in embed_start.description or "Active Contract" in embed_start.description)
+
+        # 3. !contract collect trop tôt -> GameError capturée par _send_error
+        ctx.send.reset_mock()
+        await cog.prefix_contract.callback(cog, ctx, "collect")
+        ctx.send.assert_called_once()
+        error_msg = ctx.send.call_args[0][0]
+        self.assertTrue("terminée" in error_msg or "completed" in error_msg)
+
+        # 4. !contract collect après échéance -> encaissement
+        self.mock_db.now += timedelta(seconds=1800)
+        ctx.send.reset_mock()
+        await cog.prefix_contract.callback(cog, ctx, "collect")
+        ctx.send.assert_called_once()
+        embed_col = ctx.send.call_args[1]['embed']
+        self.assertTrue("Paiement encaissé" in embed_col.description or "Payment Collected" in embed_col.description)
+
+    async def test_contract_auto_dm_notification(self):
+        """Vérifie la détection atomique des contrats expirés et l'expédition automatique du MP."""
+        from commands.game.contract import Contract
+
+        # Démarrage d'un contrat court (1800s)
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+
+        # Avant expiration : aucune notification à expédier
+        unnotified = await self.service.deliver_due_contract_notifications()
+        self.assertEqual(len(unnotified), 0)
+
+        # Après expiration (1801s) : contrat détecté et marqué notified=1
+        self.mock_db.now += timedelta(seconds=1801)
+        unnotified = await self.service.deliver_due_contract_notifications()
+        self.assertEqual(len(unnotified), 1)
+        item = unnotified[0]
+        self.assertEqual(item['discord_id'], self.actor)
+        self.assertEqual(item['duration_type'], 'short')
+
+        # Deuxième passage immédiat : déjà notifié, liste vide
+        unnotified_again = await self.service.deliver_due_contract_notifications()
+        self.assertEqual(len(unnotified_again), 0)
+
+        # Test d'envoi du message privé via le Cog
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_user = MagicMock()
+        mock_user.send = AsyncMock()
+        mock_bot.get_user = MagicMock(return_value=mock_user)
+        mock_bot.fetch_user = AsyncMock(return_value=mock_user)
+
+        cog = Contract(mock_bot)
+        cog.check_contracts_loop.cancel()  # Arrête la boucle pour le test unitaire
+
+        await cog._notify_contract_expired(item)
+        mock_user.send.assert_called_once()
+        dm_text = mock_user.send.call_args[0][0]
+        self.assertTrue("MISSION TERMINÉE" in dm_text or "MISSION COMPLETED" in dm_text)
+        self.assertTrue("Root CyberSec" in dm_text)
+
+
+class TestReminders(unittest.IsolatedAsyncioTestCase):
+    """Tests unitaires et d'intégration pour le système de rappels (/rmd)."""
+
+    def setUp(self):
+        from utils.time_format import parse_duration
+        self.parse_duration = parse_duration
+        self.mock_db = MockDatabase()
+        self.mock_db.now = datetime(2026, 9, 23, 12, 0, 0)
+        self.service = RootService(database=self.mock_db)
+        self.actor = 99887766
+        self.mock_db.players[self.actor] = {
+            "discord_id": self.actor,
+            "dollars": Decimal("1000.00"),
+            "rootium": Decimal("0.00000"),
+            "firewall_level": 0,
+            "reputation": 0,
+            "contracts_completed": 0,
+            "contract_fidelity": 0,
+            "lang": "fr",
+            "hourly_last_at": None,
+            "hourly_streak": 0,
+            "mining_t1": 1,
+            "mining_t2": 0,
+            "mining_t3": 0,
+            "mining_t4": 0,
+            "mining_t5": 0,
+            "mining_buffer": Decimal("0.00000"),
+            "mining_last_update_at": datetime(2026, 9, 23, 12, 0, 0),
+        }
+
+    def test_parse_duration(self):
+        """Vérifie le parsing de durées sous différents formats FR et EN."""
+        self.assertEqual(self.parse_duration("30min"), 1800)
+        self.assertEqual(self.parse_duration("30 min"), 1800)
+        self.assertEqual(self.parse_duration("30m"), 1800)
+        self.assertEqual(self.parse_duration("2h"), 7200)
+        self.assertEqual(self.parse_duration("2 hours"), 7200)
+        self.assertEqual(self.parse_duration("1d"), 86400)
+        self.assertEqual(self.parse_duration("1 jour"), 86400)
+        self.assertEqual(self.parse_duration("1h30m"), 5400)
+        self.assertEqual(self.parse_duration("2d 4h"), 2 * 86400 + 4 * 3600)
+        self.assertEqual(self.parse_duration("45s"), 45)
+        self.assertIsNone(self.parse_duration("invalid"))
+        self.assertIsNone(self.parse_duration(""))
+        self.assertIsNone(self.parse_duration("-5m"))
+
+    def test_to_utc_timestamp(self):
+        """Vérifie que to_utc_timestamp traite correctement les datetimes naïfs comme UTC."""
+        from utils.time_format import to_utc_timestamp
+        # Datetime naïf (tel qu'issu de MySQL UTC_TIMESTAMP() ou tx.now)
+        naive_dt = datetime(2026, 9, 23, 22, 0, 0)
+        ts = to_utc_timestamp(naive_dt)
+        # Vérification que Discord interprètera exactement 22:00:00 UTC
+        restored = datetime.fromtimestamp(ts, tz=timezone.utc)
+        self.assertEqual(restored.year, 2026)
+        self.assertEqual(restored.month, 9)
+        self.assertEqual(restored.day, 23)
+        self.assertEqual(restored.hour, 22)
+        self.assertEqual(restored.minute, 0)
+        self.assertEqual(restored.second, 0)
+
+        # Datetime timezone-aware UTC
+        aware_dt = datetime(2026, 9, 23, 22, 0, 0, tzinfo=timezone.utc)
+        self.assertEqual(to_utc_timestamp(aware_dt), ts)
+
+        # Chaîne ISO
+        self.assertEqual(to_utc_timestamp("2026-09-23T22:00:00"), ts)
+        self.assertEqual(to_utc_timestamp(None), 0)
+
+    async def test_rmd_custom_flow(self):
+        """Création d'un rappel libre, consultation et livraison."""
+        # Création d'un rappel dans 30 minutes
+        res = await self.service.execute(
+            self.actor, 12345, 'rmd',
+            action='create_custom', duration_sec=1800, message="Pause café", channel_id=5555, guild_id=12345
+        )
+        self.assertEqual(res['status'], 'created')
+        self.assertEqual(res['duration_seconds'], 1800)
+        self.assertEqual(res['reminder']['message'], "Pause café")
+
+        # Consultation
+        list_res = await self.service.execute(self.actor, None, 'rmd', action='list')
+        self.assertEqual(list_res['status'], 'list')
+        self.assertEqual(len(list_res['reminders']), 1)
+        self.assertEqual(list_res['reminders'][0]['message'], "Pause café")
+
+        # Avant expiration
+        due = await self.service.deliver_due_reminders()
+        self.assertEqual(len(due), 0)
+
+        # Après expiration
+        self.mock_db.now += timedelta(seconds=1801)
+        due = await self.service.deliver_due_reminders()
+        self.assertEqual(len(due), 1)
+        self.assertEqual(due[0]['message'], "Pause café")
+
+        # Après livraison, la table est vide
+        list_after = await self.service.execute(self.actor, None, 'rmd', action='list')
+        self.assertEqual(len(list_after['reminders']), 0)
+
+    async def test_rmd_cancel_single_and_all(self):
+        """Annulation unitaire par ID et globale avec 'all'."""
+        r1 = await self.service.execute(self.actor, None, 'rmd', action='create_custom', duration_sec=100, message="R1")
+        r2 = await self.service.execute(self.actor, None, 'rmd', action='create_custom', duration_sec=200, message="R2")
+        r3 = await self.service.execute(self.actor, None, 'rmd', action='create_custom', duration_sec=300, message="R3")
+
+        id1 = r1['reminder']['id']
+        del_res = await self.service.execute(self.actor, None, 'rmd', action='cancel', reminder_id=id1)
+        self.assertEqual(del_res['status'], 'cancelled')
+        self.assertEqual(del_res['reminder_id'], id1)
+
+        list_res = await self.service.execute(self.actor, None, 'rmd', action='list')
+        self.assertEqual(len(list_res['reminders']), 2)
+
+        del_all = await self.service.execute(self.actor, None, 'rmd', action='cancel', reminder_id='all')
+        self.assertEqual(del_all['status'], 'cancelled_all')
+        self.assertEqual(del_all['count'], 2)
+
+        list_empty = await self.service.execute(self.actor, None, 'rmd', action='list')
+        self.assertEqual(len(list_empty['reminders']), 0)
+
+    async def test_rmd_smart_hourly(self):
+        """Rappels intelligents sur la prime horaire (/hourly)."""
+        # Si hourly est déjà dispo (hourly_last_at = None)
+        res_dispo = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='hourly')
+        self.assertEqual(res_dispo['status'], 'already_available')
+        self.assertEqual(res_dispo['target'], 'hourly')
+
+        # Si un hourly a été réclamé il y a 20 minutes (reste 40 minutes = 2400s)
+        self.mock_db.players[self.actor]['hourly_last_at'] = self.mock_db.now - timedelta(minutes=20)
+        res_create = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='hourly')
+        self.assertEqual(res_create['status'], 'created')
+        self.assertEqual(res_create['remaining_seconds'], 2400)
+        self.assertEqual(res_create['reminder']['reminder_type'], 'hourly')
+
+    async def test_rmd_smart_claim(self):
+        """Rappels intelligents sur la saturation de la RAM (/claim)."""
+        # Avec 1 mineur T1 (25 H/s) et 1 ram T1 (200 o = 0.00002 RTM)
+        # Taux = 25 * 0.0000001 = 0.0000025 RTM/min
+        # Temps saturation = 0.00002 / 0.0000025 = 8 min = 480 s
+        res = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='claim')
+        self.assertEqual(res['status'], 'created')
+        self.assertEqual(res['remaining_seconds'], 480)
+        self.assertEqual(res['reminder']['reminder_type'], 'claim')
+
+        # Avance le temps de 480 secondes -> RAM saturée
+        self.mock_db.now += timedelta(seconds=480)
+        res_full = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='claim')
+        self.assertEqual(res_full['status'], 'already_available')
+
+    async def test_rmd_smart_events(self):
+        """Rappels intelligents sur les événements réseau."""
+        # 1. Par défaut dans un mock sans événements configurés, les événements sont actifs
+        res_dispo = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='events')
+        self.assertEqual(res_dispo['status'], 'already_available')
+        self.assertEqual(res_dispo['target'], 'events')
+
+        # 2. Événement spécifique 'hash' en cooldown dans 600s
+        self.mock_db.events['hash'] = {
+            'event': 'hash',
+            'next_at': self.mock_db.now + timedelta(seconds=600),
+        }
+        res = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='hash')
+        self.assertEqual(res['status'], 'created')
+        self.assertEqual(res['target'], 'events')
+        self.assertEqual(res['target_event'], 'hash')
+        self.assertEqual(res['remaining_seconds'], 600)
+        self.assertIn('reminder', res)
+
+    async def test_rmd_limit_quota(self):
+        """Vérifie la limite de 10 rappels actifs maximum par joueur."""
+        for i in range(10):
+            await self.service.execute(self.actor, None, 'rmd', action='create_custom', duration_sec=100 + i)
+
+        with self.assertRaises(GameError) as ctx:
+            await self.service.execute(self.actor, None, 'rmd', action='create_custom', duration_sec=999)
+        self.assertEqual(ctx.exception.key, 'reminder_limit_reached')
+
+    async def test_rmd_cog_dm_and_fallback(self):
+        """Vérifie l'envoi en MP et le repli sur salon textuel si MP bloqués."""
+        from commands.game.rmd import Reminder
+
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_user = MagicMock()
+        mock_user.send = AsyncMock()
+        mock_channel = MagicMock()
+        mock_channel.send = AsyncMock()
+
+        mock_bot.get_user = MagicMock(return_value=mock_user)
+        mock_bot.fetch_user = AsyncMock(return_value=mock_user)
+        mock_bot.get_channel = MagicMock(return_value=mock_channel)
+        mock_bot.fetch_channel = AsyncMock(return_value=mock_channel)
+
+        cog = Reminder(mock_bot)
+        cog.check_reminders_loop.cancel()
+
+        item = {
+            "id": 1,
+            "discord_id": self.actor,
+            "channel_id": 9999,
+            "message": "Tester le repli",
+            "remind_at": self.mock_db.now,
+        }
+
+        # 1. Envoi DM nominal
+        await cog._deliver_single_reminder(item)
+        mock_user.send.assert_called_once()
+        mock_channel.send.assert_not_called()
+
+        # 2. Envoi DM avec Forbidden -> repli salon
+        mock_user.send.reset_mock()
+        mock_channel.send.reset_mock()
+        mock_user.send.side_effect = discord.Forbidden(MagicMock(), "Cannot send messages to this user")
+
+        await cog._deliver_single_reminder(item)
+        mock_user.send.assert_called_once()
+        mock_channel.send.assert_called_once()
+        fallback_msg = mock_channel.send.call_args[0][0]
+        self.assertIn(f"<@{self.actor}>", fallback_msg)
+        self.assertIn("Tester le repli", fallback_msg)
+
+    async def test_rmd_prefix_no_args_shows_syntax_and_list_shows_list(self):
+        """Vérifie que !rmd affiche la syntaxe/aide et que !rmd list affiche la liste."""
+        from commands.game.rmd import Reminder
+
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_bot.user = MagicMock()
+        cog = Reminder(mock_bot)
+        cog.check_reminders_loop.cancel()
+
+        # 1. !rmd sans argument -> affiche la syntaxe (g_rmd_syntax)
+        ctx_help = MagicMock()
+        ctx_help.interaction = None
+        ctx_help.author.id = self.actor
+        ctx_help.guild = None
+        ctx_help.prefix = "!"
+        ctx_help.send = AsyncMock()
+
+        await cog.prefix_rmd.callback(cog, ctx_help)
+        ctx_help.send.assert_called_once()
+        embed_help = ctx_help.send.call_args[1].get("embed")
+        self.assertIsNotNone(embed_help)
+        self.assertIn("!rmd", embed_help.description)
+        self.assertIn("hourly", embed_help.description)
+
+        # 2. !rmd list -> affiche la liste
+        ctx_list = MagicMock()
+        ctx_list.interaction = None
+        ctx_list.author.id = self.actor
+        ctx_list.guild = None
+        ctx_list.prefix = "!"
+        ctx_list.send = AsyncMock()
+
+        await cog.prefix_rmd.callback(cog, ctx_list, "list")
+        ctx_list.send.assert_called_once()
+        embed_list = ctx_list.send.call_args[1].get("embed")
+        self.assertIsNotNone(embed_list)
+        self.assertTrue("aucun" in embed_list.description.lower() or "no" in embed_list.description.lower() or "rappel" in embed_list.description.lower())
+
+        # 3. !rmd 30m pause café -> création custom et affichage embed avec format_duration
+        ctx_custom = MagicMock()
+        ctx_custom.interaction = None
+        ctx_custom.author.id = self.actor
+        ctx_custom.guild = None
+        ctx_custom.prefix = "!"
+        ctx_custom.send = AsyncMock()
+
+        await cog.prefix_rmd.callback(cog, ctx_custom, "30m", "pause", "café")
+        ctx_custom.send.assert_called_once()
+        embed_custom = ctx_custom.send.call_args[1].get("embed")
+        self.assertIsNotNone(embed_custom)
+        self.assertIn("30min", embed_custom.description)
+        self.assertIn("pause café", embed_custom.description)
+
+        # 4. !rmd hourly (quand en cooldown)
+        self.mock_db.players[self.actor]["hourly_last_at"] = self.mock_db.now - timedelta(minutes=15)
+        ctx_hourly = MagicMock()
+        ctx_hourly.interaction = None
+        ctx_hourly.author.id = self.actor
+        ctx_hourly.guild = None
+        ctx_hourly.prefix = "!"
+        ctx_hourly.send = AsyncMock()
+
+        await cog.prefix_rmd.callback(cog, ctx_hourly, "hourly")
+        ctx_hourly.send.assert_called_once()
+        embed_hourly = ctx_hourly.send.call_args[1].get("embed")
+        self.assertIsNotNone(embed_hourly)
+        self.assertIn("45min", embed_hourly.description)
+
+        # 5. !rmd all -> active tous les rappels possibles
+        ctx_all = MagicMock()
+        ctx_all.interaction = None
+        ctx_all.author.id = self.actor
+        ctx_all.guild = None
+        ctx_all.prefix = "!"
+        ctx_all.send = AsyncMock()
+
+        await cog.prefix_rmd.callback(cog, ctx_all, "all")
+        ctx_all.send.assert_called_once()
+        embed_all = ctx_all.send.call_args[1].get("embed")
+        self.assertIsNotNone(embed_all)
+        self.assertIn("Hourly", embed_all.description)
+        self.assertIn("Claim RAM", embed_all.description)
+
+        # 6. Vérification du formatage de liste sans backticks autour de <t:
+        ctx_list2 = MagicMock()
+        ctx_list2.interaction = None
+        ctx_list2.author.id = self.actor
+        ctx_list2.guild = None
+        ctx_list2.prefix = "!"
+        ctx_list2.send = AsyncMock()
+
+        await cog.prefix_rmd.callback(cog, ctx_list2, "list")
+        ctx_list2.send.assert_called_once()
+        embed_list2 = ctx_list2.send.call_args[1].get("embed")
+        self.assertIsNotNone(embed_list2)
+        # Ne doit JAMAIS contenir `<t: avec des backticks autour
+        self.assertNotIn("`<t:", embed_list2.description)
+        self.assertIn("<t:", embed_list2.description)
+
+    async def test_rmd_all_multi_events_when_one_already_scheduled(self):
+        """Vérifie que /rmd all planifie les rappels pour tous les événements en cooldown même si l'un d'eux a déjà un rappel."""
+        # 1. Configurer 2 événements indisponibles en cooldown : 'hash' et 'pin'
+        self.mock_db.events['hash'] = {
+            'event': 'hash',
+            'next_at': self.mock_db.now + timedelta(seconds=600),
+        }
+        self.mock_db.events['pin'] = {
+            'event': 'pin',
+            'next_at': self.mock_db.now + timedelta(seconds=1200),
+        }
+
+        # 2. Planifier préalablement un rappel uniquement pour 'hash'
+        res_hash = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='hash')
+        self.assertEqual(res_hash['status'], 'created')
+        self.assertEqual(res_hash['target_event'], 'hash')
+
+        # 3. Exécuter /rmd all
+        res_all = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='all')
+        self.assertEqual(res_all['status'], 'created_all')
+        
+        # 4. Vérifier les statuts des événements dans les résultats
+        event_results = [r for r in res_all['results'] if r.get('target') == 'events']
+        hash_res = next((r for r in event_results if r.get('target_event') == 'hash'), None)
+        pin_res = next((r for r in event_results if r.get('target_event') == 'pin'), None)
+
+        self.assertIsNotNone(hash_res)
+        self.assertEqual(hash_res['status'], 'already_scheduled')
+
+        self.assertIsNotNone(pin_res)
+        self.assertEqual(pin_res['status'], 'created')
+
+class TestDirectMessagesSupport(unittest.IsolatedAsyncioTestCase):
+    """Vérifie l'activation sélective des MP pour les Slash Commands et le blocage du trade/préfixe."""
+
+    async def asyncSetUp(self):
+        from main import create_bot
+        self.bot = create_bot()
+        self.check_fn = self.bot._checks[0]
+
+    async def test_prefix_command_in_dm_is_silently_rejected(self):
+        """Vérifie qu'une commande textuelle à préfixe en MP est ignorée."""
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.interaction = None
+        mock_ctx.author.id = 12345
+        mock_ctx.command.name = "ping"
+        mock_ctx.command.module = "commands.utility.ping"
+
+        res = await self.check_fn(mock_ctx)
+        self.assertFalse(res)
+
+    async def test_slash_command_in_dm_is_allowed(self):
+        """Vérifie qu'une Slash Command autorisée (/ping) s'exécute en MP."""
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.interaction.response.is_done.return_value = False
+        mock_ctx.defer = AsyncMock()
+        mock_ctx.author.id = 12345
+        mock_ctx.command.name = "ping"
+        mock_ctx.command.module = "commands.utility.ping"
+
+        with patch("utils.check.Check.is_banned", return_value=False):
+            with patch("utils.check.Check.maintenance_enabled", return_value=False):
+                with patch("utils.check.Check.beta_enabled", return_value=False):
+                    res = await self.check_fn(mock_ctx)
+                    self.assertTrue(res)
+                    mock_ctx.defer.assert_awaited_once()
+
+    async def test_slash_trade_in_dm_is_blocked(self):
+        """Vérifie que la commande /trade est strictement bloquée en MP."""
+        from game.game_error import GameError
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.author.id = 12345
+        mock_ctx.command.name = "trade"
+        mock_ctx.command.module = "commands.game.trade"
+
+        with self.assertRaises(GameError) as ctx_err:
+            await self.check_fn(mock_ctx)
+        self.assertEqual(ctx_err.exception.key, "guild_only_command")
+
+    async def test_slash_prefix_in_dm_is_blocked(self):
+        """Vérifie que la commande /prefix est strictement bloquée en MP."""
+        from game.game_error import GameError
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.author.id = 12345
+        mock_ctx.command.name = "prefix"
+        mock_ctx.command.module = "commands.utility.prefix"
+
+        with self.assertRaises(GameError) as ctx_err:
+            await self.check_fn(mock_ctx)
+        self.assertEqual(ctx_err.exception.key, "guild_only_command")
+
+    async def test_report_command_error_silent_for_text_in_dm(self):
+        """Vérifie que report_command_error reste totalement silencieux pour les erreurs texte en MP."""
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.interaction = None
+        mock_ctx.respond = AsyncMock()
+        mock_ctx.send = AsyncMock()
+
+        handler = self.bot.on_command_error
+        await handler(mock_ctx, Exception("boom"))
+        mock_ctx.respond.assert_not_called()
+        mock_ctx.send.assert_not_called()
+
+    async def test_report_command_error_responds_for_slash_in_dm(self):
+        """Vérifie que report_command_error répond aux Slash Commands en MP."""
+        from game.game_error import GameError
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.interaction.locale = "fr"
+        mock_ctx.respond = AsyncMock()
+        mock_ctx.send = AsyncMock()
+        mock_ctx.author.id = 12345
+
+        handler = self.bot.on_application_command_error
+        await handler(mock_ctx, GameError("guild_only_command"))
+        mock_ctx.respond.assert_awaited_once()
+        sent_text = mock_ctx.respond.call_args[0][0]
+        self.assertIn("Action impossible en message privé", sent_text)
+
+    async def test_rmd_slash_subcommands_execution(self):
+        """Vérifie l'exécution directe des nouvelles sous-commandes slash de /rmd."""
+        from commands.game.rmd import Reminder
+
+        cog = Reminder(self.bot)
+        cog.check_reminders_loop.cancel()
+
+        mock_ctx = MagicMock()
+        mock_ctx.guild = None
+        mock_ctx.channel.id = 444
+        mock_ctx.author.id = 12345
+        mock_ctx.interaction = MagicMock()
+        mock_ctx.respond = AsyncMock()
+        mock_ctx.send = AsyncMock()
+
+        # 1. /rmd help
+        await cog.rmd_help(mock_ctx)
+        mock_ctx.respond.assert_called()
+
+        # 2. /rmd list
+        mock_ctx.respond.reset_mock()
+        await cog.rmd_list(mock_ctx)
+        mock_ctx.respond.assert_called()
+
+        # 3. /rmd cancel all
+        mock_ctx.respond.reset_mock()
+        await cog.rmd_cancel(mock_ctx, reminder_id="all")
+        mock_ctx.respond.assert_called()
 
 
 if __name__ == '__main__':
     unittest.main()
+
+
 

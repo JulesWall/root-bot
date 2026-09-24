@@ -54,11 +54,11 @@ def _to_dec(val) -> Decimal:
 
 
 def _fmt_usd(val) -> str:
-    return f"{_to_dec(val):,.2f} USD"
+    return f"{_to_dec(val):.2f} USD"
 
 
 def _fmt_rtm(val) -> str:
-    return f"{_to_dec(val):,.5f} RTM"
+    return f"{_to_dec(val):.5f} RTM"
 
 
 def _fmt_paris(dt: datetime) -> str:
@@ -156,18 +156,27 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
     }
     event_total = sum(event_cols.values())
     event_detail_parts = [
-        f"{name}: {val:,.2f}"
+        f"{name}: {val:.2f}"
         for name, val in event_cols.items()
         if val > 0
     ]
-    event_detail = f" ({', '.join(event_detail_parts)})" if event_detail_parts else ""
+    event_detail = f" ({' · '.join(event_detail_parts)})" if event_detail_parts else ""
 
     grant_usd = _to_dec(data.get('grant_usd'))
+    hourly_usd = _to_dec(data.get('hourly_usd'))
+    hourly_claims = int(data.get('hourly_claims') or 0)
+    hourly_detail = f" ({hourly_claims} claim{'s' if hourly_claims > 1 else ''})" if hourly_claims > 0 else ""
+
+    contracts_usd = _to_dec(data.get('contracts_usd'))
+    contracts_collected = int(data.get('contracts_collected') or 0)
+    contracts_detail = f" ({contracts_collected} contrat{'s' if contracts_collected > 1 else ''})" if contracts_collected > 0 else ""
 
     gains_block = (
         "```yaml\n"
         f"Minage RTM : {_fmt_rtm(mining_rtm)} ({rtm_per_str} / actif)\n"
         f"Mini-jeux  : {_fmt_usd(event_total)}{event_detail}\n"
+        f"Hourly     : {_fmt_usd(hourly_usd)}{hourly_detail}\n"
+        f"Contrats   : {_fmt_usd(contracts_usd)}{contracts_detail}\n"
         f"Dotations  : {_fmt_usd(grant_usd)}\n"
         "```"
     )
@@ -196,7 +205,7 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
         usd_detail.append(f"combat: {_fmt_usd(combat_usd)}")
     if upgrades_usd > 0:
         usd_detail.append(f"upgrades: {_fmt_usd(upgrades_usd)}")
-    usd_detail_str = f" ({', '.join(usd_detail)})" if usd_detail else ""
+    usd_detail_str = f" ({' · '.join(usd_detail)})" if usd_detail else ""
 
     rtm_detail = []
     if combat_rtm > 0:
@@ -205,7 +214,7 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
         rtm_detail.append(f"compil: {_fmt_rtm(compile_rtm)}")
     if scan_rtm > 0:
         rtm_detail.append(f"scan: {_fmt_rtm(scan_rtm)}")
-    rtm_detail_str = f" ({', '.join(rtm_detail)})" if rtm_detail else ""
+    rtm_detail_str = f" ({' · '.join(rtm_detail)})" if rtm_detail else ""
 
     depenses_block = (
         "```yaml\n"
@@ -291,14 +300,14 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
     )
 
     # --- 6. Solde net ---
-    net_usd = event_total + grant_usd + _to_dec(data.get('converted_usd')) - total_usd_spent
+    net_usd = event_total + grant_usd + hourly_usd + contracts_usd + _to_dec(data.get('converted_usd')) - total_usd_spent
     net_rtm = mining_rtm - _to_dec(data.get('converted_rtm')) - total_rtm_spent
 
     usd_sign = "+" if net_usd >= 0 else "-"
     rtm_sign = "+" if net_rtm >= 0 else "-"
 
-    usd_abs_str = f"{abs(net_usd):,.2f} USD"
-    rtm_abs_str = f"{abs(net_rtm):,.5f} RTM"
+    usd_abs_str = f"{abs(net_usd):.2f} USD"
+    rtm_abs_str = f"{abs(net_rtm):.5f} RTM"
 
     net_block = (
         "```diff\n"

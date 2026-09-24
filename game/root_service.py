@@ -36,7 +36,7 @@ class RootService:
         'network', 'buy', 'upgrade', 'reputation', 'top', 'set_language',
         'hash', 'pin', 'event', 'decode', 'anomaly', 'buffer', 'signal',
         'packet', 'trade', 'claim', 'claim_auto', 'claim_cancel', 'convert', 'compile', 'scan', 'hack',
-        'hourly',
+        'hourly', 'contract', 'rmd',
     }
 
     def __init__(self, database=None):
@@ -147,6 +147,22 @@ class RootService:
             locks=[player_lock_name(int(actor))],
         )
 
+    async def deliver_due_reminders(self) -> list[dict]:
+        """Récupère et supprime de la base les rappels arrivés à échéance pour notification."""
+        from game.db.reminders import RemindersDB
+        return await self.database.run(
+            RemindersDB.deliver_expired_reminders,
+            locks=['reminders'],
+        )
+
+    async def deliver_due_contract_notifications(self) -> list[dict]:
+        """Récupère et marque comme notifiés les contrats terminés pour notification MP."""
+        from game.db.contracts import ContractsDB
+        return await self.database.run(
+            ContractsDB.get_unnotified_expired,
+            locks=['contracts'],
+        )
+
     async def execute(self, actor: int, guild: int | None, method: str, **args):
         """
         Point d'entrée asynchrone universel pour l'exécution d'une action de jeu.
@@ -159,8 +175,8 @@ class RootService:
         """
         if method not in self.ACTIONS:
             raise GameError('invalid_selection')
-        # 'top' et 'event' sont des lectures pures : exécution concurrente sans verrou applicatif
-        readonly = (method in ('top', 'event'))
+        # 'top' et 'event' (ainsi que 'rmd list') sont des lectures pures : exécution concurrente sans verrou applicatif
+        readonly = (method in ('top', 'event') or (method == 'rmd' and args.get('action') == 'list'))
         manager = self._get_challenge_manager(method)
         resource = None
         if manager:
@@ -265,6 +281,8 @@ class RootService:
             return Player.claim(tx, actor)
         elif method == 'hourly':
             return Player.hourly(tx, actor)
+        elif method == 'contract':
+            return Player.contract(tx, actor, **args)
         elif method == 'claim_auto':
             return Player.start_autoclaim(tx, actor, count=args.get('count', 'all'))
         elif method == 'claim_cancel':
@@ -307,6 +325,242 @@ class RootService:
         elif manager := self._CHALLENGE_MANAGERS.get(method):
             return manager.process(tx, actor, args.get('guild_name'), args.get('guess'), resource=resource)
 
+        # 4. Rappels et Alertes Temporelles (/rmd)
+        elif method == 'rmd':
+            return self._dispatch_rmd(tx, actor, args)
+
         # Ne devrait jamais être atteint si ACTIONS et _dispatch sont synchronisés
+        raise GameError('invalid_selection')
+
+    def _dispatch_rmd(self, tx, actor: int, args: dict) -> dict:
+        """Gère les opérations de création, consultation et annulation de rappels."""
+        from datetime import timedelta
+        from game.db.reminders import RemindersDB
+        from game.events_manager import EventsManager
+        from game.math_config import MathConfig
+
+        action = args.get('action', 'list')
+        channel_id = args.get('channel_id')
+        guild_id = args.get('guild_id')
+
+        if action == 'help':
+            return {'status': 'help'}
+
+        if action == 'list':
+            reminders = RemindersDB.get_user_reminders(tx, actor)
+            return {'status': 'list', 'reminders': reminders}
+
+        if action == 'cancel':
+            target = args.get('reminder_id')
+            if str(target).lower() == 'all':
+                count = RemindersDB.clear_user_reminders(tx, actor)
+                return {'status': 'cancelled_all', 'count': count}
+            try:
+                rid = int(target)
+            except (ValueError, TypeError):
+                raise GameError('invalid_selection')
+            deleted = RemindersDB.delete_reminder(tx, rid, actor)
+            if not deleted:
+                raise GameError('reminder_not_found')
+            return {'status': 'cancelled', 'reminder_id': rid}
+
+        if action == 'create_custom':
+            dur_sec = args.get('duration_sec')
+            try:
+                dur_sec = int(dur_sec)
+            except (ValueError, TypeError):
+                raise GameError('invalid_duration')
+            if dur_sec < 10 or dur_sec > 30 * 86400:
+                raise GameError('duration_out_of_range')
+            message = str(args.get('message') or 'Rappel')[:200]
+            remind_at = tx.now + timedelta(seconds=dur_sec)
+            created = RemindersDB.create_reminder(
+                tx, actor, remind_at=remind_at, message=message,
+                channel_id=channel_id, guild_id=guild_id, reminder_type='custom',
+            )
+            return {'status': 'created', 'reminder': created, 'remind_at': remind_at, 'duration_seconds': dur_sec}
+
+        if action == 'create_smart':
+            target = str(args.get('target', '')).lower()
+            p = PlayerData.get(tx, actor)
+
+            if target == 'all':
+                existing_reminders = RemindersDB.get_user_reminders(tx, actor)
+                existing_map = {r.get('reminder_type'): r for r in existing_reminders}
+                results = []
+
+                # 1. Hourly
+                if 'hourly' in existing_map:
+                    results.append({
+                        'target': 'hourly',
+                        'status': 'already_scheduled',
+                        'remind_at': existing_map['hourly'].get('remind_at'),
+                    })
+                else:
+                    last_hourly = p.get('hourly_last_at')
+                    cooldown_sec = 3600
+                    elapsed = (tx.now - last_hourly).total_seconds() if last_hourly else 999999
+                    if last_hourly is None or elapsed >= cooldown_sec:
+                        results.append({'target': 'hourly', 'status': 'already_available'})
+                    else:
+                        remind_at = last_hourly + timedelta(seconds=cooldown_sec)
+                        rem_sec = int(cooldown_sec - elapsed)
+                        created = RemindersDB.create_reminder(
+                            tx, actor, remind_at=remind_at, message="Prime horaire (/hourly) disponible !",
+                            channel_id=channel_id, guild_id=guild_id, reminder_type='hourly',
+                        )
+                        results.append({
+                            'target': 'hourly',
+                            'status': 'created',
+                            'remind_at': remind_at,
+                            'remaining_seconds': rem_sec,
+                            'reminder': created,
+                        })
+
+                # 2. Claim (RAM)
+                if 'claim' in existing_map:
+                    results.append({
+                        'target': 'claim',
+                        'status': 'already_scheduled',
+                        'remind_at': existing_map['claim'].get('remind_at'),
+                    })
+                else:
+                    stats = MathConfig.calculate_player_stats(p)
+                    if stats.get('total_hashrate_hs', 0) <= 0:
+                        results.append({'target': 'claim', 'status': 'no_miner'})
+                    else:
+                        state = MathConfig.compute_mining_progress(p, stats, tx.now)
+                        sec_to_full = state.get('seconds_to_full', 0)
+                        if state.get('is_full') or sec_to_full <= 0:
+                            results.append({'target': 'claim', 'status': 'already_available'})
+                        else:
+                            remind_at = tx.now + timedelta(seconds=sec_to_full)
+                            created = RemindersDB.create_reminder(
+                                tx, actor, remind_at=remind_at, message="Mémoire vive pleine ! Récolte /claim prête.",
+                                channel_id=channel_id, guild_id=guild_id, reminder_type='claim',
+                            )
+                            results.append({
+                                'target': 'claim',
+                                'status': 'created',
+                                'remind_at': remind_at,
+                                'remaining_seconds': sec_to_full,
+                                'reminder': created,
+                            })
+
+                # 3. Events
+                existing_event_reminders = {
+                    r.get('target_event'): r
+                    for r in existing_reminders
+                    if r.get('reminder_type') == 'events' and r.get('target_event')
+                }
+                generic_event_reminder = next(
+                    (r for r in existing_reminders if r.get('reminder_type') == 'events' and not r.get('target_event')),
+                    None
+                )
+
+                events_status = EventsManager.get_all_events_status(tx)
+                events_map = events_status.get('events', {})
+                unavailable_events = [
+                    (ev_name, info) for ev_name, info in events_map.items()
+                    if info.get('status') != 'active'
+                ]
+                unavailable_events.sort(key=lambda item: item[1].get('remaining_seconds', 999999))
+
+                if not unavailable_events:
+                    results.append({'target': 'events', 'status': 'already_available'})
+                else:
+                    for ev_name, info in unavailable_events:
+                        existing = existing_event_reminders.get(ev_name) or (generic_event_reminder if not existing_event_reminders else None)
+                        if existing:
+                            results.append({
+                                'target': 'events',
+                                'target_event': ev_name,
+                                'status': 'already_scheduled',
+                                'remind_at': existing.get('remind_at'),
+                            })
+                        else:
+                            remind_at = info.get('next_at')
+                            rem_sec = info.get('remaining_seconds', 0)
+                            try:
+                                created = RemindersDB.create_reminder(
+                                    tx, actor, remind_at=remind_at, message=f"Événement {ev_name} disponible !",
+                                    channel_id=channel_id, guild_id=guild_id, reminder_type='events', target_event=ev_name,
+                                )
+                                results.append({
+                                    'target': 'events',
+                                    'target_event': ev_name,
+                                    'status': 'created',
+                                    'remind_at': remind_at,
+                                    'remaining_seconds': rem_sec,
+                                    'reminder': created,
+                                })
+                            except GameError as ge:
+                                if ge.key == 'reminder_limit_reached':
+                                    break
+                                raise
+
+                return {'status': 'created_all', 'results': results}
+
+            if target == 'hourly':
+                last_hourly = p.get('hourly_last_at')
+                cooldown_sec = 3600
+                if last_hourly is None:
+                    return {'status': 'already_available', 'target': 'hourly'}
+                elapsed = (tx.now - last_hourly).total_seconds()
+                if elapsed >= cooldown_sec:
+                    return {'status': 'already_available', 'target': 'hourly'}
+                remind_at = last_hourly + timedelta(seconds=cooldown_sec)
+                rem_sec = int(cooldown_sec - elapsed)
+                created = RemindersDB.create_reminder(
+                    tx, actor, remind_at=remind_at, message="Prime horaire (/hourly) disponible !",
+                    channel_id=channel_id, guild_id=guild_id, reminder_type='hourly',
+                )
+                return {'status': 'created', 'reminder': created, 'remind_at': remind_at, 'target': 'hourly', 'remaining_seconds': rem_sec}
+
+            if target in ('events', 'event') or target in EventsManager.SUPPORTED_EVENTS:
+                events_status = EventsManager.get_all_events_status(tx)
+                events_map = events_status.get('events', {})
+                if target in EventsManager.SUPPORTED_EVENTS:
+                    info = events_map.get(target)
+                    if not info or info.get('status') == 'active':
+                        return {'status': 'already_available', 'target': target}
+                    remind_at = info.get('next_at')
+                    rem_sec = info.get('remaining_seconds', 0)
+                    chosen_event = target
+                else:
+                    active_any = [k for k, v in events_map.items() if v.get('status') == 'active']
+                    if active_any:
+                        return {'status': 'already_available', 'target': 'events', 'active_event': active_any[0]}
+                    sorted_events = sorted(
+                        events_map.items(),
+                        key=lambda item: item[1].get('remaining_seconds', 999999),
+                    )
+                    chosen_event, info = sorted_events[0]
+                    remind_at = info.get('next_at')
+                    rem_sec = info.get('remaining_seconds', 0)
+
+                created = RemindersDB.create_reminder(
+                    tx, actor, remind_at=remind_at, message=f"Événement {chosen_event} disponible !",
+                    channel_id=channel_id, guild_id=guild_id, reminder_type='events', target_event=chosen_event,
+                )
+                return {'status': 'created', 'reminder': created, 'remind_at': remind_at, 'target': 'events', 'target_event': chosen_event, 'remaining_seconds': rem_sec}
+
+            if target == 'claim':
+                stats = MathConfig.calculate_player_stats(p)
+                if stats.get('total_hashrate_hs', 0) <= 0:
+                    raise GameError('no_miner')
+                state = MathConfig.compute_mining_progress(p, stats, tx.now)
+                sec_to_full = state.get('seconds_to_full', 0)
+                if state.get('is_full') or sec_to_full <= 0:
+                    return {'status': 'already_available', 'target': 'claim'}
+                remind_at = tx.now + timedelta(seconds=sec_to_full)
+                created = RemindersDB.create_reminder(
+                    tx, actor, remind_at=remind_at, message="Mémoire vive pleine ! Récolte /claim prête.",
+                    channel_id=channel_id, guild_id=guild_id, reminder_type='claim',
+                )
+                return {'status': 'created', 'reminder': created, 'remind_at': remind_at, 'target': 'claim', 'remaining_seconds': sec_to_full}
+
+            raise GameError('invalid_selection')
+
         raise GameError('invalid_selection')
 

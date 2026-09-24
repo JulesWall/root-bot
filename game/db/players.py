@@ -167,6 +167,7 @@ class UpdatePlayer:
             'secret_id', 'attack_points',
             'autoclaim_credits', 'autoclaim_active',
             'hourly_last_at', 'hourly_combo_bonus', 'hourly_streak',
+            'contract_fidelity', 'contracts_completed',
         } | {f'{kind}_t{tier}' for kind in ('mining', 'attack', 'bay_defense') for tier in range(1, 7)}
 
         if not values or any(key not in allowed for key in values):
@@ -1064,14 +1065,25 @@ class Player:
 
     @staticmethod
     def top(tx, category: str = 'reputation') -> dict:
-        """Retourne le Top 10 des joueurs classés par réputation, USD, RTM ou victoires d'événements."""
+        """Retourne le Top 10 des joueurs classés par réputation, USD, RTM, victoires d'événements ou hashrate (H/s)."""
         raw_cat = (category or 'reputation').lower().strip()
-        if raw_cat == 'rep':
+        if raw_cat in ('rep', 'reputation'):
             normalized = 'reputation'
         elif raw_cat in ('event', 'events', 'e'):
             normalized = 'events'
+        elif raw_cat in ('hashrate', 'hs', 'h/s', 'mining', 'h'):
+            normalized = 'hashrate'
         else:
             normalized = raw_cat
+
+        if normalized == 'hashrate':
+            terms = [
+                f"(COALESCE(mining_t{tier}, 0) * {MathConfig.get_module_stat('mining', tier)})"
+                for tier in range(1, 6)
+            ]
+            h_expr = " + ".join(terms)
+            rows = tx.all(f'SELECT discord_id, ({h_expr}) AS score FROM players ORDER BY score DESC, discord_id ASC LIMIT 10')
+            return {'ranking': rows, 'category': 'hashrate'}
 
         column = {'reputation': 'reputation', 'usd': 'dollars', 'rtm': 'rootium', 'events': 'events_won'}.get(normalized, 'reputation')
         canonical = 'reputation' if column == 'reputation' else normalized
@@ -1292,3 +1304,27 @@ class Player:
             'next_available_ts': next_ts,
             'combo_deadline_ts': combo_ts,
         }
+
+    @staticmethod
+    def contract(tx, actor: int, action: str = 'view', duration: str | None = None) -> dict:
+        """Gère les contrats de travail (/contract).
+
+        Actions supportées :
+        - 'view' : consulte les offres ou le contrat en cours
+        - 'start' : accepte et lance une offre selon sa durée ('short', 'medium', 'long')
+        - 'collect' : récupère le paiement d'un contrat arrivé à échéance
+        """
+        from game.db.contracts import ContractsDB
+
+        action = (action or 'view').strip().lower()
+        if action == 'view':
+            return ContractsDB.get_status(tx, actor)
+        elif action == 'start':
+            if not duration:
+                raise GameError('invalid_contract_duration')
+            return ContractsDB.start(tx, actor, duration)
+        elif action == 'collect':
+            return ContractsDB.collect(tx, actor)
+        else:
+            raise GameError('invalid_selection')
+

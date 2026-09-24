@@ -19,7 +19,7 @@ from game.challenge_tracker import ChallengeTracker
 from utils import text
 from utils.logger import Logger
 from utils.text import format_usd
-from utils.time_format import format_duration
+from utils.time_format import format_duration, to_utc_timestamp
 
 
 class MiniGameCog(BaseGameCog):
@@ -140,7 +140,7 @@ class MiniGameCog(BaseGameCog):
         if status == "cooldown":
             remaining_str = format_duration(result.get("remaining_seconds", 0))
             next_at = result.get("next_at")
-            timestamp = int(next_at.timestamp()) if next_at and hasattr(next_at, "timestamp") else 0
+            timestamp = to_utc_timestamp(next_at)
 
             if result.get("last_found_by"):
                 winner_display = await self._resolve_winner_display(result["last_found_by"])
@@ -159,6 +159,22 @@ class MiniGameCog(BaseGameCog):
                     remaining=remaining_str,
                     timestamp=timestamp,
                 )
+            await self._reply_text(ctx, content)
+            return
+
+        # 1bis. Cooldown individuel joueur
+        if status == "player_cooldown":
+            remaining_str = format_duration(result.get("remaining_seconds", 0))
+            next_guess_at = result.get("next_guess_at")
+            timestamp = to_utc_timestamp(next_guess_at)
+            content = text.get(
+                ctx,
+                f"g_{self.config.key}_player_cooldown",
+                remaining=remaining_str,
+                remaining_ts=f"<t:{timestamp}:R>",
+                timestamp=timestamp,
+                **result,
+            )
             await self._reply_text(ctx, content)
             return
 

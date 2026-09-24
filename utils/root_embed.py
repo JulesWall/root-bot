@@ -37,6 +37,8 @@ class RootEmbed(discord.Embed):
         'compile':     discord.Color.from_rgb(231, 76, 60),    # Rouge offensif (Production d'ATK)
         'scan':        discord.Color.from_rgb(220, 50, 50),    # Rouge offensif (Scan PvP)
         'hourly':      discord.Color.from_rgb(52, 152, 219),   # Bleu azur (Récompense horaire)
+        'contract':    discord.Color.from_rgb(0, 168, 204),    # Bleu canard (Root CyberSec)
+        'rmd':         discord.Color.from_rgb(155, 89, 182),   # Violet / Améthyste (Rappels)
     }
 
     def __init__(self, ctx, action: str, content: str):

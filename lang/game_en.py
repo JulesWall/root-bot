@@ -9,6 +9,7 @@ text = {
     'g_cancelled': '> 🚫 **Operation Cancelled** · The action was interrupted.',
     'g_empty': '*None*',
     'g_line': '> 🔹 **{label}**: {value}',
+    'g_error_guild_only_command': '> ⛔ **Action unavailable in Direct Messages** · This command can only be executed within a Discord server.',
     'g_error_no_network': '> 🌐 **Node Not Found** · You do not have an active network yet. Use `/network` to create your player profile.',
     'g_error_database_unconfigured': '> ⚙️ **Maintenance Required** · The Root database must be configured and initialized by an administrator.',
     'g_error_database_unavailable': '> 🔌 **Connection Lost** · The database is temporarily unavailable. Try again in a moment.',
@@ -169,20 +170,24 @@ text = {
     'g_top_cat_usd': '💵 USD Treasury',
     'g_top_cat_rtm': '◈ Rootium Reserve',
     'g_top_cat_events': '🏆 Event Victories',
+    'g_top_cat_hashrate': '⛏️ Hashrate Power (H/s)',
+    'g_top_cat_hs': '⛏️ Hashrate Power (H/s)',
     'g_top_btn_rep': 'Reputation',
     'g_top_btn_usd': 'USD',
     'g_top_btn_rtm': 'Rootium',
     'g_top_btn_events': 'Events',
+    'g_top_btn_hs': 'H/s',
     'g_top_footer': 'Root Leaderboard • Live Top 10',
     'g_top_footer_user': 'Root Leaderboard • Your position: #{rank} in Top 10',
     'g_hash_title': '🧩 HASH CHALLENGE',
-    'g_hash_active_info': '🧩 **HASH CHALLENGE**\nTarget value between **{current_min}** and **{current_max}**.\n👥 **Competing players:** `{players_count}`\n*Try your luck with `{prefix}hash <value>`*',
+    'g_hash_active_info': '🧩 **HASH CHALLENGE**\nTarget value between **{current_min}** and **{current_max}**.\n👥 **Competing players:** `{players_count}`\n⏱️ **Cooldown:** 1 guess every 8 minutes per player.\n*Try your luck with `{prefix}hash <value>`*',
+    'g_hash_player_cooldown': '⏳ **Rate limit!** You already submitted a guess for this hash.\nYou can try again {remaining_ts} (`{remaining}`).\n📊 Current range: **{current_min} — {current_max}**',
     'g_hash_too_low': '❌ **Too low.** (*Higher!*)\nRemaining range:\n**{current_min} — {current_max}**\n👥 **Competing players:** `{players_count}`',
     'g_hash_too_high': '❌ **Too high.** (*Lower!*)\nRemaining range:\n**{current_min} — {current_max}**\n👥 **Competing players:** `{players_count}`',
     'g_hash_won': '✅ **HASH VALIDATED**\n<@{winner}> won **${reward} USD**!',
     'g_hash_cooldown': '⏳ The last hash was found by {last_found_by} on server **{last_found_on}**.\nNext hash will be available in **{remaining}**.',
     'g_hash_cooldown_no_winner': '⏳ Next hash will be available in **{remaining}**.',
-    'g_error_hash_usage': '⚠️ **Invalid Syntax** · Usage:\n• `{prefix}hash` ➔ View active challenge and remaining range\n• `{prefix}hash <value>` ➔ Submit a guess',
+    'g_error_hash_usage': '⚠️ **Invalid Syntax** · Usage:\n• `{prefix}hash` ➔ View active challenge and remaining range\n• `{prefix}hash <value>` ➔ Submit a guess (1 try / 8 min)',
     'g_pin_title': '🔐 PIN CODE',
     'g_pin_active_info': '🔐 **PIN CODE**\nYour personal search range: **{current_min}** and **{current_max}**.\n🎯 Attempts: `{tries}` · 👥 **Competing players:** `{players_count}`\n*Try your luck with `{prefix}pin <value>`*',
     'g_pin_too_low': '❌ **Too low.** (*Higher!*)\nYour remaining range:\n**{current_min} — {current_max}**\n🎯 Attempts: `{tries}` · 👥 **Competing players:** `{players_count}`',
@@ -291,6 +296,56 @@ text = {
     'g_reputation_beta_granted': '\n🎉 **Beta Access Granted!** <@{recipient}> has been added to authorized players and can now access the full game.',
     'g_reputation_beta_autoclaim': '🎫 <@{giver}> receives **{credits} autoclaim credits** for this sponsorship.',
     'g_reputation_dm_beta_granted': '🎉 **Congratulations!** You have also received permanent access to the Root Beta! All game features are now open to you.',
+    'g_error_contract_in_progress': '> ⏳ **Contract in Progress** · You already have an active work contract (deadline: <t:{timestamp}:R>).',
+    'g_error_no_active_contract': '> 📄 **No Active Contract** · You do not have any contract in progress. Use `/contract` to pick a mission.',
+    'g_error_contract_not_ready': '> ⏱️ **Contract in Progress** · Your mission is not completed yet. Come back in **{remaining}**!',
+    'g_error_invalid_contract_duration': '> ⚠️ **Invalid Duration** · Choose a valid duration: `short` (30m), `medium` (2h), or `long` (6h).',
+    'g_contract_special_badge': '⭐ **Special Mission (+50% USD active)**\n',
+    'g_contract_offers': '{special_badge}**{agency}** · Available Contracts:\n\n> ⏱️ **Short** (30 min): `{short_usd} USD`\n> ⏱️ **Medium** (2 hours): `{medium_usd} USD`\n> ⏱️ **Long** (6 hours): `{long_usd} USD`\n\nAgency Loyalty: `{fidelity_bar}` **{fidelity}/{threshold}**{fidelity_hint}',
+    'g_contract_active': '{special_badge}**{agency}** · Active Contract:\n\n> 💼 **Mission**: {title}\n> 💵 **Reward**: `{reward_usd} USD`\n> ⏱️ **Deadline**: <t:{expires_ts}:R> *(around <t:{expires_ts}:t>)*',
+    'g_contract_ready': '{special_badge}**{agency}** · Contract Completed!\n\n> 💼 **Mission**: {title}\n> 💵 **Reward**: `{reward_usd} USD`\n\nClick below to collect your salary.',
+    'g_contract_collected': '💵 **Payment Collected!** Mission *{title}* completed for **{agency}**.\n> 💵 **Reward**: `+{reward_usd} USD`\n> 💰 **New Balance**: `{new_dollars} USD`',
+    'g_contract_btn_short': 'Short (30m)',
+    'g_contract_btn_medium': 'Medium (2h)',
+    'g_contract_btn_long': 'Long (6h)',
+    'g_contract_btn_collect': 'Collect {usd} USD',
+    # ── Reminders (/rmd) & Contrats ───────────────────────────────────────────
+    'g_rmd_syntax': (
+        "### 🔔 `{prefix}rmd` Command Syntax\n\n"
+        "**⚡ Automatic Game Reminders:**\n"
+        "> • `{prefix}rmd all` — Enable all possible game reminders (hourly, claim, events).\n"
+        "> • `{prefix}rmd hourly` — Alerts as soon as the hourly reward is ready.\n"
+        "> • `{prefix}rmd claim` — Alerts when your mining RAM buffer hits 100%.\n"
+        "> • `{prefix}rmd events` — Alerts when the next network mini-game starts.\n\n"
+        "**⏱️ Custom Timers:**\n"
+        "> • `{prefix}rmd <duration> [note]` — Custom timer from 10s to 30 days.\n"
+        "> *(Examples: `{prefix}rmd 30m coffee`, `{prefix}rmd 2h check contracts`, `{prefix}rmd 45s`)*\n\n"
+        "**📋 Manage Your Reminders:**\n"
+        "> • `{prefix}rmd list` — Show all your pending reminders.\n"
+        "> • `{prefix}rmd cancel <id>` — Cancel a specific reminder.\n"
+        "> • `{prefix}rmd cancel all` — Clear all your active reminders.\n\n"
+        "💡 *Delivered directly via DM (with channel fallback if your DMs are closed).*"
+    ),
+    'g_rmd_created_smart': '> 🔔 **Reminder set** · {target_name} in **{duration}** (<t:{ts}:R>).',
+    'g_rmd_created_custom': '> 🔔 **Reminder set** · In **{duration}** (<t:{ts}:R>): **{message}**.',
+    'g_rmd_created_all_title': '🔔 **Root Reminders Activation (/rmd all)**',
+    'g_rmd_created_all_created': '> • ✅ **{target_name}**: scheduled in **{duration}** (<t:{ts}:R>)',
+    'g_rmd_created_all_available': '> • ℹ️ **{target_name}**: already available! ({cmd})',
+    'g_rmd_created_all_already': '> • ⏳ **{target_name}**: already active (<t:{ts}:R>)',
+    'g_rmd_created_all_no_miner': '> • ⚠️ **{target_name}**: no active miner',
+    'g_rmd_already_available': '> ℹ️ **{target_name} is already available!** You can use it right now with `{cmd}`.',
+    'g_rmd_list_title': '🔔 **Your Active Reminders**',
+    'g_rmd_list_empty': '> ℹ️ You have no active reminders pending.',
+    'g_rmd_list_item': '> • **#{id}** · <t:{ts}:R> · `{type}` : {message}',
+    'g_rmd_cancel_success': '> ✅ **Reminder #{id} cancelled** successfully.',
+    'g_rmd_cancel_all_success': '> ✅ **All your reminders ({count}) have been cancelled**.',
+    'g_rmd_dm_notification': '🔔 **ROOT OS REMINDER**\n> {message}\n> ⏱️ *Scheduled for <t:{ts}:t>*',
+    'g_rmd_fallback_notification': '{user} 🔔 **Reminder** : {message}',
+    'g_contract_expired_dm': '💼 **MISSION COMPLETED** · Your work contract for **{agency}** (*{title}*) has reached completion!\n> 💵 Available reward: **{reward_usd} USD**\n> 💡 Collect your payment now with `/contract collect`.',
+    'g_error_reminder_limit_reached': '> ⛔ **Limit reached** · You already have {max_count} active reminders. Use `{prefix}rmd cancel <id|all>` to free up slots.',
+    'g_error_invalid_duration': '> ⚠️ **Invalid duration format** · Valid examples: `30s`, `15min`, `2h`, `1h30m`, `1d`.',
+    'g_error_duration_out_of_range': '> ⚠️ **Duration out of range** · Duration must be between 10 seconds and 30 days.',
+    'g_error_reminder_not_found': '> ❌ **Reminder not found** or already expired.',
 }
 
 descriptions = {
@@ -314,6 +369,8 @@ descriptions = {
     'scan': 'Scan a player\'s network to discover their secret identifier.',
     'hack': 'Launch a PvP cyberattack against an enemy network.',
     'hourly': 'Claim your hourly USD reward with streak combo bonus.',
+    'contract': 'Consult, accept, or collect guaranteed work contracts for USD.',
+    'rmd': 'Schedule, view, or cancel time-based reminders.',
 }
 
 labels = {
@@ -356,4 +413,6 @@ labels = {
     'act_compile': '⚔️ ATK Production',
     'act_scan': '🔍 Network Scan',
     'act_hack': '⚔️ PvP Attack',
+    'act_contract': '💼 Work Contracts',
+    'act_rmd': '🔔 Reminder & Alert',
 }

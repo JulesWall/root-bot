@@ -42,6 +42,12 @@ def format_rtm(val) -> str:
     return f"{rounded:,.5f}"
 
 
+def format_seconds(seconds: int | float) -> str:
+    """Formate une durée en secondes en format lisible (alias de time_format.format_duration)."""
+    from utils.time_format import format_duration
+    return format_duration(seconds)
+
+
 def get_locale(ctx) -> str:
     """
     Détermine la langue applicable au contexte donné selon les règles hiérarchiques :

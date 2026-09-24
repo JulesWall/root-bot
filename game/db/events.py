@@ -65,3 +65,60 @@ class EventsDB:
             (event_name, opened_at, solved_at, max(0, int(duration_seconds)), winner_id, reward),
         )
 
+    @staticmethod
+    def get_recent_wins_for_user(tx, winner_id: int, limit: int = 20, since_dt: datetime | None = None) -> list[dict]:
+        """Récupère l'historique récent des victoires d'un joueur depuis event_availability_logs."""
+        if since_dt is not None:
+            return tx.all(
+                """
+                SELECT id, event, opened_at, solved_at, duration_seconds, winner_id, reward
+                FROM event_availability_logs
+                WHERE winner_id = %s AND solved_at >= %s
+                ORDER BY solved_at DESC
+                LIMIT %s
+                """,
+                (winner_id, since_dt, limit),
+            ) or []
+        return tx.all(
+            """
+            SELECT id, event, opened_at, solved_at, duration_seconds, winner_id, reward
+            FROM event_availability_logs
+            WHERE winner_id = %s
+            ORDER BY solved_at DESC
+            LIMIT %s
+            """,
+            (winner_id, limit),
+        ) or []
+
+    @staticmethod
+    def get_resolution_metrics_by_user(tx, since_dt: datetime | None = None) -> dict[int, list[dict]]:
+        """Récupère les résolutions d'événements groupées par joueur pour la période considérée."""
+        if since_dt is not None:
+            rows = tx.all(
+                """
+                SELECT event, opened_at, solved_at, duration_seconds, winner_id, reward
+                FROM event_availability_logs
+                WHERE winner_id IS NOT NULL AND solved_at >= %s
+                ORDER BY solved_at ASC
+                """,
+                (since_dt,),
+            ) or []
+        else:
+            rows = tx.all(
+                """
+                SELECT event, opened_at, solved_at, duration_seconds, winner_id, reward
+                FROM event_availability_logs
+                WHERE winner_id IS NOT NULL
+                ORDER BY solved_at ASC
+                """,
+            ) or []
+
+        grouped = {}
+        for r in rows:
+            wid = int(r["winner_id"])
+            if wid not in grouped:
+                grouped[wid] = []
+            grouped[wid].append(r)
+        return grouped
+
+

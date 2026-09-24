@@ -48,7 +48,7 @@
     "required_firewall": {
       "mining": 0,
       "attack": 1,
-      "bay_defense": 0
+      "bay_defense": 1
     },
     "cost_multiplier": 1.5,
     "sponsor_autoclaim_credits": 10
@@ -102,15 +102,16 @@
     "5": 3
   },
   "hash_challenge": {
-    "range_size": 1000000,
-    "reward_min_usd": 25,
-    "reward_max_usd": 75,
+    "range_size": 1000,
+    "player_cooldown_seconds": 480,
+    "reward_min_usd": 75,
+    "reward_max_usd": 200,
     "day_start_hour_paris": 11,
     "day_end_hour_paris": 1,
-    "day_interval_min_minutes": 15,
-    "day_interval_max_minutes": 45,
-    "night_interval_min_minutes": 25,
-    "night_interval_max_minutes": 60
+    "day_interval_min_minutes": 3,
+    "day_interval_max_minutes": 8,
+    "night_interval_min_minutes": 5,
+    "night_interval_max_minutes": 15
   },
   "pin_challenge": {
     "range_size": 125,
@@ -208,5 +209,28 @@
     "reward_max_usd": 75,
     "cooldown_minutes": 60,
     "combo_window_minutes": 20
+  },
+  "contracts": {
+    "agency_name": "Agence Root CyberSec",
+    "fidelity_threshold": 5,
+    "special_bonus_multiplier": 1.5,
+    "tiers": {
+      "short": {
+        "duration_seconds": 1800,
+        "reward_usd": 75,
+        "hourly_rate": 150
+      },
+      "medium": {
+        "duration_seconds": 7200,
+        "reward_usd": 250,
+        "hourly_rate": 125
+      },
+      "long": {
+        "duration_seconds": 21600,
+        "reward_usd": 600,
+        "hourly_rate": 100
+      }
+    }
   }
 }
+

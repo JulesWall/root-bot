@@ -7,13 +7,12 @@ Fonctionnalités :
 3. Analyse statistique avancée (moyenne, écart-type, constance globale et détection de streak automatisé).
 4. Transmet le récapitulatif dans le salon de logs de modération dédié (sans aucun affichage public).
 5. Réinitialise à zéro la table daily_claim_logs pour la journée suivante après envoi réussi.
-6. Commandes préfixes réservées aux administrateurs (OP) :
-   - !claimreport (alias !dailyclaims, !topclaim) : force l'émission du rapport quotidien et la réinitialisation.
-   - !claimaudit <@joueur|id> : audite en direct le comportement d'un joueur suspect sur la journée en cours.
+6. Commande préfixe réservée aux administrateurs (OP) :
+   - !claimaudit <@joueur|id> : audite en direct le comportement d'un joueur suspect sur les dernières 48h.
 """
 
 import asyncio
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import logging
 from zoneinfo import ZoneInfo
 
@@ -103,7 +102,7 @@ class ClaimModeration(commands.Cog):
             logger.exception("Erreur lors de la vérification du rattrapage du rapport quotidien de claims")
 
     async def _run_daily_report(self) -> str:
-        """Lit les statistiques, envoie le rapport dans les logs de modération, purge la table et met à jour la date.
+        """Lit les statistiques des 24h, envoie le rapport, purge les logs > 48h et met à jour la date.
 
         Retourne 'busy' si déjà en cours, 'success' après réussite complète.
         Lève une exception si l'envoi ou la purge échoue (les logs sont alors préservés).
@@ -114,45 +113,34 @@ class ClaimModeration(commands.Cog):
 
         async with self._report_lock:
             database = self.bot.root_service.database
-            summary = await database.run(DailyClaimStatsDB.get_summary, readonly=True)
+            summary = await database.run(
+                lambda tx: DailyClaimStatsDB.get_summary(
+                    tx,
+                    limit_users=50,
+                    since_dt=tx.now - timedelta(hours=24),
+                    claims_since_dt=tx.now - timedelta(hours=48),
+                ),
+                readonly=True,
+            )
 
             # Envoi du rapport : toute exception interrompt l'exécution avant la purge
             await self.bot.discord_logger.log_daily_claim_report(summary)
 
             today_str = _get_paris_today_str()
 
-            def _reset_and_update_date(tx):
-                DailyClaimStatsDB.reset(tx)
+            def _purge_and_update_date(tx):
+                cutoff_48h = tx.now - timedelta(hours=48)
+                DailyClaimStatsDB.purge_older_than(tx, cutoff_48h)
                 DailyClaimStatsDB.set_last_report_date(tx, today_str, tx.now)
 
-            await database.run(_reset_and_update_date)
-            logger.info("Rapport claims 24h envoyé, logs réinitialisés et date mise à jour (%s).", today_str)
+            await database.run(_purge_and_update_date)
+            logger.info("Rapport claims 24h envoyé, logs > 48h purgés et date mise à jour (%s).", today_str)
             return 'success'
 
     # ── Commandes Préfixes OP ────────────────────────────────────────────────
-    @commands.command(name="claimreport", aliases=["dailyclaims", "topclaim"])
-    async def manual_claim_report(self, ctx):
-        """Déclenche manuellement le rapport 24h des récoltes (/claim) et réinitialise (réservé aux OP)."""
-        if not await self.check.is_op(self.bot, ctx.author.id):
-            return
-        if self._report_lock.locked():
-            await ctx.send("⚠️ Un rapport de modération des claims est déjà en cours d'exécution.")
-            return
-
-        await ctx.send("⏳ Génération et envoi du rapport quotidien des claims en cours...")
-        try:
-            status = await self._run_daily_report()
-            if status == 'busy':
-                await ctx.send("⚠️ Un rapport est déjà en cours d'exécution.")
-            else:
-                await ctx.send("✅ Rapport des claims généré et envoyé dans le salon de modération. Logs réinitialisés.")
-        except Exception:
-            logger.exception("Erreur lors de l'exécution manuelle du rapport quotidien de claims")
-            await ctx.send("❌ Échec lors de la génération ou de l'envoi du rapport. Les compteurs n'ont pas été réinitialisés.")
-
     @commands.command(name="claimaudit")
     async def audit_player_claims(self, ctx, user: discord.User):
-        """Audite en direct les récoltes d'un joueur suspect pour la journée en cours (réservé aux OP)."""
+        """Audite en direct les récoltes d'un joueur suspect (historique 48h, réservé aux OP)."""
         if not await self.check.is_op(self.bot, ctx.author.id):
             return
 
@@ -160,7 +148,7 @@ class ClaimModeration(commands.Cog):
         claims = await database.run(lambda tx: DailyClaimStatsDB.get_user_claims(tx, user.id), readonly=True)
 
         if not claims:
-            await ctx.send(f"ℹ️ Aucun claim enregistré aujourd'hui pour {user.mention} (`{user.id}`).")
+            await ctx.send(f"ℹ️ Aucun claim enregistré sur les dernières 48h pour {user.mention} (`{user.id}`).")
             return
 
         analysis = calculate_player_claim_metrics(claims)
@@ -192,14 +180,21 @@ class ClaimModeration(commands.Cog):
 
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="Joueur", value=f"{user.mention} (`{user.id}`)", inline=True)
-        embed.add_field(name="Récoltes (24h)", value=recoltes_str, inline=True)
+        embed.add_field(name="Récoltes (48h)", value=recoltes_str, inline=True)
         embed.add_field(name="Niveau de Risque", value=f"{badge} **{analysis['risk_level']}**", inline=True)
         embed.add_field(name="Intervalle Moyen", value=f"`{mean_str}`", inline=True)
         embed.add_field(name="Écart-type (Dispersion)", value=f"`{std_str}`", inline=True)
         embed.add_field(name="Indice de Constance", value=f"`{reg_str}`", inline=True)
 
+        if analysis.get("status") == "INSUFFICIENT_DATA":
+            embed.add_field(
+                name="Statut",
+                value="⚪ Données manuelles insuffisantes (< 2 récoltes manuelles)",
+                inline=False,
+            )
+
         if analysis.get("active_24h"):
-            embed.add_field(name="⚠️ Alerte Sommeil", value="Activité continue sans interruption > 3h30", inline=False)
+            embed.add_field(name="⚠️ Alerte Sommeil", value="Activité observée sur 24h sans longue pause", inline=False)
 
         streak = analysis.get("suspicious_streak")
         if streak:

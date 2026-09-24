@@ -74,10 +74,12 @@ class Prefix(commands.Cog):
     @discord.slash_command(
         name="prefix",
         guild_ids=GUILD_WHITELIST or None,
+        contexts={discord.InteractionContextType.guild},
         description=desc.get("prefix", "Manage server prefix"),
         description_localizations=desc_loc.get("prefix", None),
         default_member_permissions=discord.Permissions(administrator=True)
     )
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def slash_prefix(self, ctx, new_prefix: discord.Option(str, desc["new_prefix"])):
         """Définit le préfixe textuel du serveur (Slash /prefix)."""
@@ -85,6 +87,7 @@ class Prefix(commands.Cog):
 
     # ── Version Commande avec Préfixe ────────────────────────────────────────────
     @commands.command(name="prefix")
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def prefix_command(self, ctx, new_prefix: str = None):
         """Définit le préfixe textuel du serveur (commande préfixe)."""

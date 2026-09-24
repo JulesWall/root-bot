@@ -448,3 +448,14 @@ class MathConfig:
             raise ValueError('Unsupported formula')
 
         return visit(tree)
+
+    @classmethod
+    def get_contracts_config(cls) -> dict:
+        """Retourne la configuration globale du système de contrats."""
+        return cls.load().get('contracts', {})
+
+    @classmethod
+    def get_contract_tier(cls, tier: str) -> dict | None:
+        """Retourne les paramètres d'un tier de contrat donné ('short', 'medium', 'long')."""
+        return cls.get_contracts_config().get('tiers', {}).get(tier)
+

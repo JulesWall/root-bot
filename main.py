@@ -142,16 +142,21 @@ def create_bot() -> commands.Bot:
         5. Contrôle joueur : toute commande de jeu (commands.game.*) exige un profil créé via /network.
         6. Traçabilité des langues non supportées vers le salon de logs Discord.
         """
-        # 1. AUCUNE COMMANDE EN MP : Le bot ne s'exécute JAMAIS en message privé
-        if ctx.guild is None:
-            return False
-
         command_name = getattr(ctx.command, "name", "") or ""
         command_module = getattr(ctx.command, "module", "") or ""
         is_admin_command = command_module.startswith("commands.admin.")
         is_game_command = command_module.startswith("commands.game.")
         is_network_command = is_game_command and command_name in ("network", "n")
         is_help_command = command_name == "help"
+        interaction = getattr(ctx, "interaction", None)
+
+        # 1. RÈGLE MP : Seules les Slash Commands sont autorisées en MP (pas de préfixe).
+        # Les commandes spécifiques aux serveurs (prefix, trade) sont rejetées.
+        if ctx.guild is None:
+            if not interaction:
+                return False
+            if command_name in ("prefix", "trade"):
+                raise GameError('guild_only_command')
 
         # 2. Vérification des bannissements locaux (data/banned.json)
         if not is_admin_command and checks.is_banned(ctx.author.id):
@@ -275,8 +280,8 @@ def create_bot() -> commands.Bot:
         - Autres -> log d'anomalie système.
         Règle stricte : Ne jamais répondre en message privé (silence total si ctx.guild is None).
         """
-        # Le bot ne doit JAMAIS répondre en MP
-        if ctx.guild is None:
+        # En MP, le bot ne répond qu'aux Slash Commands (silence pour les commandes texte)
+        if ctx.guild is None and not getattr(ctx, "interaction", None):
             return
 
         if isinstance(error, commands.CommandNotFound):
@@ -288,6 +293,8 @@ def create_bot() -> commands.Bot:
                 logger.warning("Erreur base de donnees non configuree : aucun message envoye sur Discord.")
                 return
             key = 'g_error_' + original.key
+        elif isinstance(original, commands.NoPrivateMessage):
+            key = "g_error_guild_only_command"
         elif isinstance(original, (commands.CheckFailure, discord.CheckFailure)):
             # En mode maintenance : silence total, aucun message envoyé sur Discord
             if checks.maintenance_enabled():

@@ -115,7 +115,9 @@ class Trade(BaseGameCog):
         description=EN['trade'],
         description_localizations={"fr": FR['trade']},
         guild_ids=data.GUILD_WHITELIST or None,
+        contexts={discord.InteractionContextType.guild},
     )
+    @commands.guild_only()
     async def trade(
         self,
         ctx,
@@ -161,6 +163,7 @@ class Trade(BaseGameCog):
 
     # ── Préfixe ──────────────────────────────────────────────────────────────
     @commands.command(name='trade', help=FR['trade'])
+    @commands.guild_only()
     async def prefix_trade(self, ctx, target_arg: str = None, *resource_args):
         """Commande préfixe !trade <@cible> <+ressources> <-ressources>."""
         await self._prefetch_lang(ctx.author.id)
@@ -188,6 +191,12 @@ class Trade(BaseGameCog):
         raw_input: str,
     ):
         """Validation préliminaire et lancement de l'interface TradeView."""
+        if ctx.guild is None:
+            msg = text.get(ctx, 'g_error_guild_only_command')
+            if getattr(ctx, 'interaction', None):
+                return await ctx.respond(msg, ephemeral=True)
+            return await ctx.send(msg)
+
         # 1. Validation de la cible
         if target.id == ctx.author.id:
             msg = text.get(ctx, 'g_error_self_target')

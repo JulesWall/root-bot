@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS players (
     hourly_combo_bonus  DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
     hourly_streak       INT UNSIGNED    NOT NULL DEFAULT 0,
 
+    -- Système de Contrats (/contract)
+    contract_fidelity   INT UNSIGNED    NOT NULL DEFAULT 0,
+    contracts_completed INT UNSIGNED    NOT NULL DEFAULT 0,
+
     -- Contraintes d'intégrité
     PRIMARY KEY (discord_id),
     UNIQUE KEY uq_players_secret_id (secret_id),
@@ -88,7 +92,9 @@ CREATE TABLE IF NOT EXISTS players (
     CHECK (autoclaim_credits >= 0),
     CHECK (autoclaim_active >= 0),
     CHECK (hourly_combo_bonus >= 0),
-    CHECK (hourly_streak >= 0)
+    CHECK (hourly_streak >= 0),
+    CHECK (contract_fidelity >= 0),
+    CHECK (contracts_completed >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 2. Table des Préfixes par Serveur
@@ -135,6 +141,22 @@ CREATE TABLE IF NOT EXISTS hack (
     CHECK (boost_rtm >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 4bis. Table des Contrats de Travail en cours (/contract)
+CREATE TABLE IF NOT EXISTS contracts (
+    discord_id       BIGINT UNSIGNED NOT NULL,
+    duration_type    VARCHAR(16)     NOT NULL,
+    title            VARCHAR(128)    NOT NULL,
+    reward_usd       DECIMAL(30, 2)  NOT NULL,
+    is_special       TINYINT(1)      NOT NULL DEFAULT 0,
+    started_at       DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    expires_at       DATETIME(6)     NOT NULL,
+    notified         TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (discord_id),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE,
+    CHECK (duration_type IN ('short', 'medium', 'long')),
+    CHECK (reward_usd >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- 5. Table des Événements du Système (ex: Hash Challenge)
 CREATE TABLE IF NOT EXISTS events (
@@ -147,12 +169,14 @@ CREATE TABLE IF NOT EXISTS events (
     UNIQUE KEY uq_events_event (event)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 6. Table des Statistiques d'Événements Journalières (Modération 24h & Anti-Triche)
+-- 6. Table des Statistiques d'Événements Journalières (Modération 24h & Anti-Triche, Rétention 48h)
 CREATE TABLE IF NOT EXISTS daily_event_stats (
     discord_id          BIGINT UNSIGNED NOT NULL,
+    date_key            DATE            NOT NULL DEFAULT (CURRENT_DATE),
     events_won          INT UNSIGNED    NOT NULL DEFAULT 0,
     events_participated INT UNSIGNED    NOT NULL DEFAULT 0,
-    PRIMARY KEY (discord_id)
+    PRIMARY KEY (discord_id, date_key),
+    INDEX idx_event_stats_date (date_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 7. Table des droits de représailles PvP (scan / hack)
@@ -276,6 +300,10 @@ CREATE TABLE IF NOT EXISTS economy_hourly (
     combat_usd          DECIMAL(38,2) NOT NULL DEFAULT 0,
     combat_rtm          DECIMAL(38,5) NOT NULL DEFAULT 0,
     upgrades_usd        DECIMAL(38,2) NOT NULL DEFAULT 0,
+    hourly_claims       BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    hourly_usd          DECIMAL(38,2) NOT NULL DEFAULT 0,
+    contracts_collected BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    contracts_usd       DECIMAL(38,2) NOT NULL DEFAULT 0,
     compile_rtm         DECIMAL(38,5) NOT NULL DEFAULT 0,
     scan_rtm            DECIMAL(38,5) NOT NULL DEFAULT 0,
     miners_t1           BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -349,6 +377,22 @@ CREATE TABLE IF NOT EXISTS hourly_logs (
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 14. Table des Rappels Personnalisés & Alertes de Jeu (/rmd)
+CREATE TABLE IF NOT EXISTS reminders (
+    id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id    BIGINT UNSIGNED NOT NULL,
+    channel_id    BIGINT UNSIGNED NULL DEFAULT NULL,
+    guild_id      BIGINT UNSIGNED NULL DEFAULT NULL,
+    reminder_type VARCHAR(32)     NOT NULL DEFAULT 'custom',
+    target_event  VARCHAR(32)     NULL DEFAULT NULL,
+    message       VARCHAR(255)    NOT NULL DEFAULT 'Rappel',
+    created_at    DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    remind_at     DATETIME(6)     NOT NULL,
+    INDEX idx_reminders_remind_at (remind_at),
+    INDEX idx_reminders_discord (discord_id),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ====================================================================
 -- MIGRATION (installations existantes) : suivi économique.
 -- Appliquer migrations/001_economy_reports.sql sur une base déjà déployée.
@@ -368,6 +412,41 @@ CREATE TABLE IF NOT EXISTS hourly_logs (
 -- ====================================================================
 -- MIGRATION (installations existantes) : récompense horaire (/hourly).
 -- Appliquer migrations/003_hourly.sql sur une base déjà déployée.
+-- ====================================================================
+-- MIGRATION (installations existantes) : système de contrats (/contract).
+-- ALTER TABLE players
+--   ADD COLUMN contract_fidelity INT UNSIGNED NOT NULL DEFAULT 0 AFTER hourly_streak,
+--   ADD COLUMN contracts_completed INT UNSIGNED NOT NULL DEFAULT 0 AFTER contract_fidelity;
+-- CREATE TABLE IF NOT EXISTS contracts (
+--   discord_id       BIGINT UNSIGNED NOT NULL,
+--   duration_type    VARCHAR(16)     NOT NULL,
+--   title            VARCHAR(128)    NOT NULL,
+--   reward_usd       DECIMAL(30, 2)  NOT NULL,
+--   is_special       TINYINT(1)      NOT NULL DEFAULT 0,
+--   started_at       DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+--   expires_at       DATETIME(6)     NOT NULL,
+--   notified         TINYINT(1)      NOT NULL DEFAULT 0,
+--   PRIMARY KEY (discord_id),
+--   FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE,
+--   CHECK (duration_type IN ('short', 'medium', 'long')),
+--   CHECK (reward_usd >= 0)
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- ====================================================================
+-- MIGRATION (installations existantes) : rappels et minuteurs (/rmd).
+-- CREATE TABLE IF NOT EXISTS reminders (
+--   id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+--   discord_id    BIGINT UNSIGNED NOT NULL,
+--   channel_id    BIGINT UNSIGNED NULL DEFAULT NULL,
+--   guild_id      BIGINT UNSIGNED NULL DEFAULT NULL,
+--   reminder_type VARCHAR(32)     NOT NULL DEFAULT 'custom',
+--   target_event  VARCHAR(32)     NULL DEFAULT NULL,
+--   message       VARCHAR(255)    NOT NULL DEFAULT 'Rappel',
+--   created_at    DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+--   remind_at     DATETIME(6)     NOT NULL,
+--   INDEX idx_reminders_remind_at (remind_at),
+--   INDEX idx_reminders_discord (discord_id),
+--   FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- ====================================================================
 
 

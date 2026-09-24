@@ -30,6 +30,8 @@ _INT_COLUMNS = {
     'upgrades_started',
     'conversions',
     'trades',
+    'hourly_claims',
+    'contracts_collected',
 }
 
 # Colonnes de type DECIMAL (montants)
@@ -38,6 +40,8 @@ _DECIMAL_COLUMNS = {
     'event_hash_usd', 'event_pin_usd', 'event_decode_usd',
     'event_anomaly_usd', 'event_buffer_usd', 'event_signal_usd', 'event_packet_usd',
     'grant_usd',
+    'hourly_usd',
+    'contracts_usd',
     'miners_usd', 'miners_rtm',
     'combat_usd', 'combat_rtm',
     'upgrades_usd',
@@ -280,6 +284,28 @@ class EconomyStatsDB:
                 raise ValueError("trade complété mais 'target' absent du résultat")
             target = int(target)
             return {initiator: {'trades': 1}, target: {}}
+
+        if method == 'hourly':
+            if result.get('claimed') is not True:
+                return {}
+            total_usd = result.get('total_usd')
+            if total_usd is None:
+                raise ValueError("hourly réussi mais 'total_usd' absent du résultat")
+            return {actor: {
+                'hourly_claims': 1,
+                'hourly_usd': _to_decimal(total_usd),
+            }}
+
+        if method == 'contract':
+            if result.get('collected') is not True:
+                return {}
+            reward_usd = result.get('reward_usd')
+            if reward_usd is None:
+                raise ValueError("contract collecté mais 'reward_usd' absent du résultat")
+            return {actor: {
+                'contracts_collected': 1,
+                'contracts_usd': _to_decimal(reward_usd),
+            }}
 
         return {}
 
