@@ -266,15 +266,29 @@ class ContractsDB:
         threshold = int(cfg.get('fidelity_threshold', 5))
         grace_sec = int(cfg.get('grace_period_seconds', 2700))
 
-        # Idée 1 : à la collecte d'une mission spéciale ou à l'atteinte du seuil (>=5),
-        # la fidélité est maintenue à 5 et le joueur a 45 minutes pour relancer !
+        # La fenêtre de grâce de 45 minutes pour relancer le contrat et conserver le combo
+        # doit être calculée impérativement à compter de l'EXPIRATION du contrat (active['expires_at']),
+        # et non pas à partir du moment de la collecte manuelle (tx.now).
+        expires_at = active['expires_at']
+        grace_deadline = expires_at + timedelta(seconds=grace_sec)
+        is_within_grace = (tx.now <= grace_deadline)
+
         if active.get('is_special'):
-            new_fidelity = max(threshold, cur_fidelity)
-            new_grace_until = tx.now + timedelta(seconds=grace_sec)
+            if is_within_grace:
+                new_fidelity = max(threshold, cur_fidelity)
+                new_grace_until = grace_deadline
+            else:
+                new_fidelity = 0
+                new_grace_until = None
         else:
             new_fidelity = cur_fidelity + 1
             if new_fidelity >= threshold:
-                new_grace_until = tx.now + timedelta(seconds=grace_sec)
+                if is_within_grace:
+                    new_grace_until = grace_deadline
+                else:
+                    # Collecté plus de 45 min après l'échéance : le combo pour lancer la mission spéciale a expiré
+                    new_fidelity = 0
+                    new_grace_until = None
             else:
                 new_grace_until = None
 
@@ -289,7 +303,7 @@ class ContractsDB:
         tx.execute("DELETE FROM contracts WHERE discord_id = %s", (discord_id,))
 
         grace_ts = to_utc_timestamp(new_grace_until) if new_grace_until else None
-        grace_remaining = grace_sec if new_grace_until else None
+        grace_remaining = max(0, int((new_grace_until - tx.now).total_seconds())) if new_grace_until else None
 
         offers_data = ContractsDB.get_offers(new_fidelity, firewall_level=firewall_level, grace_ts=grace_ts)
 

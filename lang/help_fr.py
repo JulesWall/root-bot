@@ -168,12 +168,13 @@ PAGES = {
             "• **/lang** — Configurer sa langue d'affichage (fr/en)\n"
             "• **/rmd** — Programmer des rappels personnalisés ou automatiques\n"
             "• **/ping** — Tester la latence de la passerelle Discord\n"
+            "• **/math** — Évaluer une expression mathématique\n"
             "• **/botinfo** — Statistiques système et informations\n"
             "• **/invite** — Obtenir le lien d'invitation officiel\n\n"
             "👉 *Sélectionne n'importe quelle commande ci-dessous pour ouvrir sa fiche détaillée.*"
         ),
         "body_text": (
-            "Index complet des 27 commandes publiques de Root.\n\n"
+            "Index complet des 28 commandes publiques de Root.\n\n"
             "**⛏️ Développer mon réseau**\n"
             "• **{prefix}network** (alias `{prefix}n`) — Créer ou consulter mon réseau\n"
             "• **{prefix}buy** — Acheter un module (minage, attaque, défense)\n"
@@ -204,6 +205,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`) — Configurer sa langue\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`) — Programmer des rappels\n"
             "• **{prefix}ping** — Tester la latence du bot\n"
+            "• **{prefix}math** (alias `{prefix}calc`) — Calculer une expression mathématique\n"
             "• **{prefix}botinfo** — Statistiques système et informations\n"
             "• **{prefix}invite** — Obtenir le lien d'invitation officiel\n\n"
             "👉 *Sélectionne n'importe quelle commande ci-dessous pour ouvrir sa fiche détaillée.*"
@@ -308,6 +310,7 @@ PAGES = {
             "• **/lang** : Définis ou consulte ta langue d'affichage préférée (français ou anglais).\n"
             "• **/rmd** : Définis un rappel sur mesure ou synchronisé avec le jeu (hourly, claim, mini-jeux ou all).\n"
             "• **/ping** : Mesure le temps de réponse et la latence du bot.\n"
+            "• **/math** : Évalue une expression ou formule mathématique.\n"
             "• **/botinfo** : Affiche les informations système et statistiques globales.\n"
             "• **/invite** : Obtiens le lien officiel pour inviter Root sur ton serveur Discord.\n\n"
             "💬 **Serveur officiel :** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -317,6 +320,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`) : Configure ta langue (fr/en).\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`) : Programme un rappel automatique ou un minuteur.\n"
             "• **{prefix}ping** : Mesure la latence du bot.\n"
+            "• **{prefix}math** (alias `{prefix}calc`) : Calcule une expression mathématique.\n"
             "• **{prefix}botinfo** : Statistiques et informations système.\n"
             "• **{prefix}invite** : Lien d'invitation officiel de Root.\n\n"
             "💬 **Serveur officiel :** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -825,6 +829,21 @@ COMMANDS = {
         "aliases": [],
         "linked_commands": ["botinfo"],
     },
+    "math": {
+        "name": "math",
+        "category": "info",
+        "title": "🧮 `/math` — Calculatrice",
+        "description": "Évalue de manière sécurisée une expression mathématique (opérations arithmétiques, fonctions, constantes).",
+        "slash_syntax": "/math expression:<calcul>",
+        "text_syntax": "{prefix}math <calcul>",
+        "parameters": "• `expression` : Calcul à effectuer (ex: `2 + 2`, `sqrt(144)`, `2^8`).",
+        "slash_example": "/math expression:2 + 2 * 5",
+        "text_example": "{prefix}math sqrt(144)",
+        "prerequisites": "Aucun prérequis.",
+        "advice": "Supporte les opérateurs usuels (+, -, *, /, //, %, ^, **), constantes (pi, e, tau) et fonctions (sqrt, abs, round, sin, cos, log, factorial).",
+        "aliases": ["{prefix}calc", "{prefix}calcul"],
+        "linked_commands": [],
+    },
 }
 
 COMMAND_ALIASES = {
@@ -853,5 +872,8 @@ COMMAND_ALIASES = {
     "language": "lang",
     "remind": "rmd",
     "reminder": "rmd",
+    "calc": "math",
+    "calculate": "math",
+    "calcul": "math",
 }
 

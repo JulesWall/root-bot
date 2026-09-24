@@ -319,6 +319,7 @@ def _build_compact_total_lines(ctx, stats, firewall: int, mining_state: dict, re
     rep_note = f", +{rep_bonus_pct:.1f}% rep" if rep_val > 0 else ""
     autoclaim_credits = int(result.get('autoclaim_credits', 0) or 0)
     autoclaim_active = int(result.get('autoclaim_active', 0) or 0)
+    combo_saver_credits = int(result.get('combo_saver_credits', 0) or 0)
 
     lines = []
     if is_mem_full:
@@ -339,6 +340,7 @@ def _build_compact_total_lines(ctx, stats, firewall: int, mining_state: dict, re
             lines.append(f"> 🎫 **Autoclaim** : **{autoclaim_credits}** en réserve · **{autoclaim_active}** programmé(s)")
         else:
             lines.append(f"> 🎫 **Autoclaim** : **{autoclaim_credits}** crédit(s) en réserve")
+        lines.append(f"> 🛡️ **Combo Saver** : **{combo_saver_credits}** crédit(s) en réserve")
     else:
         lines.append(f"> ⚡ **Global Hashrate**: `{hashrate}`")
         lines.append(f"> ⚔️ **Attack**: `{tot_atk}`")
@@ -354,6 +356,7 @@ def _build_compact_total_lines(ctx, stats, firewall: int, mining_state: dict, re
             lines.append(f"> 🎫 **Autoclaim**: **{autoclaim_credits}** in reserve · **{autoclaim_active}** queued")
         else:
             lines.append(f"> 🎫 **Autoclaim**: **{autoclaim_credits}** credit(s) in reserve")
+        lines.append(f"> 🛡️ **Combo Saver**: **{combo_saver_credits}** credit(s) in reserve")
 
     return '\n'.join(lines)
 

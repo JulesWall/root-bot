@@ -499,6 +499,9 @@ class MockTransaction:
                 "hourly_last_at": None,
                 "hourly_combo_bonus": Decimal("0.00"),
                 "hourly_streak": 0,
+                "hourly_lost_streak": 0,
+                "hourly_lost_bonus": Decimal("0.00"),
+                "combo_saver_credits": 0,
                 "contract_fidelity": 0,
                 "contracts_completed": 0,
             }
@@ -5327,12 +5330,22 @@ class TestReputationInviteAndOpBypass(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["autoclaim_credits"], 12)
         self.assertEqual(tx.players[9999]["autoclaim_credits"], 12)
 
+    def test_sponsor_combo_saver_credits_are_added(self):
+        """Le parrainage ajoute 1 crédit Combo Saver au joueur qui donne le rep."""
+        tx = MockTransaction()
+        tx.players[9999] = {"discord_id": 9999, "combo_saver_credits": 0}
+        result = Player.add_combo_saver_credits(tx, 9999, 1)
+        self.assertEqual(result["added"], 1)
+        self.assertEqual(result["combo_saver_credits"], 1)
+        self.assertEqual(tx.players[9999]["combo_saver_credits"], 1)
+
     async def test_rep_cog_invites_recipient_during_beta(self):
         """Vérifie que la commande /rep inscrit le destinataire dans beta access.json pendant la bêta."""
         from commands.game.rep import Rep
 
         bot = MagicMock()
         bot.root_service.grant_autoclaim_credits = AsyncMock(return_value={"added": 10, "autoclaim_credits": 10})
+        bot.root_service.grant_combo_saver_credits = AsyncMock(return_value={"added": 1, "combo_saver_credits": 1})
         cog = Rep(bot)
 
         ctx = MagicMock()
@@ -5364,13 +5377,17 @@ class TestReputationInviteAndOpBypass(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn("10", first)
                         self.assertIn("<@9999>", second)
                         self.assertIn("10", second)
+                        self.assertIn("1", second)
                         self.assertTrue(ctx.send.await_args_list[1].kwargs["allowed_mentions"].users)
                         bot.root_service.grant_autoclaim_credits.assert_awaited_once_with(9999, 10)
+                        bot.root_service.grant_combo_saver_credits.assert_awaited_once_with(9999, 1)
 
                         ctx.send.reset_mock()
                         bot.root_service.grant_autoclaim_credits.reset_mock()
+                        bot.root_service.grant_combo_saver_credits.reset_mock()
                         await cog._send(ctx, "reputation", result)
                         bot.root_service.grant_autoclaim_credits.assert_not_awaited()
+                        bot.root_service.grant_combo_saver_credits.assert_not_awaited()
 
 class TestBotPresence(unittest.IsolatedAsyncioTestCase):
     """Vérifie la gestion de la présence Discord et du statut de maintenance."""
@@ -7632,10 +7649,10 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         from lang import help_fr, help_en
         from commands.utility.help import PUBLIC_COMMANDS
 
-        # 27 commandes publiques
-        self.assertEqual(len(PUBLIC_COMMANDS), 27)
-        self.assertEqual(len(help_fr.COMMANDS), 27)
-        self.assertEqual(len(help_en.COMMANDS), 27)
+        # 28 commandes publiques
+        self.assertEqual(len(PUBLIC_COMMANDS), 28)
+        self.assertEqual(len(help_fr.COMMANDS), 28)
+        self.assertEqual(len(help_en.COMMANDS), 28)
 
         for cmd_name in PUBLIC_COMMANDS:
             self.assertIn(cmd_name, help_fr.COMMANDS)
@@ -7668,20 +7685,20 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
             self.assertIn(target, PUBLIC_COMMANDS, f"L'alias {alias} pointe vers {target} qui n'est pas dans PUBLIC_COMMANDS")
 
     async def test_all_commands_page(self):
-        """Vérifie que la page 'Toutes les commandes' liste les 27 commandes et alimente les menus déroulants (max 25 options chacun)."""
+        """Vérifie que la page 'Toutes les commandes' liste les 28 commandes et alimente les menus déroulants (max 25 options chacun)."""
         from commands.utility.help import HelpView, HelpCommandSelect, PUBLIC_COMMANDS, render_help_embed
 
         view = HelpView(author_id=12345, locale="fr", prefix="+r", initial_category="all")
         self.assertEqual(view.current_category, "all")
 
-        # Vérifie que les sélecteurs de commandes respectent la limite Discord de 25 options et couvrent les 27 commandes
+        # Vérifie que les sélecteurs de commandes respectent la limite Discord de 25 options et couvrent les 28 commandes
         cmd_selects = [item for item in view.children if isinstance(item, HelpCommandSelect)]
         self.assertEqual(len(cmd_selects), 2)
         total_options = []
         for cs in cmd_selects:
             self.assertLessEqual(len(cs.options), 25)
             total_options.extend(opt.value for opt in cs.options)
-        self.assertEqual(len(total_options), 27)
+        self.assertEqual(len(total_options), 28)
         self.assertEqual(set(total_options), set(PUBLIC_COMMANDS))
 
         # Vérifie que l'embed de la page liste toutes les 27 commandes
@@ -8687,6 +8704,9 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             "hourly_last_at": None,
             "hourly_combo_bonus": Decimal("0.00"),
             "hourly_streak": 0,
+            "hourly_lost_streak": 0,
+            "hourly_lost_bonus": Decimal("0.00"),
+            "combo_saver_credits": 0,
             "lang": "fr",
         }
 
@@ -8821,6 +8841,132 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(logged["step_bonus_pct"], Decimal("0.00"))
         self.assertEqual(logged["total_usd"], logged["base_usd"])
         self.assertEqual(logged["new_dollars"], Decimal("100.00") + logged["base_usd"])
+
+    async def test_hourly_combo_saver_full_flow(self):
+        """Vérifie le cycle complet de sauvegarde du combo (Option A) :
+        1. Construction d'un combo à streak 3 (+30%).
+        2. Claim tardif (+90 min) -> combo brisé, streak revient à 1, combo_lost=True, can_save_combo=True.
+        3. Tentative de save sans crédit -> GameError('insufficient_combo_saver_credits').
+        4. Attribution d'un crédit Combo Saver.
+        5. Exécution de hourly_save_combo -> succès, streak restauré à 3 (+30%), crédit consommé.
+        6. Second save immédiat -> GameError('no_combo_to_save').
+        7. Claim suivant dans la fenêtre (+65 min) -> combo continue à streak 4 (+30% + 15% = 45%).
+        """
+        # 1. 1er hourly à t=0
+        await self.service.execute(self.actor, None, 'hourly')
+        # 2e hourly à t=+65min (step +15%)
+        self.mock_db.now += timedelta(minutes=65)
+        res2 = await self.service.execute(self.actor, None, 'hourly')
+        self.assertEqual(res2['streak'], 2)
+        self.assertEqual(res2['bonus_pct'], Decimal('15.00'))
+        # 3e hourly à t=+65min (step +15% -> bonus 30%)
+        self.mock_db.now += timedelta(minutes=65)
+        res3 = await self.service.execute(self.actor, None, 'hourly')
+        self.assertEqual(res3['streak'], 3)
+        self.assertEqual(res3['bonus_pct'], Decimal('30.00'))
+
+        # 2. Claim tardif à +90 min (> 80 min) -> combo brisé
+        self.mock_db.now += timedelta(minutes=90)
+        res_late = await self.service.execute(self.actor, None, 'hourly')
+        self.assertTrue(res_late['combo_lost'])
+        self.assertEqual(res_late['streak'], 1)
+        self.assertEqual(res_late['bonus_pct'], Decimal('0.00'))
+        self.assertTrue(res_late['can_save_combo'])
+        self.assertEqual(res_late['lost_streak'], 3)
+        self.assertEqual(res_late['lost_bonus'], Decimal('30.00'))
+
+        # 3. Sauvegarde sans crédit -> échec
+        with self.assertRaises(GameError) as cm:
+            await self.service.execute(self.actor, None, 'hourly_save_combo')
+        self.assertEqual(cm.exception.key, 'insufficient_combo_saver_credits')
+
+        # 4. Créditer 1 Combo Saver
+        grant_res = await self.service.grant_combo_saver_credits(self.actor, 1)
+        self.assertEqual(grant_res['combo_saver_credits'], 1)
+
+        # 5. Sauvegarde avec crédit -> succès (Option A)
+        save_res = await self.service.execute(self.actor, None, 'hourly_save_combo')
+        self.assertTrue(save_res['saved'])
+        self.assertEqual(save_res['restored_streak'], 3)
+        self.assertEqual(save_res['restored_bonus'], Decimal('30.00'))
+        self.assertEqual(save_res['remaining_credits'], 0)
+
+        # Vérification des données en base
+        player = self.mock_db.players[self.actor]
+        self.assertEqual(player['hourly_streak'], 3)
+        self.assertEqual(player['hourly_combo_bonus'], Decimal('30.00'))
+        self.assertEqual(player['hourly_lost_streak'], 0)
+        self.assertEqual(player['combo_saver_credits'], 0)
+
+        # 6. Re-tentative de sauvegarde -> GameError('no_combo_to_save')
+        with self.assertRaises(GameError) as cm2:
+            await self.service.execute(self.actor, None, 'hourly_save_combo')
+        self.assertEqual(cm2.exception.key, 'no_combo_to_save')
+
+        # 7. Claim suivant dans la fenêtre de combo (+65 min) -> le combo se poursuit !
+        self.mock_db.now += timedelta(minutes=65)
+        res_next = await self.service.execute(self.actor, None, 'hourly')
+        self.assertFalse(res_next['combo_lost'])
+        self.assertEqual(res_next['streak'], 4)
+        self.assertEqual(res_next['step_bonus_pct'], Decimal('15.00'))
+        self.assertEqual(res_next['bonus_pct'], Decimal('45.00'))
+
+    async def test_hourly_combo_saver_view_interaction(self):
+        """Vérifie l'affichage de la vue Combo Saver et le callback du bouton."""
+        from commands.game.hourly import Hourly, HourlyComboSaverView
+
+        mock_bot = MagicMock()
+        mock_bot.root_service = self.service
+        mock_bot.discord_logger = MagicMock()
+        mock_bot.discord_logger.log_hourly = AsyncMock()
+
+        hourly_cog = Hourly(mock_bot)
+        hourly_cog._prefetch_lang = AsyncMock()
+
+        # Configurer un joueur avec combo et crédits
+        self.mock_db.players[self.actor]["hourly_last_at"] = self.mock_db.now - timedelta(hours=2)
+        self.mock_db.players[self.actor]["hourly_streak"] = 5
+        self.mock_db.players[self.actor]["hourly_combo_bonus"] = Decimal("50.00")
+        self.mock_db.players[self.actor]["combo_saver_credits"] = 2
+
+        mock_ctx = MagicMock()
+        mock_ctx.interaction = None
+        mock_ctx.locale = "fr"
+        mock_ctx.prefix = "!"
+        mock_ctx.author.id = self.actor
+        mock_ctx.guild = None
+        mock_ctx.send = AsyncMock()
+
+        await hourly_cog.prefix_hourly.callback(hourly_cog, mock_ctx)
+        mock_ctx.send.assert_called_once()
+        kwargs = mock_ctx.send.call_args.kwargs
+        self.assertIn("view", kwargs)
+        view = kwargs["view"]
+        self.assertIsInstance(view, HourlyComboSaverView)
+        self.assertEqual(len(view.children), 1)
+        btn = view.children[0]
+        self.assertFalse(btn.disabled)
+
+        # Interaction d'un autre utilisateur -> refusé
+        other_interaction = MagicMock()
+        other_interaction.user.id = 999999
+        other_interaction.response.send_message = AsyncMock()
+        await btn.callback(other_interaction)
+        other_interaction.response.send_message.assert_called_once()
+        self.assertTrue(other_interaction.response.send_message.call_args.kwargs.get("ephemeral"))
+
+        # Interaction du bon utilisateur -> succès
+        valid_interaction = MagicMock()
+        valid_interaction.user.id = self.actor
+        valid_interaction.message = MagicMock()
+        valid_interaction.message.content = "Message original"
+        valid_interaction.response.edit_message = AsyncMock()
+        await btn.callback(valid_interaction)
+        valid_interaction.response.edit_message.assert_called_once()
+        edited_content = valid_interaction.response.edit_message.call_args.kwargs["content"]
+        self.assertIn("restauré", edited_content.lower())
+        self.assertEqual(self.mock_db.players[self.actor]["combo_saver_credits"], 1)
+        self.assertEqual(self.mock_db.players[self.actor]["hourly_streak"], 5)
 
     async def test_hourly_audit_metrics(self):
         """Métriques d'audit, régularité bot, et rendu de !hourlyaudit."""
@@ -9198,6 +9344,66 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res['collected'])
         self.assertEqual(res['reward_usd'], Decimal('250.00'))
         self.assertEqual(res['new_dollars'], Decimal('350.00'))
+
+    async def test_contract_grace_calculated_from_expiration_not_collection(self):
+        """La fenêtre de 45 min pour relancer est calculée à l'expiration, pas à la collecte."""
+        # 5 contrats pour atteindre la fidélité 5
+        for i in range(5):
+            await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+            self.mock_db.now += timedelta(seconds=1800)
+            await self.service.execute(self.actor, None, 'contract', action='collect')
+
+        # Démarrage d'une mission spéciale (durée 1800s)
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        
+        # Le contrat expire au bout de 1800s. Le joueur attend encore 20 minutes (1200s) avant de collecter
+        self.mock_db.now += timedelta(seconds=1800 + 1200)
+        collect_res = await self.service.execute(self.actor, None, 'contract', action='collect')
+
+        # Collecté dans les 45 min de grâce (20 min écoulées sur 45 min)
+        self.assertEqual(collect_res['contract_fidelity'], 5)
+        # Il ne reste plus que 25 min (1500s) et NON PAS 45 min (2700s) !
+        self.assertEqual(collect_res['grace_remaining_seconds'], 25 * 60)
+
+    async def test_contract_grace_expires_if_collected_too_late(self):
+        """Si un contrat spécial est collecté plus de 45 min après son expiration, le combo est perdu (fidélité = 0)."""
+        for i in range(5):
+            await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+            self.mock_db.now += timedelta(seconds=1800)
+            await self.service.execute(self.actor, None, 'contract', action='collect')
+
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+
+        # Le contrat expire au bout de 1800s, et le joueur attend 50 minutes (> 45 min) pour collecter
+        self.mock_db.now += timedelta(seconds=1800 + 50 * 60)
+        collect_res = await self.service.execute(self.actor, None, 'contract', action='collect')
+
+        # La récompense en USD est bien versée
+        self.assertTrue(collect_res['collected'])
+        # Mais le combo est cassé : fidélité retombe à 0 et aucune grâce
+        self.assertEqual(collect_res['contract_fidelity'], 0)
+        self.assertIsNone(collect_res['grace_ts'])
+        self.assertIsNone(collect_res['grace_remaining_seconds'])
+        self.assertEqual(self.mock_db.players[self.actor]['contract_fidelity'], 0)
+        self.assertIsNone(self.mock_db.players[self.actor]['contract_grace_until'])
+
+    async def test_contract_threshold_expires_if_collected_too_late(self):
+        """Si le 5e contrat est collecté plus de 45 min après échéance, la mission spéciale n'est pas accordée."""
+        for i in range(4):
+            await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+            self.mock_db.now += timedelta(seconds=1800)
+            await self.service.execute(self.actor, None, 'contract', action='collect')
+
+        # Lancement du 5e contrat (qui aurait dû débloquer le seuil 5)
+        await self.service.execute(self.actor, None, 'contract', action='start', duration='short')
+        # Attente 1800s + 60 min (> 45 min de grâce)
+        self.mock_db.now += timedelta(seconds=1800 + 3600)
+        collect_res = await self.service.execute(self.actor, None, 'contract', action='collect')
+
+        self.assertTrue(collect_res['collected'])
+        self.assertEqual(collect_res['contract_fidelity'], 0)
+        self.assertIsNone(collect_res['grace_ts'])
+        self.assertFalse(collect_res['offers_data']['is_special'])
 
     async def test_contract_invalid_duration(self):
         """Lancement avec une durée inconnue -> GameError('invalid_contract_duration')."""
@@ -10227,6 +10433,122 @@ class TestUserPrefixSupport(unittest.IsolatedAsyncioTestCase):
             prefixes = await get_prefix_for_bot(mock_bot, guild_msg)
             mock_get_guild.assert_awaited_once_with(777)
             self.assertIn("!", prefixes)
+
+
+
+class TestMathCommand(unittest.IsolatedAsyncioTestCase):
+    """Tests unitaires et de sécurité pour la commande !math / /math."""
+
+    def test_safe_math_evaluator_basic(self):
+        from commands.utility.math import SafeMathEvaluator, format_math_result
+
+        self.assertEqual(SafeMathEvaluator.evaluate("2 + 2"), 4)
+        self.assertEqual(SafeMathEvaluator.evaluate("10 - 3"), 7)
+        self.assertEqual(SafeMathEvaluator.evaluate("6 * 7"), 42)
+        self.assertEqual(SafeMathEvaluator.evaluate("6 × 7"), 42)
+        self.assertEqual(SafeMathEvaluator.evaluate("20 / 4"), 5.0)
+        self.assertEqual(SafeMathEvaluator.evaluate("20 ÷ 4"), 5.0)
+        self.assertEqual(SafeMathEvaluator.evaluate("2 ^ 8"), 256)
+        self.assertEqual(SafeMathEvaluator.evaluate("2 ** 8"), 256)
+        self.assertEqual(SafeMathEvaluator.evaluate("2 + 3 * 4"), 14)
+        self.assertEqual(SafeMathEvaluator.evaluate("(2 + 3) * 4"), 20)
+        self.assertEqual(SafeMathEvaluator.evaluate("10 // 3"), 3)
+        self.assertEqual(SafeMathEvaluator.evaluate("10 % 3"), 1)
+
+    def test_safe_math_evaluator_functions_and_constants(self):
+        from commands.utility.math import SafeMathEvaluator
+        import math
+
+        self.assertEqual(SafeMathEvaluator.evaluate("sqrt(144)"), 12.0)
+        self.assertEqual(SafeMathEvaluator.evaluate("abs(-42)"), 42)
+        self.assertEqual(SafeMathEvaluator.evaluate("round(3.14159, 2)"), 3.14)
+        self.assertEqual(SafeMathEvaluator.evaluate("floor(4.9)"), 4)
+        self.assertEqual(SafeMathEvaluator.evaluate("ceil(4.1)"), 5)
+        self.assertEqual(SafeMathEvaluator.evaluate("factorial(5)"), 120)
+        self.assertEqual(SafeMathEvaluator.evaluate("log10(100)"), 2.0)
+        self.assertAlmostEqual(SafeMathEvaluator.evaluate("cos(0)"), 1.0)
+        self.assertAlmostEqual(SafeMathEvaluator.evaluate("sin(pi / 2)"), 1.0)
+        self.assertAlmostEqual(SafeMathEvaluator.evaluate("pi"), math.pi)
+        self.assertAlmostEqual(SafeMathEvaluator.evaluate("e"), math.e)
+
+    def test_safe_math_evaluator_security_and_errors(self):
+        from commands.utility.math import SafeMathEvaluator, MathEvaluationError
+
+        # Division par zéro
+        with self.assertRaises(MathEvaluationError) as cm:
+            SafeMathEvaluator.evaluate("1 / 0")
+        self.assertEqual(cm.exception.key, "math_error_div_zero")
+
+        # Puissance excessive
+        with self.assertRaises(MathEvaluationError) as cm:
+            SafeMathEvaluator.evaluate("2 ** 5000")
+        self.assertEqual(cm.exception.key, "math_error_too_large")
+
+        # Factorielle excessive
+        with self.assertRaises(MathEvaluationError) as cm:
+            SafeMathEvaluator.evaluate("factorial(200)")
+        self.assertEqual(cm.exception.key, "math_error_too_large")
+
+        # Tentatives de RCE et d'exécution de code arbitraire
+        with self.assertRaises(MathEvaluationError):
+            SafeMathEvaluator.evaluate("__import__('os').system('dir')")
+
+        with self.assertRaises(MathEvaluationError):
+            SafeMathEvaluator.evaluate("open('data.py').read()")
+
+        with self.assertRaises(MathEvaluationError):
+            SafeMathEvaluator.evaluate("[x for x in range(10)]")
+
+        with self.assertRaises(MathEvaluationError):
+            SafeMathEvaluator.evaluate("lambda: 42")
+
+        with self.assertRaises(MathEvaluationError):
+            SafeMathEvaluator.evaluate("")
+
+    async def test_math_cog_prefix_and_slash(self):
+        from commands.utility.math import Math
+
+        mock_bot = MagicMock()
+        cog = Math(mock_bot)
+
+        # 1. Calcul réussi via commande préfixe
+        mock_ctx = MagicMock()
+        mock_ctx.author.id = 12345
+        mock_ctx.guild = None
+        mock_ctx.prefix = "!"
+        mock_ctx.send = AsyncMock()
+        mock_ctx.respond = AsyncMock()
+
+        await cog.prefix_math.callback(cog, mock_ctx, expression="2 + 2 * 3")
+        mock_ctx.respond.assert_called_once()
+        content = mock_ctx.respond.call_args.args[0]
+        self.assertIn("2 + 2 * 3", content)
+        self.assertIn("8", content)
+
+        # 2. Utilisation sans argument -> affiche le message d'aide/usage
+        mock_ctx.reset_mock()
+        await cog.prefix_math.callback(cog, mock_ctx, expression=None)
+        mock_ctx.respond.assert_called_once()
+        help_content = mock_ctx.respond.call_args.args[0]
+        self.assertIn("math <expression>", help_content)
+
+        # 3. Erreur de calcul (division par zéro en anglais par défaut)
+        mock_ctx.reset_mock()
+        mock_ctx.interaction = None
+        mock_ctx.locale = None
+        await cog.prefix_math.callback(cog, mock_ctx, expression="10 / 0")
+        mock_ctx.respond.assert_called_once()
+        err_content = mock_ctx.respond.call_args.args[0]
+        self.assertIn("Cannot divide by zero", err_content)
+
+        # 4. En français avec locale='fr'
+        mock_ctx.reset_mock()
+        mock_ctx.interaction = None
+        mock_ctx.locale = "fr"
+        await cog.prefix_math.callback(cog, mock_ctx, expression="10 / 0")
+        mock_ctx.respond.assert_called_once()
+        err_content_fr = mock_ctx.respond.call_args.args[0]
+        self.assertIn("Division par zéro impossible", err_content_fr)
 
 
 if __name__ == '__main__':

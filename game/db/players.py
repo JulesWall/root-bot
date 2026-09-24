@@ -167,6 +167,7 @@ class UpdatePlayer:
             'secret_id', 'attack_points',
             'autoclaim_credits', 'autoclaim_active',
             'hourly_last_at', 'hourly_combo_bonus', 'hourly_streak',
+            'hourly_lost_streak', 'hourly_lost_bonus', 'combo_saver_credits',
             'contract_fidelity', 'contracts_completed', 'contract_grace_until',
         } | {f'{kind}_t{tier}' for kind in ('mining', 'attack', 'bay_defense') for tier in range(1, 7)}
 
@@ -1098,6 +1099,18 @@ class Player:
         return {'added': amount, 'autoclaim_credits': total}
 
     @staticmethod
+    def add_combo_saver_credits(tx, actor: int, amount: int) -> dict:
+        """Ajoute des crédits Combo Saver au joueur."""
+        amount = int(amount)
+        if amount <= 0:
+            raise GameError('invalid_amount')
+        player = PlayerData.get(tx, actor)
+        current = int(player.get('combo_saver_credits', 0) or 0)
+        total = current + amount
+        UpdatePlayer.set(tx, actor, combo_saver_credits=total)
+        return {'added': amount, 'combo_saver_credits': total}
+
+    @staticmethod
     def top(tx, category: str = 'reputation') -> dict:
         """Retourne le Top 10 des joueurs classés par réputation, USD, RTM, victoires d'événements ou hashrate (H/s)."""
         raw_cat = (category or 'reputation').lower().strip()
@@ -1278,14 +1291,24 @@ class Player:
                 step_bonus = Decimal(step_pct).quantize(Decimal('0.01'))
                 new_combo_bonus = (current_combo_bonus + step_bonus).quantize(Decimal('0.01'))
                 new_streak = current_streak + 1
+                lost_streak = 0
+                lost_bonus = Decimal('0.00')
             else:
                 combo_lost = True
                 step_bonus = Decimal('0.00')
                 new_combo_bonus = Decimal('0.00')
                 new_streak = 1
+                if current_streak > 1 or current_combo_bonus > Decimal('0.00'):
+                    lost_streak = current_streak
+                    lost_bonus = current_combo_bonus
+                else:
+                    lost_streak = 0
+                    lost_bonus = Decimal('0.00')
         else:
             new_combo_bonus = Decimal('0.00')
             new_streak = 1
+            lost_streak = 0
+            lost_bonus = Decimal('0.00')
 
         # Multiplicateur lié au niveau de pare-feu : (firewall_level + 1)
         fw_level = int(p.get('firewall_level', 0) or 0)
@@ -1307,6 +1330,8 @@ class Player:
             hourly_last_at=tx.now,
             hourly_combo_bonus=new_combo_bonus,
             hourly_streak=new_streak,
+            hourly_lost_streak=lost_streak,
+            hourly_lost_bonus=lost_bonus,
         )
 
         # Enregistrement dans hourly_logs
@@ -1327,6 +1352,9 @@ class Player:
         next_ts = int(next_avail_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(next_avail_dt, 'tzinfo', None) is None else int(next_avail_dt.timestamp())
         combo_ts = int(combo_dead_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(combo_dead_dt, 'tzinfo', None) is None else int(combo_dead_dt.timestamp())
 
+        can_save = (lost_streak > 1 or lost_bonus > Decimal('0.00'))
+        combo_saver_credits = int(p.get('combo_saver_credits', 0) or 0)
+
         return {
             'claimed': True,
             'base_usd': base_gain,
@@ -1343,6 +1371,48 @@ class Player:
             'combo_deadline_ts': combo_ts,
             'firewall_level': fw_level,
             'firewall_multiplier': int(fw_mult),
+            'can_save_combo': can_save,
+            'lost_streak': lost_streak,
+            'lost_bonus': lost_bonus,
+            'combo_saver_credits': combo_saver_credits,
+        }
+
+    @staticmethod
+    def save_hourly_combo(tx, actor: int) -> dict:
+        """Restaure un combo horaire perdu à l'aide d'un crédit Combo Saver (Option A).
+
+        Règles :
+        - Le joueur doit avoir un combo brisé récupérable (hourly_lost_streak > 1 ou hourly_lost_bonus > 0).
+        - Le joueur doit posséder au moins 1 crédit combo saver (combo_saver_credits >= 1).
+        - Option A : Restaure exactement la streak et le bonus d'avant la rupture.
+        - Le combo sauvegardé est réinitialisé après utilisation.
+        """
+        p = PlayerData.get(tx, actor)
+        lost_streak = int(p.get('hourly_lost_streak', 0) or 0)
+        lost_bonus = Decimal(str(p.get('hourly_lost_bonus', 0) or 0))
+
+        if lost_streak <= 1 and lost_bonus <= Decimal('0.00'):
+            raise GameError('no_combo_to_save')
+
+        credits = int(p.get('combo_saver_credits', 0) or 0)
+        if credits < 1:
+            raise GameError('insufficient_combo_saver_credits')
+
+        remaining_credits = credits - 1
+        UpdatePlayer.set(
+            tx, actor,
+            combo_saver_credits=remaining_credits,
+            hourly_streak=lost_streak,
+            hourly_combo_bonus=lost_bonus,
+            hourly_lost_streak=0,
+            hourly_lost_bonus=Decimal('0.00'),
+        )
+
+        return {
+            'saved': True,
+            'restored_streak': lost_streak,
+            'restored_bonus': lost_bonus,
+            'remaining_credits': remaining_credits,
         }
 
     @staticmethod

@@ -40,7 +40,7 @@ class RootService:
         'network', 'buy', 'upgrade', 'reputation', 'top', 'set_language',
         'hash', 'pin', 'event', 'decode', 'anomaly', 'buffer', 'signal',
         'packet', 'trade', 'claim', 'claim_auto', 'claim_cancel', 'convert', 'compile', 'scan', 'hack',
-        'hourly', 'contract', 'rmd',
+        'hourly', 'hourly_save_combo', 'contract', 'rmd',
     }
 
     def __init__(self, database=None):
@@ -148,6 +148,13 @@ class RootService:
         """Crédite des autoclaims au joueur, sous le verrou de son compte."""
         return await self.database.run(
             lambda tx: Player.add_autoclaim_credits(tx, actor, amount),
+            locks=[player_lock_name(int(actor))],
+        )
+
+    async def grant_combo_saver_credits(self, actor: int, amount: int) -> dict:
+        """Crédite des Combo Saver au joueur, sous le verrou de son compte."""
+        return await self.database.run(
+            lambda tx: Player.add_combo_saver_credits(tx, actor, amount),
             locks=[player_lock_name(int(actor))],
         )
 
@@ -285,6 +292,8 @@ class RootService:
             return Player.claim(tx, actor)
         elif method == 'hourly':
             return Player.hourly(tx, actor)
+        elif method == 'hourly_save_combo':
+            return Player.save_hourly_combo(tx, actor)
         elif method == 'contract':
             return Player.contract(tx, actor, **args)
         elif method == 'claim_auto':

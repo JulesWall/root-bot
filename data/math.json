@@ -51,7 +51,8 @@
       "bay_defense": 0
     },
     "cost_multiplier": 1.5,
-    "sponsor_autoclaim_credits": 10
+    "sponsor_autoclaim_credits": 10,
+    "sponsor_combo_saver_credits": 1
   },
   "module_stats": {
     "mining_hashrate_hs": {

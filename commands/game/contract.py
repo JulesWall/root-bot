@@ -220,13 +220,21 @@ class ContractView(discord.ui.View):
             btn_refresh.callback = self._on_refresh
             self.add_item(btn_refresh)
         else:
-            # 3 boutons pour démarrer les offres
+            async def _start_short(i: discord.Interaction):
+                await self._on_start(i, "short")
+
+            async def _start_med(i: discord.Interaction):
+                await self._on_start(i, "medium")
+
+            async def _start_long(i: discord.Interaction):
+                await self._on_start(i, "long")
+
             btn_short = discord.ui.Button(
                 label=text.get(self.ctx, "g_contract_btn_short")[:80],
                 emoji="⚡",
                 style=discord.ButtonStyle.primary,
             )
-            btn_short.callback = lambda i: self._on_start(i, "short")
+            btn_short.callback = _start_short
             self.add_item(btn_short)
 
             btn_med = discord.ui.Button(
@@ -234,7 +242,7 @@ class ContractView(discord.ui.View):
                 emoji="💼",
                 style=discord.ButtonStyle.primary,
             )
-            btn_med.callback = lambda i: self._on_start(i, "medium")
+            btn_med.callback = _start_med
             self.add_item(btn_med)
 
             btn_long = discord.ui.Button(
@@ -242,7 +250,7 @@ class ContractView(discord.ui.View):
                 emoji="🛡️",
                 style=discord.ButtonStyle.primary,
             )
-            btn_long.callback = lambda i: self._on_start(i, "long")
+            btn_long.callback = _start_long
             self.add_item(btn_long)
 
             btn_refresh = discord.ui.Button(

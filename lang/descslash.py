@@ -34,9 +34,21 @@ desc = {
     "rmd_message": "Custom reminder note (e.g. Coffee break)",
     "rmd_id": "Reminder ID to cancel, or 'all'",
     "rmd_timer": "Duration (e.g. 30m, 2h) or smart target (hourly, claim, events)",
+    "math": "Calculate a mathematical expression",
+    "math_expression": "The mathematical expression to evaluate (e.g. 2 + 2, sqrt(16), 5^3)",
 }
 
 desc_loc = {
+    "math": {
+        "en-US": "Calculate a mathematical expression",
+        "en-GB": "Calculate a mathematical expression",
+        "fr": "Calculer une expression mathématique",
+    },
+    "math_expression": {
+        "en-US": "The mathematical expression to evaluate (e.g. 2 + 2, sqrt(16), 5^3)",
+        "en-GB": "The mathematical expression to evaluate (e.g. 2 + 2, sqrt(16), 5^3)",
+        "fr": "L'expression mathématique à évaluer (ex: 2 + 2, sqrt(16), 5^3)",
+    },
     "ping": {
         "en-US": "Shows bot latency",
         "en-GB": "Shows bot latency",

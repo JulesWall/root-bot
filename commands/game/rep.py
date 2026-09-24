@@ -95,16 +95,22 @@ class Rep(BaseGameCog):
         if granted_beta:
             content += text.get(ctx, 'g_reputation_beta_granted', recipient=recipient_id)
             try:
-                amount = int(MathConfig.load().get('beta', {}).get('sponsor_autoclaim_credits', 10))
+                beta_cfg = MathConfig.load().get('beta', {})
+                amount = int(beta_cfg.get('sponsor_autoclaim_credits', 10))
+                combo_saver_amount = int(beta_cfg.get('sponsor_combo_saver_credits', 1))
+
                 credited = await self.service.grant_autoclaim_credits(ctx.author.id, amount)
+                credited_cs = await self.service.grant_combo_saver_credits(ctx.author.id, combo_saver_amount)
+
                 reward = text.get(
                     ctx,
                     'g_reputation_beta_autoclaim',
                     giver=ctx.author.id,
-                    credits=int(credited.get('added', amount)),
+                    credits=int(credited.get('added', amount) if isinstance(credited, dict) else amount),
+                    combo_savers=int(credited_cs.get('added', combo_saver_amount) if isinstance(credited_cs, dict) else combo_saver_amount),
                 )
             except Exception:
-                logger.exception("Impossible de créditer les autoclaims de parrainage à %s", ctx.author.id)
+                logger.exception("Impossible de créditer les récompenses de parrainage à %s", ctx.author.id)
 
         await self._deliver(ctx, content, discord.AllowedMentions.none())
         if reward:

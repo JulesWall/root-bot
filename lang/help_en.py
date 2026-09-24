@@ -168,12 +168,13 @@ PAGES = {
             "• **/lang** — Configure display language (fr/en)\n"
             "• **/rmd** — Set custom or automated game reminders\n"
             "• **/ping** — Measure bot latency & Gateway heartbeat\n"
+            "• **/math** — Evaluate a mathematical expression\n"
             "• **/botinfo** — System statistics and uptime\n"
             "• **/invite** — Get official bot invitation link\n\n"
             "👉 *Select any command below to open its detailed sheet.*"
         ),
         "body_text": (
-            "Complete index of all 27 public player commands in Root.\n\n"
+            "Complete index of all 28 public player commands in Root.\n\n"
             "**⛏️ Develop Network**\n"
             "• **{prefix}network** (alias `{prefix}n`) — Inspect balances & hardware\n"
             "• **{prefix}buy** — Purchase hardware (mining, attack, defense)\n"
@@ -204,6 +205,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`) — Configure language\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`) — Schedule reminders\n"
             "• **{prefix}ping** — Measure bot latency\n"
+            "• **{prefix}math** (alias `{prefix}calc`) — Calculate a mathematical expression\n"
             "• **{prefix}botinfo** — System statistics\n"
             "• **{prefix}invite** — Get official invite link\n\n"
             "👉 *Select any command below to open its detailed sheet.*"
@@ -308,6 +310,7 @@ PAGES = {
             "• **/lang**: Set or check your display language (French or English).\n"
             "• **/rmd**: Set a custom timer or sync automatic reminders (hourly, claim, events, or all).\n"
             "• **/ping**: Measure bot latency and Discord Gateway responsiveness.\n"
+            "• **/math**: Evaluate a mathematical expression or formula.\n"
             "• **/botinfo**: View general bot stats, uptime, and system status.\n"
             "• **/invite**: Get the official link to invite Root to your Discord server.\n\n"
             "💬 **Official Server:** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -317,6 +320,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`): Set language (fr/en).\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`): Schedule an automated reminder or timer.\n"
             "• **{prefix}ping**: Check bot latency.\n"
+            "• **{prefix}math** (alias `{prefix}calc`): Calculate a mathematical expression.\n"
             "• **{prefix}botinfo**: System stats and uptime.\n"
             "• **{prefix}invite**: Official Root bot invite link.\n\n"
             "💬 **Official Server:** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -825,6 +829,21 @@ COMMANDS = {
         "aliases": [],
         "linked_commands": ["botinfo"],
     },
+    "math": {
+        "name": "math",
+        "category": "info",
+        "title": "🧮 `/math` — Calculator",
+        "description": "Safely evaluates mathematical expressions (arithmetic operations, functions, constants).",
+        "slash_syntax": "/math expression:<calculation>",
+        "text_syntax": "{prefix}math <calculation>",
+        "parameters": "• `expression`: The calculation to evaluate (e.g. `2 + 2`, `sqrt(144)`, `2^8`).",
+        "slash_example": "/math expression:2 + 2 * 5",
+        "text_example": "{prefix}math sqrt(144)",
+        "prerequisites": "None.",
+        "advice": "Supports standard operators (+, -, *, /, //, %, ^, **), constants (pi, e, tau), and functions (sqrt, abs, round, sin, cos, log, factorial).",
+        "aliases": ["{prefix}calc", "{prefix}calcul"],
+        "linked_commands": [],
+    },
 }
 
 COMMAND_ALIASES = {
@@ -853,5 +872,8 @@ COMMAND_ALIASES = {
     "language": "lang",
     "remind": "rmd",
     "reminder": "rmd",
+    "calc": "math",
+    "calculate": "math",
+    "calcul": "math",
 }
 

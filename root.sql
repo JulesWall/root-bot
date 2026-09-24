@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS players (
     hourly_last_at      DATETIME(6)     NULL     DEFAULT NULL,
     hourly_combo_bonus  DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
     hourly_streak       INT UNSIGNED    NOT NULL DEFAULT 0,
+    hourly_lost_streak  INT UNSIGNED    NOT NULL DEFAULT 0,
+    hourly_lost_bonus   DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
+    combo_saver_credits INT UNSIGNED    NOT NULL DEFAULT 0,
 
     -- Système de Contrats (/contract)
     contract_fidelity   INT UNSIGNED    NOT NULL DEFAULT 0,
@@ -93,6 +96,7 @@ CREATE TABLE IF NOT EXISTS players (
     CHECK (autoclaim_active >= 0),
     CHECK (hourly_combo_bonus >= 0),
     CHECK (hourly_streak >= 0),
+    CHECK (combo_saver_credits >= 0),
     CHECK (contract_fidelity >= 0),
     CHECK (contracts_completed >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

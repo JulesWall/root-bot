@@ -63,4 +63,11 @@ text = {
     "log_guild_remove_title": "📤 Server Removed",
     "log_guild_remove_desc": "> The bot was removed from a Discord server.",
     "log_field_total_guilds": "📊 Total Servers",
+    "math_result": "> 🧮 **Calculation**: `{expression}`\n> 📊 **Result**: `{result}`",
+    "math_usage": "> ℹ️ **Usage**: `{prefix}math <expression>`\n💡 **Examples**: `{prefix}math 2 + 2 * 5` · `{prefix}math sqrt(144)` · `{prefix}math 2^10`",
+    "math_error_empty": "> ⚠️ **Missing Expression** · Please provide a mathematical expression to evaluate.",
+    "math_error_invalid": "> ⚠️ **Syntax Error** · The mathematical expression is invalid or malformed.",
+    "math_error_div_zero": "> ⚠️ **Arithmetic Error** · Cannot divide by zero.",
+    "math_error_too_large": "> ⚠️ **Overflow Error** · The numbers or the result are too large to compute.",
+    "math_error_unsupported": "> ⚠️ **Unauthorized Element** · The function or operator `{item}` is not supported.",
 }
