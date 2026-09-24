@@ -10,7 +10,7 @@ Architecture des données :
    - Réinitialisé à None dès la résolution du hash ou lors d'un cooldown.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import random
 from typing import Any
@@ -56,6 +56,33 @@ class HashManager(BaseChallengeManager):
         return _create_new_challenge()
 
     @classmethod
+    def get_player_cooldown(cls, actor: int, now: Any = None) -> tuple[int, datetime | None]:
+        """Retourne (remaining_seconds, next_guess_at) pour l'acteur donné sur le hash actif."""
+        with cls._lock:
+            challenge = cls._active_challenge
+            if not challenge:
+                return (0, None)
+            player_cooldowns = challenge.get("player_cooldowns", {})
+            last_guess_at = player_cooldowns.get(actor)
+            if last_guess_at is None:
+                return (0, None)
+            if now is None:
+                now = datetime.now(timezone.utc)
+            if getattr(last_guess_at, "tzinfo", None) is not None and getattr(now, "tzinfo", None) is None:
+                now = now.replace(tzinfo=timezone.utc)
+            elif getattr(last_guess_at, "tzinfo", None) is None and getattr(now, "tzinfo", None) is not None:
+                now = now.replace(tzinfo=None)
+
+            settings = MathConfig.load().get("hash_challenge", {})
+            player_cooldown_sec = int(settings.get("player_cooldown_seconds", 480))
+            elapsed = (now - last_guess_at).total_seconds()
+            if elapsed < player_cooldown_sec:
+                remaining_sec = max(1, int(player_cooldown_sec - elapsed))
+                next_guess_at = last_guess_at + timedelta(seconds=player_cooldown_sec)
+                return (remaining_sec, next_guess_at)
+            return (0, None)
+
+    @classmethod
     def _process_staged(cls, tx, actor: int, guild_name: str | None, guess: Any, resource: ChallengeResource) -> dict:
         now = tx.now
 
@@ -84,6 +111,17 @@ class HashManager(BaseChallengeManager):
 
         # Consultation sans proposition
         if guess is None:
+            settings = MathConfig.load().get("hash_challenge", {})
+            player_cooldown_sec = int(settings.get("player_cooldown_seconds", 480))
+            last_guess_at = player_cooldowns.get(actor)
+            remaining_sec = 0
+            next_guess_at = None
+            if last_guess_at is not None:
+                elapsed = (now - last_guess_at).total_seconds()
+                if elapsed < player_cooldown_sec:
+                    remaining_sec = max(1, int(player_cooldown_sec - elapsed))
+                    next_guess_at = last_guess_at + timedelta(seconds=player_cooldown_sec)
+
             return {
                 "status": "active_info",
                 "min_bound": min_bound,
@@ -91,6 +129,8 @@ class HashManager(BaseChallengeManager):
                 "current_min": current_min,
                 "current_max": current_max,
                 "players_count": len(challenge["participants"]),
+                "remaining_seconds": remaining_sec,
+                "next_guess_at": next_guess_at,
             }
 
         guess = int(guess)

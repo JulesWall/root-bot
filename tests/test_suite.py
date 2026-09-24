@@ -1233,6 +1233,8 @@ class TestChallengeManagers(unittest.TestCase):
         # Consultation gratuite sans proposition
         info = HashManager.process(self.tx, self.actor, "TestGuild", None)
         self.assertEqual(info["status"], "active_info")
+        self.assertEqual(info.get("remaining_seconds"), 0)
+        self.assertIsNone(info.get("next_guess_at"))
 
         target = HashManager._active_challenge["target"]
         wrong_guess = target - 1 if target > HashManager._active_challenge["current_min"] else target + 1
@@ -1241,9 +1243,11 @@ class TestChallengeManagers(unittest.TestCase):
         res1 = HashManager.process(self.tx, self.actor, "TestGuild", wrong_guess)
         self.assertIn(res1["status"], ("too_low", "too_high"))
 
-        # Consultation après proposition : toujours gratuite et autorisée
+        # Consultation après proposition : toujours gratuite et autorisée avec affichage du cooldown
         info2 = HashManager.process(self.tx, self.actor, "TestGuild", None)
         self.assertEqual(info2["status"], "active_info")
+        self.assertEqual(info2.get("remaining_seconds"), 480)
+        self.assertIsNotNone(info2.get("next_guess_at"))
 
         # Seconde proposition immédiate (0s écoulées) : bloquée par player_cooldown
         res2 = HashManager.process(self.tx, self.actor, "TestGuild", wrong_guess)
@@ -2140,14 +2144,23 @@ class TestMiniGameSharedLayer(unittest.IsolatedAsyncioTestCase):
         mock_ctx.author.id = 111
         mock_ctx.prefix = "!"
 
-        # Hash (text)
+        # Hash (text sans cooldown)
         cog_hash = MiniGameCog(mock_bot)
         cog_hash.config = GAMES["hash"]
         cog_hash._reply_text = AsyncMock()
         cog_hash._send_embed = AsyncMock()
         await cog_hash._send(mock_ctx, "hash", {"status": "active_info", "current_min": 1, "current_max": 100, "players_count": 5})
         cog_hash._reply_text.assert_called_once()
+        sent_content = cog_hash._reply_text.call_args[0][1]
+        self.assertTrue("Disponible maintenant" in sent_content or "Available now" in sent_content)
         cog_hash._send_embed.assert_not_called()
+
+        # Hash (text avec cooldown)
+        cog_hash._reply_text.reset_mock()
+        await cog_hash._send(mock_ctx, "hash", {"status": "active_info", "current_min": 1, "current_max": 100, "players_count": 5, "remaining_seconds": 300})
+        cog_hash._reply_text.assert_called_once()
+        sent_cooldown_content = cog_hash._reply_text.call_args[0][1]
+        self.assertTrue("<t:" in sent_cooldown_content and ":R>" in sent_cooldown_content)
 
         # Decode (embed)
         cog_decode = MiniGameCog(mock_bot)
@@ -9483,6 +9496,35 @@ class TestReminders(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(pin_res)
         self.assertEqual(pin_res['status'], 'created')
+
+    async def test_rmd_all_takes_into_account_hash_player_cooldown(self):
+        """Vérifie que /rmd all et /rmd hash planifient un rappel si le joueur a un cooldown sur le hash actif."""
+        from game.hash_manager import HashManager
+        # 1. Le hash est actif sur le réseau (pas de cooldown dans EventsDB)
+        self.mock_db.events.pop('hash', None)
+        HashManager._active_challenge = None
+
+        # 2. Avant toute tentative, le hash est disponible pour le joueur
+        res_dispo = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='hash')
+        self.assertEqual(res_dispo['status'], 'already_available')
+
+        # 3. Le joueur soumet une proposition sur le hash -> déclenche son player_cooldown (8 minutes = 480s)
+        await self.service.execute(self.actor, None, 'hash', guess=500)
+
+        # 4. Maintenant, /rmd hash doit créer un rappel pour le cooldown individuel du joueur
+        res_hash = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='hash')
+        self.assertEqual(res_hash['status'], 'created')
+        self.assertEqual(res_hash['target_event'], 'hash')
+        self.assertEqual(res_hash['remaining_seconds'], 480)
+
+        # 5. /rmd all doit également voir le rappel hash déjà planifié
+        res_all = await self.service.execute(self.actor, None, 'rmd', action='create_smart', target='all')
+        self.assertEqual(res_all['status'], 'created_all')
+        event_results = [r for r in res_all['results'] if r.get('target') == 'events']
+        hash_res = next((r for r in event_results if r.get('target_event') == 'hash'), None)
+        self.assertIsNotNone(hash_res)
+        self.assertEqual(hash_res['status'], 'already_scheduled')
+
 
 class TestDirectMessagesSupport(unittest.IsolatedAsyncioTestCase):
     """Vérifie l'activation sélective des MP pour les Slash Commands et le blocage du trade/préfixe."""

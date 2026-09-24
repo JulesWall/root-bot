@@ -9,6 +9,7 @@ Ce module mutualise l'intégralité de la logique commune aux 7 mini-jeux :
 - Journalisation automatique vers Logger selon la configuration du jeu (GameConfig).
 """
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import discord
@@ -180,7 +181,32 @@ class MiniGameCog(BaseGameCog):
 
         # 2. Consultation sans proposition
         if status == "active_info":
-            content = text.get(ctx, f"g_{self.config.key}_active_info", prefix=prefix, **result)
+            render_kwargs = dict(result)
+            if self.config.key == "hash":
+                remaining_sec = result.get("remaining_seconds", 0)
+                next_guess_at = result.get("next_guess_at")
+                if remaining_sec > 0:
+                    if next_guess_at is None:
+                        next_guess_at = datetime.now(timezone.utc) + timedelta(seconds=remaining_sec)
+                    timestamp = to_utc_timestamp(next_guess_at)
+                    remaining_str = format_duration(remaining_sec)
+                    render_kwargs["remaining"] = remaining_str
+                    render_kwargs["remaining_ts"] = f"<t:{timestamp}:R>"
+                    render_kwargs["timestamp"] = timestamp
+                    cooldown_status = text.get(
+                        ctx,
+                        "g_hash_cooldown_waiting",
+                        remaining=remaining_str,
+                        remaining_ts=f"<t:{timestamp}:R>",
+                        timestamp=timestamp,
+                    )
+                else:
+                    cooldown_status = text.get(ctx, "g_hash_cooldown_ready")
+                render_kwargs["cooldown_status"] = cooldown_status
+            else:
+                render_kwargs.setdefault("cooldown_status", "")
+
+            content = text.get(ctx, f"g_{self.config.key}_active_info", prefix=prefix, **render_kwargs)
             view = getattr(self, "_build_active_view", lambda c, r: None)(ctx, result)
             msg = None
             if self.config.active_info_mode == "embed":

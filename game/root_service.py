@@ -460,6 +460,20 @@ class RootService:
 
                 events_status = EventsManager.get_all_events_status(tx)
                 events_map = events_status.get('events', {})
+
+                from game.hash_manager import HashManager
+                hash_info = events_map.get('hash')
+                if hash_info and hash_info.get('status') == 'active':
+                    p_rem_sec, p_next_at = HashManager.get_player_cooldown(actor, tx.now)
+                    if p_rem_sec > 0 and p_next_at:
+                        events_map['hash'] = {
+                            **hash_info,
+                            'status': 'cooldown',
+                            'next_at': p_next_at,
+                            'remaining_seconds': p_rem_sec,
+                            'player_cooldown': True,
+                        }
+
                 unavailable_events = [
                     (ev_name, info) for ev_name, info in events_map.items()
                     if info.get('status') != 'active'
@@ -520,6 +534,20 @@ class RootService:
             if target in ('events', 'event') or target in EventsManager.SUPPORTED_EVENTS:
                 events_status = EventsManager.get_all_events_status(tx)
                 events_map = events_status.get('events', {})
+
+                from game.hash_manager import HashManager
+                hash_info = events_map.get('hash')
+                if hash_info and hash_info.get('status') == 'active':
+                    p_rem_sec, p_next_at = HashManager.get_player_cooldown(actor, tx.now)
+                    if p_rem_sec > 0 and p_next_at:
+                        events_map['hash'] = {
+                            **hash_info,
+                            'status': 'cooldown',
+                            'next_at': p_next_at,
+                            'remaining_seconds': p_rem_sec,
+                            'player_cooldown': True,
+                        }
+
                 if target in EventsManager.SUPPORTED_EVENTS:
                     info = events_map.get(target)
                     if not info or info.get('status') == 'active':
