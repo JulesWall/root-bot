@@ -43,7 +43,7 @@
   },
   "beta": {
     "attack_price_t1_rtm": 0.005,
-    "bay_defense_usd": 75,
+    "bay_defense_usd": 150,
     "max_tier": 5,
     "required_firewall": {
       "mining": 0,
@@ -86,11 +86,11 @@
   },
   "firewall_network_defense": {
     "0": 0,
-    "1": 100,
-    "2": 300,
-    "3": 800,
-    "4": 2000,
-    "5": 5000
+    "1": 250,
+    "2": 500,
+    "3": 1000,
+    "4": 2500,
+    "5": 15000
   },
   "formulas": {},
   "reputation_gift_points": 1,
@@ -206,8 +206,8 @@
     "retaliation_window_hours": 72
   },
   "hourly": {
-    "reward_min_usd": 55,
-    "reward_max_usd": 85,
+    "reward_min_usd": 60,
+    "reward_max_usd": 90,
     "cooldown_minutes": 60,
     "combo_window_minutes": 20
   },
