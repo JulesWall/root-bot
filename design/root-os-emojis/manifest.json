@@ -1,0 +1,155 @@
+[
+  {
+    "name": "root_terminal",
+    "usage": "Terminal",
+    "color": "#54E2D1",
+    "file": "png/root_terminal.png",
+    "bytes": 787,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/terminal.svg",
+    "size": 128
+  },
+  {
+    "name": "root_firewall",
+    "usage": "Firewall",
+    "color": "#54E2D1",
+    "file": "png/root_firewall.png",
+    "bytes": 2033,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/shield-half.svg",
+    "size": 128
+  },
+  {
+    "name": "root_ferme",
+    "usage": "Ferme de minage",
+    "color": "#54E2D1",
+    "file": "png/root_ferme.png",
+    "bytes": 1210,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/server.svg",
+    "size": 128
+  },
+  {
+    "name": "root_puissance",
+    "usage": "Puissance",
+    "color": "#54E2D1",
+    "file": "png/root_puissance.png",
+    "bytes": 1452,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/cpu.svg",
+    "size": 128
+  },
+  {
+    "name": "root_production",
+    "usage": "Production",
+    "color": "#54E2D1",
+    "file": "png/root_production.png",
+    "bytes": 1022,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/chart-column-increasing.svg",
+    "size": 128
+  },
+  {
+    "name": "root_memoire",
+    "usage": "Memoire et RTM",
+    "color": "#54E2D1",
+    "file": "png/root_memoire.png",
+    "bytes": 2438,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/database.svg",
+    "size": 128
+  },
+  {
+    "name": "root_temps",
+    "usage": "Duree et developpement",
+    "color": "#54E2D1",
+    "file": "png/root_temps.png",
+    "bytes": 2697,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/clock.svg",
+    "size": 128
+  },
+  {
+    "name": "root_recolter",
+    "usage": "Recolter",
+    "color": "#EEF1F5",
+    "file": "png/root_recolter.png",
+    "bytes": 1218,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/download.svg",
+    "size": 128
+  },
+  {
+    "name": "root_materiel",
+    "usage": "Materiel",
+    "color": "#EEF1F5",
+    "file": "png/root_materiel.png",
+    "bytes": 3052,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/settings.svg",
+    "size": 128
+  },
+  {
+    "name": "root_logiciels",
+    "usage": "Logiciels",
+    "color": "#EEF1F5",
+    "file": "png/root_logiciels.png",
+    "bytes": 995,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/monitor.svg",
+    "size": 128
+  },
+  {
+    "name": "root_operations",
+    "usage": "Operations",
+    "color": "#EEF1F5",
+    "file": "png/root_operations.png",
+    "bytes": 565,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/list.svg",
+    "size": 128
+  },
+  {
+    "name": "root_journal",
+    "usage": "Journal",
+    "color": "#EEF1F5",
+    "file": "png/root_journal.png",
+    "bytes": 1298,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/file-text.svg",
+    "size": 128
+  },
+  {
+    "name": "root_alerte",
+    "usage": "Anomalie et alerte",
+    "color": "#FFC15A",
+    "file": "png/root_alerte.png",
+    "bytes": 1577,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/triangle-alert.svg",
+    "size": 128
+  },
+  {
+    "name": "root_scan",
+    "usage": "Diagnostiquer",
+    "color": "#EEF1F5",
+    "file": "png/root_scan.png",
+    "bytes": 2204,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/search.svg",
+    "size": 128
+  },
+  {
+    "name": "root_connexions",
+    "usage": "Connexions",
+    "color": "#EEF1F5",
+    "file": "png/root_connexions.png",
+    "bytes": 1343,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/network.svg",
+    "size": 128
+  },
+  {
+    "name": "root_retour",
+    "usage": "Retour",
+    "color": "#EEF1F5",
+    "file": "png/root_retour.png",
+    "bytes": 955,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/corner-up-left.svg",
+    "size": 128
+  },
+  {
+    "name": "root_bilan",
+    "usage": "Bilan",
+    "color": "#EEF1F5",
+    "file": "png/root_bilan.png",
+    "bytes": 509,
+    "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/chart-no-axes-column-increasing.svg",
+    "size": 128
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "root_alerte",
+    "bytes": 18752,
+    "width": 128,
+    "height": 128,
+    "frames": 24,
+    "durationMs": 1920,
+    "uniqueFrames": 13,
+    "transparent": true
+  },
+  {
+    "name": "root_terminal",
+    "bytes": 2740,
+    "width": 128,
+    "height": 128,
+    "frames": 24,
+    "durationMs": 1920,
+    "uniqueFrames": 2,
+    "transparent": true
+  },
+  {
+    "name": "root_recolter",
+    "bytes": 17251,
+    "width": 128,
+    "height": 128,
+    "frames": 24,
+    "durationMs": 1920,
+    "uniqueFrames": 13,
+    "transparent": true
+  },
+  {
+    "name": "root_scan",
+    "bytes": 23371,
+    "width": 128,
+    "height": 128,
+    "frames": 24,
+    "durationMs": 1920,
+    "uniqueFrames": 13,
+    "transparent": true
+  },
+  {
+    "name": "root_retour",
+    "bytes": 14307,
+    "width": 128,
+    "height": 128,
+    "frames": 24,
+    "durationMs": 1920,
+    "uniqueFrames": 13,
+    "transparent": true
+  }
+]
