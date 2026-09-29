@@ -233,6 +233,171 @@
         "hourly_rate": 100
       }
     }
+  },
+  "pvp_v2": {
+    "_comment": "Paramètres du système PvP V2. Toute valeur de gameplay doit être ici, jamais en dur dans Python.",
+    "fingerprint": {
+      "alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789",
+      "length": 4,
+      "max_generation_attempts": 10
+    },
+    "families": ["hostile_miner", "espionage", "ransomware", "currency_theft", "saturation", "network_scan", "software_theft"],
+    "tiers": [1, 2, 3, 4, 5, 6],
+    "eligibility": {
+      "min_infrastructure_level_attacker": 1,
+      "target_must_be_equal_or_higher_level": true,
+      "retaliation_window_hours": 72
+    },
+    "simultaneous_ops": {
+      "max_active_per_attacker_total": 3,
+      "max_active_per_attacker_per_family": 1
+    },
+    "development": {
+      "offensive_channel": "attack",
+      "defensive_channel": "bay_defense",
+      "max_concurrent_per_channel": 1,
+      "check_interval_seconds": 30,
+      "dm_retry_attempts": 3,
+      "costs_by_tier": {
+        "research_rtm": {
+          "1": 0.001,
+          "2": 0.002,
+          "3": 0.005,
+          "4": 0.01,
+          "5": 0.02,
+          "6": 0.05
+        },
+        "compile_rtm": {
+          "1": 0.0005,
+          "2": 0.001,
+          "3": 0.002,
+          "4": 0.005,
+          "5": 0.01,
+          "6": 0.02
+        },
+        "patch_research_rtm": {
+          "1": 0.001,
+          "2": 0.002,
+          "3": 0.005,
+          "4": 0.01,
+          "5": 0.02,
+          "6": 0.05
+        },
+        "patch_compile_rtm": {
+          "1": 0.0005,
+          "2": 0.001,
+          "3": 0.002,
+          "4": 0.005,
+          "5": 0.01,
+          "6": 0.02
+        }
+      },
+      "bits_per_research_unit": 100,
+      "bits_per_compile_unit": 60
+    },
+    "installation": {
+      "base_duration_seconds_by_tier": {
+        "1": 600,
+        "2": 900,
+        "3": 1500,
+        "4": 2700,
+        "5": 4500,
+        "6": 7200
+      },
+      "defense_slowdown_divisor": 500,
+      "defense_slowdown_max_multiplier": 10,
+      "check_interval_seconds": 30,
+      "dm_retry_attempts": 3
+    },
+    "hostile_miner": {
+      "siphon_rate": 0.15,
+      "siphon_basis": "gross_tier_hashrate",
+      "cumulative_cap_per_tier": 0.40,
+      "persistent": true,
+      "detection_threshold_pct": 0.05
+    },
+    "espionage": {
+      "reveals": ["offensive_dev_jobs"],
+      "report_validity_hours": 24,
+      "stealth": true,
+      "stealth_cost_rtm": 0.001,
+      "base_duration_seconds": 600
+    },
+    "ransomware": {
+      "blocked_commands": ["buy", "upgrade", "compile", "convert", "trade", "hourly", "contract"],
+      "always_allowed_commands": ["network", "claim", "help", "scan", "rmd"],
+      "ransom_usd_by_tier": {
+        "1": 100,
+        "2": 200,
+        "3": 500,
+        "4": 1000,
+        "5": 2500,
+        "6": 5000
+      },
+      "max_duration_hours": 72,
+      "post_resolution_immunity_hours": 48
+    },
+    "currency_theft": {
+      "target_currency": "dollars",
+      "exposed_reserve_rate": 0.25,
+      "max_per_operation_usd": 1000,
+      "victim_minimum_balance_usd": 50,
+      "attacker_cooldown_per_victim_hours": 48,
+      "cumulative_daily_cap_rate": 0.30,
+      "fee_rate": 0.05
+    },
+    "saturation": {
+      "offensive_reduction_rate": 0.30,
+      "cumulative_cap": 0.60,
+      "duration_hours": 6,
+      "affects_in_progress_jobs": false,
+      "defensive_channel_immune": true
+    },
+    "network_scan": {
+      "base_duration_seconds": 90,
+      "cost_rtm": 0.005,
+      "report_validity_hours": 24,
+      "revealed_fields": [
+        "infrastructure_level",
+        "modules_by_tier",
+        "total_hashrate_hs",
+        "estimated_production_rtm_h",
+        "memory_used_ratio",
+        "installed_software",
+        "installed_patches",
+        "active_dev_job_count"
+      ],
+      "check_interval_seconds": 15,
+      "dm_retry_attempts": 3
+    },
+    "software_theft": {
+      "requires_valid_scan_report": true,
+      "copies_original_not_transfers": true,
+      "stolen_copy_resellable": false,
+      "grants_research_folder": false
+    },
+    "diagnosis": {
+      "base_duration_seconds": 600,
+      "cost_rtm": 0.001,
+      "reveals": ["family", "fingerprint"]
+    },
+    "trace_analysis": {
+      "base_duration_seconds": 1800,
+      "cost_rtm": 0.002,
+      "reveals": ["attacker_id"],
+      "stealth_duration_multiplier": 2.0
+    },
+    "market": {
+      "min_price_usd": 1,
+      "max_price_usd": 100000,
+      "fee_rate": 0.05,
+      "max_active_listings_per_player": 5,
+      "sellable_types": ["compiled_software", "patch", "research_folder"],
+      "non_sellable_types": ["stolen_copy", "installed_patch", "defensive_folder"]
+    },
+    "attack_points_conversion": {
+      "rate_atk_to_usd": 1
+    }
   }
 }
 

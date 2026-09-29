@@ -1,79 +1,86 @@
 # Root OS — Proposition courte
 
-Version 2 · Cette version remplace le précédent dossier.
+Version 3 · Mise à jour des infrastructures et des familles de logiciels PvP.
+
+**Statut :** les intentions de jeu ci-dessous sont retenues pour la réflexion. Les paramètres indiqués « à définir » ne sont pas des règles validées. Ce document ne demande aucune implémentation immédiate.
 
 **On garde le jeu actuel, mais on transforme le PvP en opérations logicielles et `/network` en véritable poste de commande. Le nombre de mineurs est illimité : aucun emplacement, aucun achat d'extension et aucune montée de niveau imposée par leur quantité.**
 
 ## 1. Ce qui reste familier
 
 - Les dollars, le RTM, la conversion, les H/s et les tiers de mineurs.
-- Le firewall comme niveau de progression et règle d'accès aux tiers.
+- Les six niveaux de progression et l'accès aux tiers ; l'infrastructure de contrôle remplace leur présentation en niveaux de firewall.
 - Les achats de mineurs sans limite de quantité, leur mémoire et la récolte actuelle.
 - Les contrats, les événements, la réputation et leurs récompenses actuelles.
 - Les commandes habituelles : `/network`, `/buy`, `/claim`, `/upgrade`, `/scan`, `/compile`, `/hack`.
 - Les cibles de niveau équivalent ou supérieur ; les représailles pendant 72 heures restent l'exception.
 
-Je retire de la première proposition les châssis à acheter, les rangs supplémentaires, le stockage de huit heures, les quotas quotidiens de récompenses et la suppression du bonus de réputation. La refonte porte sur le PvP et sa présentation.
+L'infrastructure représente **le poste qui pilote la ferme**, pas une boîte dans laquelle chaque mineur doit rentrer. Dix ou dix mille modules sont regroupés par tier à l'écran. Aucun niveau ne crée d'emplacements de minage.
 
-Le PC représente **le poste qui pilote la ferme**, pas une boîte dans laquelle chaque mineur doit rentrer. Dix ou dix mille modules sont regroupés par tier à l'écran. Le niveau du firewall fait évoluer l'illustration du poste et du réseau, sans créer une nouvelle progression mécanique.
+Progression visuelle : **0 — Smartphone bricolé ; 1 — PC assemblé ; 2 — Station de travail ; 3 — Serveur dédié ; 4 — Salle des serveurs ; 5 — Datacenter.** Les trois premiers niveaux conservent le même bureau et la même fenêtre, progressivement rénovés. À partir du serveur dédié, on change de lieu. Illustrations : `design/infrastructures-controle/`.
 
 ## 2. Le nouveau rôle du matériel
 
 **Minage : produire.** Les modules continuent d'ajouter leurs H/s et leur mémoire comme aujourd'hui.
 
-**Attaque : développer.** Les modules existants deviennent des modules de calcul. Leur débit actuel en bits/s sert à rechercher une faille et compiler ses logiciels. `/compile` prépare désormais un logiciel réutilisable, plutôt qu'une réserve de points à envoyer contre un mur de défense. Une seule recherche ou compilation tourne à la fois ; les contrats restent indépendants.
+**Attaque : développer.** Les modules existants deviennent des modules de calcul. Leur débit en bits/s sert aux recherches et compilations. Le joueur choisit d'abord une intention : siphonner, espionner, bloquer, voler ou ralentir. Il recherche ensuite une vulnérabilité compatible avec la cible choisie et compile son logiciel. Une seule recherche ou compilation tourne à la fois ; les contrats restent indépendants.
 
-**Défense : surveiller.** Les modules de défense sont conservés, mais une attaque ne les détruit plus. Ils accélèrent le contrôle automatique du réseau. Le propriétaire voit directement « prochain contrôle dans 42 min », sans devoir interpréter une nouvelle statistique.
+**Défense : gagner du temps et fabriquer les correctifs.** Les modules de défense remplissent simultanément deux fonctions :
 
-Réglage initial : un contrôle toutes les quatre heures sans modules de défense, jusqu'à une heure avec une défense importante. Un diagnostic manuel reste gratuit et dure cinq minutes. Pour le calibrage, l'intervalle en minutes est `max(60, 240 / (1 + D/F))`, avec D la puissance des modules de défense et F la défense de base du firewall, au minimum 100. À D = F, le contrôle revient toutes les deux heures. Ces intervalles désignent la fin des contrôles.
+- Ils fournissent une capacité de développement défensif réservée à la recherche et à la compilation des patchs. Un correctif peut ainsi être préparé en parallèle du logiciel offensif en cours, sans interrompre ce dernier.
+- Ils ralentissent passivement l'installation des logiciels hostiles sur le réseau.
 
-**La surveillance détecte une intrusion ; le patch empêche son retour.** Les deux dépenses ont donc un rôle différent.
+## 3. Des logiciels identifiables et échangeables
 
-## 3. Une faille devient une affaire
+Exemple : je veux détourner du minage. Je lance le développement de **Hostile Miner**, ciblant les mineurs T3. Ma découverte reçoit une empreinte et permet de compiler **Hostile Miner · K7M2**.
 
-Exemple : je lance une recherche sur les mineurs T3. Elle aboutit à **Écho**, une faille commune aux mineurs T3 non corrigés. Je peux alors :
+- **Famille : Hostile Miner.** Elle décrit l'intention et l'effet du logiciel.
+- **Empreinte : K7M2.** Identifiant court unique attribué par le jeu, pas une version ni un niveau de puissance.
+- **Cible : mineurs T3.** Elle précise la compatibilité de la vulnérabilité exploitée.
+
+Les copies et reventes conservent l'empreinte. Renommer ou recompiler ne crée pas une nouvelle faille et ne contourne jamais un correctif. 
+
+Avec ma découverte, je peux :
 
 - Compiler le logiciel qui l'exploite et attaquer.
 - Vendre un logiciel prêt à utiliser.
-- Vendre le dossier complet, permettant à l'acheteur de fabriquer ses propres logiciels.
 - Fabriquer le patch, le vendre ou le publier gratuitement.
 
-Un logiciel acheté reste utilisable ; chaque opération a néanmoins un coût en RTM. Une licence ne donne pas le droit de copier le dossier du vendeur. Acheter le dossier complet donne ce droit. Les offres sont vérifiées par le jeu : pas de faux correctifs.
+Un logiciel acheté reste utilisable ; chaque opération a néanmoins un coût en RTM. Une copie utilisable ne donne pas accès au dossier complet de recherche. Acheter le dossier permet de fabriquer ses propres copies. Le vol de logiciel est une autre manière d'obtenir une copie, pas automatiquement son dossier. Les offres sont vérifiées par le jeu : pas de faux correctifs.
 
-Un patch protège **tous mes mineurs du tier concerné contre cette faille précise**, y compris mes achats futurs. Il est permanent, sans frais par mineur. Je peux installer tous mes patchs, sans limite ni incompatibilité artificielle.
+Les découvertes sont fréquentes et provoquées par les recherches des joueurs. Leur cadence exacte et les règles de redécouverte restent à définir pour éviter une maintenance incessante. 
 
-La recherche peut retrouver une faille déjà découverte par quelqu'un d'autre : aucun monopole absolu. Pour éviter une avalanche de maintenance, chaque famille et tier comporte au plus trois failles sans correctif public ; une nouvelle faille distincte apparaît au plus toutes les six heures, uniquement à l'issue d'une recherche de joueur. Une recherche sans résultat disponible ne peut pas être lancée ni facturée.
+**Chaque joueur doit patcher son propre réseau.** Publier un correctif, même gratuitement, ne protège pas automatiquement les autres. Chacun l'obtient puis l'installe. 
 
-Les patchs publics s'installent automatiquement sur les réseaux qui ont activé cette option, au plus tard six heures après publication. L'option est active par défaut. Une installation manuelle prend cinq minutes. Un patch privé peut donc se vendre pour gagner du temps, et sa publication ne protège pas instantanément tout le monde.
+## 4. Sept familles retenues
 
-## 4. Deux attaques pour commencer
-
-### Siphonnage discret
-
-Après les **45 minutes de préparation** familières, le logiciel détourne **5 % du minage ciblé pendant quatre heures maximum**. Le revenu reçu baisse, mais aucun message ne dit immédiatement « tu es piraté ».
-
-Un diagnostic, un contrôle automatique ou le bon patch retire le logiciel. L'attaquant conserve le RTM déjà acquis. La victime garde tous ses mineurs.
-
-### Extraction visible
-
-Même préparation de 45 minutes, mais la cible est avertie dès le lancement. Si la faille reste ouverte à l'arrivée, l'opérateur détourne **15 % du minage ciblé pendant deux heures maximum**.
-
-Le défenseur peut patcher avant l'arrivée. Après intrusion, il peut également restaurer le service : cinq minutes de préparation, puis trente minutes de fonctionnement local à 80 % du débit, sans accès extérieur. Le patch bloque durablement la faille ; restaurer retire seulement l'intrusion.
-
-Les taux et durées sont des valeurs de départ à tester. Les ransomware et sabotages d'atelier restent pour une extension : les deux premières attaques suffisent à valider la boucle.
+Siphonnage de puissance — Hostile Miner
+Le logiciel s'installe sur le réseau et détourne un pourcentage de la puissance de minage concernée au profit de l'attaquant. Exemple de travail : **15 % de 15 kH/s = 2,25 kH/s détournés**. L'installation persiste jusqu'à identification et application du correctif adéquat. La simple détection ne coupe pas le siphon.
+### Espionnage préventif
+Observer les logiciels que l'adversaire prépare pour pouvoir développer et installer leurs correctifs avant leur compilation ou utilisation. 
+### Blocage contre rançon
+Bloquer une commande précise et proposer un déblocage contre paiement. La victime choisit de payer ou de rechercher et installer un patch. 
+### Vol de monnaie
+Une fraude logicielle permet de dérober directement de l'argent, 
+### Saturation du calcul
+Consommer une partie de la capacité de développement adverse pour ralentir recherches et compilations. 
+### Scan complet du réseau
+Obtenir une photographie horodatée de l'infrastructure, des mineurs, de la puissance, de la production, des réserves, des logiciels installés et des connexions de la cible. Le rapport ne se met pas à jour automatiquement.
+### Vol de logiciel
+Exfiltrer un logiciel ou une faille chez l'adversaire 
 
 ### Les règles communes
 
-- `/scan` donne une photographie horodatée de la cible, pas une garantie sur son état futur.
-- Le devis montre le coût complet, le débit ciblé et le gain maximal. Les frais augmentent avec le volume engagé ; une ferme immense n'est pas attaquée au prix d'un petit mineur.
+- Le devis montre le coût complet, l'effet, la cible et les conditions d'arrêt. Un siphon sans durée fixe n'a pas de gain maximal connu : afficher une estimation conditionnelle, jamais une promesse de bénéfice.
 - Une faille compatible et non patchée fonctionne ; acheter plus de puissance ne traverse jamais son patch.
-- Une seule opération offensive active par joueur, tous serveurs confondus. Le minage et le développement continuent pendant celle-ci.
-- Tous attaquants confondus : au plus 5 % du flux en siphonnage discret et 15 % au total. En cas de dépassement, les gains sont réduits proportionnellement, sans priorité au premier arrivé.
-- Le portefeuille déjà encaissé, les commandes et le matériel restent hors d'atteinte.
+- Le nombre d'opérations simultanées, leurs délais et leurs coûts doivent être revus pour ces sept familles. Ne pas transposer automatiquement les 45 minutes ou la limite d'une opération de l'ancienne proposition.
+- Définir des plafonds d'effets cumulés, tous attaquants confondus, notamment sur le minage, les pertes monétaires et le ralentissement. Les anciens plafonds de 5 % et 15 % ne sont plus validés.
+- Une combinaison d'attaques ne doit jamais supprimer toutes les possibilités de défense. Paiement, recherche et installation d'un correctif doivent former de vrais choix.
+- Les mineurs ne sont ni volés ni détruits par ces familles. Certaines commandes et réserves monétaires deviennent ciblables, dans des limites encore à définir.
 
 Les frais exacts de recherche, compilation, scan et lancement doivent être recalibrés ensemble : conserver les anciens coûts d'attaque avec de petits prélèvements reproduirait le problème actuel. Le bilan sépare le coût du logiciel réutilisable et celui de chaque opération.
 
-**Attention à la mémoire actuelle :** quatre mineurs T3, hors bonus, produisent 0,015 RTM/h et remplissent leur mémoire en 35 minutes. Un siphonnage de 5 % rapporte donc au plus 0,0004375 RTM avant saturation si personne ne récolte, même s'il peut durer quatre heures. Le devis utilise la place réellement disponible. Les unités détournées laissent des reçus en mémoire jusqu'à la récolte : attaquer un compte complice ne prolonge pas son autonomie.
+**Attention à la mémoire actuelle :** quatre mineurs T3, hors bonus, produisent 0,015 RTM/h et remplissent leur mémoire en 35 minutes. Il faut décider où est stockée la production détournée et ce qui arrive quand la mémoire de l'un des comptes est pleine. Un siphon persistant ne signifie pas un revenu infini. Vérifier qu'un compte complice ne permet pas de contourner la récolte ou les limites de stockage.
 
 Une grosse ferme au même niveau peut rester plus riche qu'une petite : je conserve ce choix du jeu actuel. Les limites portent sur les effets des attaques, jamais sur le nombre de mineurs.
 
@@ -83,19 +90,21 @@ Une grosse ferme au même niveau peut rester plus riche qu'une petite : je conse
 
 Un message principal compact : **une illustration du poste, l'état du réseau, le travail en cours et les actions utiles**. Les boutons changent la vue dans ce message, sans remplir le salon de panneaux successifs.
 
-L'illustration montre du matériel identifiable : écran, tour, serveur, puis ferme distante. Elle évolue avec le firewall et l'ampleur de l'installation. Les modules sont regroupés visuellement, jamais dessinés un par un. Un service isolé ou un stockage plein change son état visuel ; une intrusion encore inconnue n'allume pas un voyant « piraté ».
+L'illustration montre l'infrastructure de contrôle du niveau 0 à 5. Les mineurs sont regroupés visuellement, jamais dessinés un par un. Un stockage plein change son état visuel ; une intrusion encore inconnue n'allume pas un voyant « piraté ».
 
-Direction visuelle : illustration pixel art détaillée mais nette, intégrée à un message Discord sobre. Texte normal et lisible sur mobile ; monospace réservé aux petits journaux. Vert pour une activité normale, ambre pour une anomalie, rouge pour une menace confirmée. Pas de pluie de code ni d'animation qui retarde les commandes.
+Direction visuelle : pixel art détaillé, texte lisible sur mobile et emojis personnalisés `root_*`. Turquoise pour l'état normal, ambre pour l'anomalie, sans compter sur la couleur seule. La forme technique, les composants V2 et les interactions sont décrits dans `../embed.md`. Pas de pluie de code ni d'animation qui retarde les commandes.
+
+La démo reste une référence esthétique, pas une autorité sur les règles PvP : son bouton d'isolation ne valide pas une autre façon d'arrêter Hostile Miner sans patch.
 
 ### Écran 1 — Je retrouve mon installation
 
 > **ROOT OS · Poste de Nox**
-> Firewall 3 · Réseau personnel
+> Serveur dédié · Infrastructure 3 · Réseau personnel
 >
 > **Ferme** · 4 mineurs T3 · 2 500 H/s
 > **Mémoire** · 0,005 / 0,00875 RTM
 > **Production** · 0,015 RTM/h
-> **Développement** · Patch Écho · encore 18 min
+> **Développement** · Correctif Hostile Miner / K7M2 · encore 18 min
 >
 > Dernier événement : un correctif public a été installé.
 
@@ -108,48 +117,48 @@ Les montants de cet exemple sont hors bonus. En jeu, l'écran utilise toujours l
 > **Ferme T3 · Rendement inhabituel**
 >
 > Production attendue : 0,015 RTM/h
-> Production reçue : 0,01425 RTM/h
-> Écart : -5 %
+> Production reçue : 0,01275 RTM/h
+> Écart : -15 %
 >
 > Une connexion reste à identifier.
 
 Boutons : **Diagnostiquer · Voir les connexions · Retour**.
 
-Après les cinq minutes de diagnostic, cette même vue devient :
+Après le diagnostic, dont la durée reste à définir, cette même vue devient :
 
-> **Intrusion identifiée · Écho**
-> Siphonnage interrompu.
+> **Intrusion identifiée · Hostile Miner / K7M2**
+> Siphonnage toujours actif · Correctif nécessaire.
 > Faille concernée : mineurs T3.
 > Correctif public : aucun disponible.
 
 Boutons : **Développer un patch · Chercher au marché · Analyser la trace**.
 
-Analyser la trace prend quinze minutes, gratuitement, et identifie l'attaquant dans le jeu. La victime peut alors exercer ses représailles pendant 72 heures. La discrétion retarde l'identification, sans rendre l'opérateur intouchable.
+L'analyse de la trace doit permettre d'identifier l'attaquant pour les représailles ; délai et coût restent à définir. La discrétion retarde l'identification, sans rendre l'opérateur intouchable. Une fois le bon patch installé, la vue confirme l'arrêt du siphonnage et le rétablissement du débit.
 
 ### Écran 3 — Mon opération devient une histoire
 
-> **Écho · Connexion à K-4821**
+> **Hostile Miner / K7M2 · Connexion à K-4821**
 >
 > 14 h 00 · Opération engagée.
 > 14 h 45 · Accès obtenu aux mineurs T3.
-> 15 h 05 · Connexion fermée par le réseau distant.
+> 15 h 05 · Correctif installé par le réseau distant.
 >
 > Activité réelle : 20 min
-> RTM récupéré : 0,00025
-> Résultat : interruption par un contrôle.
+> RTM récupéré : 0,00075
+> Résultat : arrêt par correctif.
 
 Boutons : **Voir le bilan · Ouvrir le logiciel · Retour**.
 
-Cet exemple correspond au flux de quatre mineurs T3, sans contention ni saturation avant l'interruption. Le bilan ajoute les frais effectivement payés et le résultat net ; il ne confond pas butin brut et bénéfice.
+Cet exemple illustre un prélèvement de 15 % sur 0,015 RTM/h pendant vingt minutes, sans contention ni saturation. Les horaires ne fixent pas le délai de préparation. Le bilan ajoute les frais effectivement payés et le résultat net ; il ne confond pas butin brut et bénéfice.
 
 Ces lignes apparaissent dans le journal, sans envoyer un message toutes les minutes. Le logiciel reste dans ma bibliothèque : je peux le réutiliser, vendre une licence ou développer sa protection.
 
 ### Les détails qui font l'immersion
 
 - Je nomme mon poste et ma ferme ; ces noms reviennent dans les rapports.
-- Un logiciel porte le nom et la signature de son auteur joueur.
+- Un logiciel porte sa famille, son empreinte et la signature de son auteur joueur.
 - Un incident explique une variation réelle de mon réseau.
-- Les vues sensibles sont privées ; je choisis les bilans que je partage publiquement.
+- Les panneaux du parcours sont publics, comme dans la démo ; cela n'autorise pas les autres à agir sur mon compte. La diffusion des renseignements volés ou scannés reste à trancher avant leur intégration.
 - Les délais continuent quand je ferme Discord. Les événements restent dans le Journal si mes messages privés sont fermés.
 - Un ancien bouton recharge un devis à jour. Un panneau disparu se retrouve avec `/network`.
 

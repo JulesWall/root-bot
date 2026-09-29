@@ -459,3 +459,285 @@ class MathConfig:
         """Retourne les paramètres d'un tier de contrat donné ('short', 'medium', 'long')."""
         return cls.get_contracts_config().get('tiers', {}).get(tier)
 
+    # -------------------------------------------------------------------------
+    # Accesseurs PvP V2
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def get_pvp_v2(cls) -> dict:
+        """Retourne la section pvp_v2 complète.
+
+        Lève ValueError si la section est absente — un démarrage sans configuration PvP V2
+        est une erreur de configuration, pas un état silencieusement acceptable.
+        """
+        cfg = cls.load().get('pvp_v2')
+        if cfg is None:
+            raise ValueError("Section 'pvp_v2' absente de data/math.json.")
+        return cfg
+
+    @classmethod
+    def get_pvp_v2_fingerprint(cls) -> dict:
+        """Retourne la configuration de génération des empreintes courtes.
+
+        Valide : alphabet non vide (str), longueur entière positive,
+        max_generation_attempts entier positif.
+        """
+        fp = cls.get_pvp_v2().get('fingerprint')
+        if not isinstance(fp, dict):
+            raise ValueError("pvp_v2.fingerprint doit être un objet JSON.")
+        alphabet = fp.get('alphabet', '')
+        length = fp.get('length', 0)
+        attempts = fp.get('max_generation_attempts', 0)
+        if not isinstance(alphabet, str) or len(alphabet) < 2:
+            raise ValueError("pvp_v2.fingerprint.alphabet doit être une chaîne d'au moins 2 caractères.")
+        if not isinstance(length, int) or length < 1:
+            raise ValueError("pvp_v2.fingerprint.length doit être un entier >= 1.")
+        if not isinstance(attempts, int) or attempts < 1:
+            raise ValueError("pvp_v2.fingerprint.max_generation_attempts doit être un entier >= 1.")
+        return fp
+
+    @classmethod
+    def get_pvp_v2_families(cls) -> list:
+        """Retourne la liste des familles de logiciels PvP V2 reconnues.
+
+        Valide : liste non vide de chaînes.
+        """
+        families = cls.get_pvp_v2().get('families')
+        if not isinstance(families, list) or not families:
+            raise ValueError("pvp_v2.families doit être une liste non vide.")
+        for f in families:
+            if not isinstance(f, str) or not f:
+                raise ValueError(f"pvp_v2.families : entrée invalide {f!r}.")
+        return families
+
+    @classmethod
+    def get_pvp_v2_tiers(cls) -> list:
+        """Retourne la liste des tiers matériels valides pour le PvP V2.
+
+        Valide : liste d'entiers strictement positifs.
+        """
+        tiers = cls.get_pvp_v2().get('tiers')
+        if not isinstance(tiers, list) or not tiers:
+            raise ValueError("pvp_v2.tiers doit être une liste non vide.")
+        for t in tiers:
+            if not isinstance(t, int) or t < 1:
+                raise ValueError(f"pvp_v2.tiers : tier invalide {t!r} (doit être int >= 1).")
+        return tiers
+
+    @classmethod
+    def get_pvp_v2_eligibility(cls) -> dict:
+        """Retourne les règles d'éligibilité et de représailles.
+
+        Valide : min_infrastructure_level_attacker int >= 0,
+        retaliation_window_hours int > 0.
+        """
+        elig = cls.get_pvp_v2().get('eligibility')
+        if not isinstance(elig, dict):
+            raise ValueError("pvp_v2.eligibility doit être un objet JSON.")
+        min_lvl = elig.get('min_infrastructure_level_attacker', -1)
+        ret_hours = elig.get('retaliation_window_hours', 0)
+        if not isinstance(min_lvl, int) or min_lvl < 0:
+            raise ValueError("pvp_v2.eligibility.min_infrastructure_level_attacker doit être int >= 0.")
+        if not isinstance(ret_hours, int) or ret_hours <= 0:
+            raise ValueError("pvp_v2.eligibility.retaliation_window_hours doit être int > 0.")
+        return elig
+
+    @classmethod
+    def get_pvp_v2_dev_costs(cls, tier: int) -> dict:
+        """Retourne les coûts RTM de développement (recherche/compilation offensive et défensive) pour un tier.
+
+        Valide : toutes les clés présentes, toutes valeurs float/int > 0.
+        tier doit être dans pvp_v2.tiers.
+        """
+        valid_tiers = cls.get_pvp_v2_tiers()
+        if tier not in valid_tiers:
+            raise ValueError(f"pvp_v2 : tier {tier} inconnu (valides : {valid_tiers}).")
+        costs_cfg = cls.get_pvp_v2().get('development', {}).get('costs_by_tier', {})
+        tier_str = str(tier)
+        required_keys = ['research_rtm', 'compile_rtm', 'patch_research_rtm', 'patch_compile_rtm']
+        result = {}
+        for key in required_keys:
+            val = costs_cfg.get(key, {}).get(tier_str)
+            if val is None:
+                raise ValueError(f"pvp_v2.development.costs_by_tier.{key}.{tier_str} manquant.")
+            if not isinstance(val, (int, float)) or val <= 0:
+                raise ValueError(f"pvp_v2.development.costs_by_tier.{key}.{tier_str} doit être > 0.")
+            result[key] = Decimal(str(val))
+        return result
+
+    @classmethod
+    def get_pvp_v2_installation_duration(cls, tier: int) -> int:
+        """Retourne la durée de base d'installation (secondes) pour un tier donné.
+
+        Valide : entier positif.
+        """
+        valid_tiers = cls.get_pvp_v2_tiers()
+        if tier not in valid_tiers:
+            raise ValueError(f"pvp_v2 : tier {tier} inconnu.")
+        tier_str = str(tier)
+        durations = cls.get_pvp_v2().get('installation', {}).get('base_duration_seconds_by_tier', {})
+        val = durations.get(tier_str)
+        if val is None:
+            raise ValueError(f"pvp_v2.installation.base_duration_seconds_by_tier.{tier_str} manquant.")
+        if not isinstance(val, int) or val <= 0:
+            raise ValueError(f"pvp_v2.installation.base_duration_seconds_by_tier.{tier_str} doit être int > 0.")
+        return val
+
+    @classmethod
+    def get_pvp_v2_defense_slowdown(cls) -> tuple:
+        """Retourne (defense_divisor, max_multiplier) pour le calcul du ralentissement défensif.
+
+        Valide : defense_slowdown_divisor int > 0, defense_slowdown_max_multiplier int >= 1.
+        """
+        inst = cls.get_pvp_v2().get('installation', {})
+        divisor = inst.get('defense_slowdown_divisor')
+        max_mult = inst.get('defense_slowdown_max_multiplier')
+        if not isinstance(divisor, int) or divisor <= 0:
+            raise ValueError("pvp_v2.installation.defense_slowdown_divisor doit être int > 0.")
+        if not isinstance(max_mult, int) or max_mult < 1:
+            raise ValueError("pvp_v2.installation.defense_slowdown_max_multiplier doit être int >= 1.")
+        return divisor, max_mult
+
+    @classmethod
+    def get_pvp_v2_hostile_miner(cls) -> dict:
+        """Retourne la configuration Hostile Miner.
+
+        Valide : siphon_rate float dans (0, 1], cumulative_cap_per_tier float dans (0, 1].
+        """
+        cfg = cls.get_pvp_v2().get('hostile_miner')
+        if not isinstance(cfg, dict):
+            raise ValueError("pvp_v2.hostile_miner doit être un objet JSON.")
+        siphon = cfg.get('siphon_rate')
+        cap = cfg.get('cumulative_cap_per_tier')
+        if not isinstance(siphon, (int, float)) or not (0 < siphon <= 1):
+            raise ValueError("pvp_v2.hostile_miner.siphon_rate doit être dans (0, 1].")
+        if not isinstance(cap, (int, float)) or not (0 < cap <= 1):
+            raise ValueError("pvp_v2.hostile_miner.cumulative_cap_per_tier doit être dans (0, 1].")
+        return cfg
+
+    @classmethod
+    def get_pvp_v2_ransomware(cls) -> dict:
+        """Retourne la configuration Ransomware.
+
+        Valide : blocked_commands liste non vide, always_allowed_commands liste non vide,
+        ransom_usd_by_tier dict avec toutes les clés de tiers, max_duration_hours int > 0,
+        post_resolution_immunity_hours int >= 0.
+        """
+        cfg = cls.get_pvp_v2().get('ransomware')
+        if not isinstance(cfg, dict):
+            raise ValueError("pvp_v2.ransomware doit être un objet JSON.")
+        blocked = cfg.get('blocked_commands')
+        allowed = cfg.get('always_allowed_commands')
+        ransom = cfg.get('ransom_usd_by_tier', {})
+        max_dur = cfg.get('max_duration_hours', 0)
+        immunity = cfg.get('post_resolution_immunity_hours', -1)
+        if not isinstance(blocked, list) or not blocked:
+            raise ValueError("pvp_v2.ransomware.blocked_commands doit être une liste non vide.")
+        if not isinstance(allowed, list) or not allowed:
+            raise ValueError("pvp_v2.ransomware.always_allowed_commands doit être une liste non vide.")
+        for tier in cls.get_pvp_v2_tiers():
+            val = ransom.get(str(tier))
+            if val is None or not isinstance(val, (int, float)) or val <= 0:
+                raise ValueError(f"pvp_v2.ransomware.ransom_usd_by_tier.{tier} manquant ou invalide.")
+        if not isinstance(max_dur, int) or max_dur <= 0:
+            raise ValueError("pvp_v2.ransomware.max_duration_hours doit être int > 0.")
+        if not isinstance(immunity, int) or immunity < 0:
+            raise ValueError("pvp_v2.ransomware.post_resolution_immunity_hours doit être int >= 0.")
+        return cfg
+
+    @classmethod
+    def get_pvp_v2_currency_theft(cls) -> dict:
+        """Retourne la configuration Vol de monnaie.
+
+        Valide : taux dans (0, 1], plafond USD > 0, plancher USD >= 0,
+        cooldown int > 0, fee_rate dans [0, 1).
+        """
+        cfg = cls.get_pvp_v2().get('currency_theft')
+        if not isinstance(cfg, dict):
+            raise ValueError("pvp_v2.currency_theft doit être un objet JSON.")
+        rate = cfg.get('exposed_reserve_rate')
+        max_usd = cfg.get('max_per_operation_usd')
+        min_bal = cfg.get('victim_minimum_balance_usd')
+        cooldown = cfg.get('attacker_cooldown_per_victim_hours')
+        daily_cap = cfg.get('cumulative_daily_cap_rate')
+        fee = cfg.get('fee_rate')
+        if not isinstance(rate, (int, float)) or not (0 < rate <= 1):
+            raise ValueError("pvp_v2.currency_theft.exposed_reserve_rate doit être dans (0, 1].")
+        if not isinstance(max_usd, (int, float)) or max_usd <= 0:
+            raise ValueError("pvp_v2.currency_theft.max_per_operation_usd doit être > 0.")
+        if not isinstance(min_bal, (int, float)) or min_bal < 0:
+            raise ValueError("pvp_v2.currency_theft.victim_minimum_balance_usd doit être >= 0.")
+        if not isinstance(cooldown, int) or cooldown <= 0:
+            raise ValueError("pvp_v2.currency_theft.attacker_cooldown_per_victim_hours doit être int > 0.")
+        if not isinstance(daily_cap, (int, float)) or not (0 < daily_cap <= 1):
+            raise ValueError("pvp_v2.currency_theft.cumulative_daily_cap_rate doit être dans (0, 1].")
+        if not isinstance(fee, (int, float)) or not (0 <= fee < 1):
+            raise ValueError("pvp_v2.currency_theft.fee_rate doit être dans [0, 1).")
+        return cfg
+
+    @classmethod
+    def get_pvp_v2_saturation(cls) -> dict:
+        """Retourne la configuration Saturation.
+
+        Valide : taux dans (0, 1), plafond dans (0, 1], durée > 0.
+        """
+        cfg = cls.get_pvp_v2().get('saturation')
+        if not isinstance(cfg, dict):
+            raise ValueError("pvp_v2.saturation doit être un objet JSON.")
+        red_rate = cfg.get('offensive_reduction_rate')
+        cap = cfg.get('cumulative_cap')
+        hours = cfg.get('duration_hours')
+        if not isinstance(red_rate, (int, float)) or not (0 < red_rate < 1):
+            raise ValueError("pvp_v2.saturation.offensive_reduction_rate doit être dans (0, 1).")
+        if not isinstance(cap, (int, float)) or not (0 < cap <= 1):
+            raise ValueError("pvp_v2.saturation.cumulative_cap doit être dans (0, 1].")
+        if not isinstance(hours, (int, float)) or hours <= 0:
+            raise ValueError("pvp_v2.saturation.duration_hours doit être > 0.")
+        return cfg
+
+    @classmethod
+    def get_pvp_v2_market(cls) -> dict:
+        """Retourne la configuration du marché PvP V2.
+
+        Valide : prix min/max cohérents, fee_rate dans [0, 1),
+        max_active_listings_per_player int >= 1.
+        """
+        cfg = cls.get_pvp_v2().get('market')
+        if not isinstance(cfg, dict):
+            raise ValueError("pvp_v2.market doit être un objet JSON.")
+        min_p = cfg.get('min_price_usd')
+        max_p = cfg.get('max_price_usd')
+        fee = cfg.get('fee_rate')
+        max_list = cfg.get('max_active_listings_per_player')
+        if not isinstance(min_p, (int, float)) or min_p <= 0:
+            raise ValueError("pvp_v2.market.min_price_usd doit être > 0.")
+        if not isinstance(max_p, (int, float)) or max_p <= min_p:
+            raise ValueError("pvp_v2.market.max_price_usd doit être > min_price_usd.")
+        if not isinstance(fee, (int, float)) or not (0 <= fee < 1):
+            raise ValueError("pvp_v2.market.fee_rate doit être dans [0, 1).")
+        if not isinstance(max_list, int) or max_list < 1:
+            raise ValueError("pvp_v2.market.max_active_listings_per_player doit être int >= 1.")
+        return cfg
+
+    @classmethod
+    def validate_pvp_v2_config(cls) -> None:
+        """Valide exhaustivement toute la section pvp_v2.
+
+        Appelle chaque accesseur typé pour déclencher une erreur au démarrage
+        ou lors des tests si un paramètre est absent, de mauvais type ou hors bornes.
+        Ne lève rien si tout est correct.
+        """
+        cls.get_pvp_v2_fingerprint()
+        cls.get_pvp_v2_families()
+        tiers = cls.get_pvp_v2_tiers()
+        cls.get_pvp_v2_eligibility()
+        for t in tiers:
+            cls.get_pvp_v2_dev_costs(t)
+            cls.get_pvp_v2_installation_duration(t)
+        cls.get_pvp_v2_defense_slowdown()
+        cls.get_pvp_v2_hostile_miner()
+        cls.get_pvp_v2_ransomware()
+        cls.get_pvp_v2_currency_theft()
+        cls.get_pvp_v2_saturation()
+        cls.get_pvp_v2_market()
+

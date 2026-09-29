@@ -10551,8 +10551,319 @@ class TestMathCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Division par zéro impossible", err_content_fr)
 
 
+
+
 if __name__ == '__main__':
     unittest.main()
 
+
+# =============================================================================
+# PvP V2 — Tests de configuration (Étape 1)
+# =============================================================================
+
+class TestPvPV2Config(unittest.TestCase):
+    """Valide la section pvp_v2 de data/math.json et les accesseurs de MathConfig.
+
+    Ces tests doivent rester verts à chaque étape. Ils n'utilisent ni Discord ni MySQL.
+    """
+
+    def setUp(self):
+        MathConfig.clear_cache()
+
+    # -----------------------------------------------------------------------
+    # 1. Présence et structure de la section
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_section_present(self):
+        """La section pvp_v2 est présente dans math.json."""
+        cfg = MathConfig.load()
+        self.assertIn('pvp_v2', cfg, "La section 'pvp_v2' doit exister dans data/math.json.")
+
+    def test_pvp_v2_validate_full_config_passes(self):
+        """La validation exhaustive de pvp_v2 ne lève aucune exception sur la config actuelle."""
+        try:
+            MathConfig.validate_pvp_v2_config()
+        except Exception as e:
+            self.fail(f"validate_pvp_v2_config() a levé une exception inattendue : {e}")
+
+    # -----------------------------------------------------------------------
+    # 2. Empreinte (fingerprint)
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_fingerprint_fields(self):
+        """L'empreinte a un alphabet valide, une longueur >= 1 et des tentatives >= 1."""
+        fp = MathConfig.get_pvp_v2_fingerprint()
+        self.assertIsInstance(fp['alphabet'], str)
+        self.assertGreaterEqual(len(fp['alphabet']), 2)
+        self.assertIsInstance(fp['length'], int)
+        self.assertGreaterEqual(fp['length'], 1)
+        self.assertIsInstance(fp['max_generation_attempts'], int)
+        self.assertGreaterEqual(fp['max_generation_attempts'], 1)
+
+    def test_pvp_v2_fingerprint_alphabet_no_ambiguous_chars(self):
+        """L'alphabet de l'empreinte ne contient pas de caractères ambigus (0, O, I, 1)."""
+        fp = MathConfig.get_pvp_v2_fingerprint()
+        for c in ('0', 'O', 'I', '1'):
+            self.assertNotIn(c, fp['alphabet'], f"Caractère ambigu '{c}' trouvé dans l'alphabet.")
+
+    # -----------------------------------------------------------------------
+    # 3. Familles et tiers
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_families_are_known(self):
+        """Toutes les familles sont des chaînes non vides."""
+        families = MathConfig.get_pvp_v2_families()
+        self.assertIsInstance(families, list)
+        self.assertGreater(len(families), 0)
+        for f in families:
+            self.assertIsInstance(f, str)
+            self.assertTrue(f, f"Famille vide détectée : {f!r}")
+
+    def test_pvp_v2_tiers_are_valid_ints(self):
+        """Les tiers sont une liste d'entiers >= 1 couvrant au moins T1 à T6."""
+        tiers = MathConfig.get_pvp_v2_tiers()
+        self.assertIsInstance(tiers, list)
+        for t in range(1, 7):
+            self.assertIn(t, tiers, f"T{t} absent de pvp_v2.tiers.")
+        for t in tiers:
+            self.assertIsInstance(t, int)
+            self.assertGreaterEqual(t, 1)
+
+    # -----------------------------------------------------------------------
+    # 4. Éligibilité
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_eligibility_fields(self):
+        """Les règles d'éligibilité ont des valeurs cohérentes."""
+        elig = MathConfig.get_pvp_v2_eligibility()
+        self.assertIsInstance(elig['min_infrastructure_level_attacker'], int)
+        self.assertGreaterEqual(elig['min_infrastructure_level_attacker'], 0)
+        self.assertIsInstance(elig['retaliation_window_hours'], int)
+        self.assertGreater(elig['retaliation_window_hours'], 0)
+
+    # -----------------------------------------------------------------------
+    # 5. Coûts de développement par tier (T1 à T6)
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_dev_costs_all_tiers(self):
+        """Chaque tier T1 à T6 a les quatre coûts RTM > 0."""
+        keys = ['research_rtm', 'compile_rtm', 'patch_research_rtm', 'patch_compile_rtm']
+        for tier in range(1, 7):
+            with self.subTest(tier=tier):
+                costs = MathConfig.get_pvp_v2_dev_costs(tier)
+                for key in keys:
+                    self.assertIn(key, costs)
+                    self.assertGreater(costs[key], 0, f"Tier {tier} / {key} doit être > 0.")
+
+    def test_pvp_v2_dev_costs_increase_with_tier(self):
+        """Les coûts de recherche offensive augmentent avec le tier."""
+        prev = None
+        for tier in range(1, 7):
+            current = MathConfig.get_pvp_v2_dev_costs(tier)['research_rtm']
+            if prev is not None:
+                self.assertGreater(
+                    current, prev,
+                    f"research_rtm T{tier} ({current}) doit être > T{tier - 1} ({prev}).",
+                )
+            prev = current
+
+    def test_pvp_v2_dev_costs_invalid_tier_raises(self):
+        """Un tier invalide lève ValueError."""
+        with self.assertRaises(ValueError):
+            MathConfig.get_pvp_v2_dev_costs(0)
+        with self.assertRaises(ValueError):
+            MathConfig.get_pvp_v2_dev_costs(99)
+
+    # -----------------------------------------------------------------------
+    # 6. Durées d'installation
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_installation_durations_all_tiers(self):
+        """Chaque tier T1 à T6 a une durée d'installation en secondes > 0."""
+        for tier in range(1, 7):
+            with self.subTest(tier=tier):
+                dur = MathConfig.get_pvp_v2_installation_duration(tier)
+                self.assertIsInstance(dur, int)
+                self.assertGreater(dur, 0)
+
+    def test_pvp_v2_installation_durations_increase_with_tier(self):
+        """La durée d'installation augmente avec le tier."""
+        prev = None
+        for tier in range(1, 7):
+            current = MathConfig.get_pvp_v2_installation_duration(tier)
+            if prev is not None:
+                self.assertGreater(
+                    current, prev,
+                    f"Durée T{tier} ({current}s) doit être > T{tier - 1} ({prev}s).",
+                )
+            prev = current
+
+    # -----------------------------------------------------------------------
+    # 7. Ralentissement défensif
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_defense_slowdown_values(self):
+        """Le diviseur défensif est > 0 et le multiplicateur max >= 1."""
+        divisor, max_mult = MathConfig.get_pvp_v2_defense_slowdown()
+        self.assertIsInstance(divisor, int)
+        self.assertGreater(divisor, 0)
+        self.assertIsInstance(max_mult, int)
+        self.assertGreaterEqual(max_mult, 1)
+
+    def test_pvp_v2_defense_slowdown_formula_plafond(self):
+        """La formule de ralentissement est plafonnée à max_multiplier."""
+        divisor, max_mult = MathConfig.get_pvp_v2_defense_slowdown()
+        # Défense infinie → facteur plafonné à max_multiplier
+        defense = 10_000_000
+        factor = 1 + defense / divisor
+        factor_capped = min(factor, max_mult)
+        self.assertEqual(factor_capped, max_mult)
+
+    # -----------------------------------------------------------------------
+    # 8. Hostile Miner
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_hostile_miner_rates(self):
+        """Le taux de siphonnage et le plafond cumulatif sont dans (0, 1]."""
+        cfg = MathConfig.get_pvp_v2_hostile_miner()
+        siphon = cfg['siphon_rate']
+        cap = cfg['cumulative_cap_per_tier']
+        self.assertGreater(siphon, 0)
+        self.assertLessEqual(siphon, 1)
+        self.assertGreater(cap, 0)
+        self.assertLessEqual(cap, 1)
+        self.assertGreater(cap, siphon, "Le plafond cumulatif doit être > siphon_rate pour autoriser plusieurs attaquants.")
+
+    def test_pvp_v2_hostile_miner_example_calculation(self):
+        """Exemple du game design : 15 % de 2 500 H/s = 375 H/s siphonnés."""
+        from decimal import Decimal as D
+        cfg = MathConfig.get_pvp_v2_hostile_miner()
+        hashrate_t3 = D('2500')  # 4 mineurs T3 × 625 H/s
+        siphon_rate = D(str(cfg['siphon_rate']))
+        siphoned = hashrate_t3 * siphon_rate
+        self.assertEqual(siphoned, D('375'))
+
+    # -----------------------------------------------------------------------
+    # 9. Ransomware
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_ransomware_fields(self):
+        """Les rançons existent pour chaque tier et les durées sont positives."""
+        cfg = MathConfig.get_pvp_v2_ransomware()
+        for tier in range(1, 7):
+            self.assertIn(str(tier), cfg['ransom_usd_by_tier'], f"Rançon manquante pour T{tier}.")
+            self.assertGreater(cfg['ransom_usd_by_tier'][str(tier)], 0)
+        self.assertGreater(cfg['max_duration_hours'], 0)
+        self.assertGreaterEqual(cfg['post_resolution_immunity_hours'], 0)
+
+    def test_pvp_v2_ransomware_always_allowed_includes_claim(self):
+        """/claim est toujours accessible sous ransomware."""
+        cfg = MathConfig.get_pvp_v2_ransomware()
+        self.assertIn('claim', cfg['always_allowed_commands'])
+
+    def test_pvp_v2_ransomware_no_overlap_blocked_allowed(self):
+        """Aucune commande n'est à la fois bloquée et toujours autorisée."""
+        cfg = MathConfig.get_pvp_v2_ransomware()
+        overlap = set(cfg['blocked_commands']) & set(cfg['always_allowed_commands'])
+        self.assertEqual(overlap, set(), f"Commandes en double : {overlap}")
+
+    # -----------------------------------------------------------------------
+    # 10. Vol de monnaie
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_currency_theft_fields(self):
+        """Les paramètres du vol de monnaie sont dans leurs bornes."""
+        cfg = MathConfig.get_pvp_v2_currency_theft()
+        self.assertGreater(cfg['exposed_reserve_rate'], 0)
+        self.assertLessEqual(cfg['exposed_reserve_rate'], 1)
+        self.assertGreater(cfg['max_per_operation_usd'], 0)
+        self.assertGreaterEqual(cfg['victim_minimum_balance_usd'], 0)
+        self.assertGreater(cfg['attacker_cooldown_per_victim_hours'], 0)
+        self.assertGreater(cfg['cumulative_daily_cap_rate'], 0)
+        self.assertLessEqual(cfg['cumulative_daily_cap_rate'], 1)
+        self.assertGreaterEqual(cfg['fee_rate'], 0)
+        self.assertLess(cfg['fee_rate'], 1)
+
+    # -----------------------------------------------------------------------
+    # 11. Saturation
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_saturation_fields(self):
+        """La saturation a des taux et durée cohérents."""
+        cfg = MathConfig.get_pvp_v2_saturation()
+        self.assertGreater(cfg['offensive_reduction_rate'], 0)
+        self.assertLess(cfg['offensive_reduction_rate'], 1)
+        self.assertGreater(cfg['cumulative_cap'], 0)
+        self.assertLessEqual(cfg['cumulative_cap'], 1)
+        self.assertGreater(cfg['cumulative_cap'], cfg['offensive_reduction_rate'],
+                           "Le plafond cumulatif doit être > taux unitaire.")
+        self.assertGreater(cfg['duration_hours'], 0)
+
+    # -----------------------------------------------------------------------
+    # 12. Marché
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_market_fields(self):
+        """Le marché a des prix min/max cohérents et un taux de frais valide."""
+        cfg = MathConfig.get_pvp_v2_market()
+        self.assertGreater(cfg['min_price_usd'], 0)
+        self.assertGreater(cfg['max_price_usd'], cfg['min_price_usd'])
+        self.assertGreaterEqual(cfg['fee_rate'], 0)
+        self.assertLess(cfg['fee_rate'], 1)
+        self.assertGreaterEqual(cfg['max_active_listings_per_player'], 1)
+
+    # -----------------------------------------------------------------------
+    # 13. Non-régression : la config V2 ne perturbe pas les commandes existantes
+    # -----------------------------------------------------------------------
+
+    def test_pvp_v2_config_does_not_change_network_defense_values(self):
+        """Les valeurs de firewall_network_defense sont inchangées après ajout de pvp_v2."""
+        expected = {0: 0, 1: 250, 2: 500, 3: 1000, 4: 2500, 5: 15000}
+        MathConfig.validate_pvp_v2_config()  # Charge et valide pvp_v2
+        for level, expected_val in expected.items():
+            self.assertEqual(
+                MathConfig.get_firewall_network_defense(level),
+                expected_val,
+                f"firewall_network_defense[{level}] modifié par pvp_v2.",
+            )
+
+    def test_pvp_v2_config_does_not_change_mining_stats(self):
+        """Les statistiques de minage par tier sont inchangées après ajout de pvp_v2."""
+        expected_hashrate = {1: 25, 2: 125, 3: 625, 4: 3125, 5: 15625}
+        MathConfig.validate_pvp_v2_config()
+        for tier, hs in expected_hashrate.items():
+            self.assertEqual(
+                MathConfig.get_module_stat('mining', tier),
+                hs,
+                f"mining hashrate T{tier} modifié par pvp_v2.",
+            )
+
+    def test_pvp_v2_config_does_not_change_compile_params(self):
+        """Les paramètres de compile (bits_per_atk, méthodes) sont inchangés."""
+        MathConfig.validate_pvp_v2_config()
+        cfg = MathConfig.load()
+        compile_cfg = cfg.get('compile', {})
+        self.assertEqual(compile_cfg.get('bits_per_atk'), 60)
+        self.assertIn('unskilled', compile_cfg.get('methods', {}))
+        self.assertIn('skilled', compile_cfg.get('methods', {}))
+        self.assertIn('ai', compile_cfg.get('methods', {}))
+
+    def test_pvp_v2_config_does_not_change_event_multipliers(self):
+        """Les multiplicateurs d'événements par firewall level sont inchangés."""
+        MathConfig.validate_pvp_v2_config()
+        for level, expected in enumerate(range(1, 7)):
+            self.assertEqual(
+                MathConfig.get_event_firewall_multiplier(level),
+                expected,
+                f"event_firewall_multiplier[{level}] modifié par pvp_v2.",
+            )
+
+    def test_pvp_v2_missing_section_raises_value_error(self):
+        """Si pvp_v2 est absent du JSON chargé, get_pvp_v2() lève ValueError."""
+        import unittest.mock as mock
+        cfg_without_pvp = {k: v for k, v in MathConfig.load().items() if k != 'pvp_v2'}
+        with mock.patch.object(MathConfig, 'load', return_value=cfg_without_pvp):
+            with self.assertRaises(ValueError, msg="get_pvp_v2() doit lever ValueError si la section est absente."):
+                MathConfig.get_pvp_v2()
 
 
