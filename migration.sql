@@ -124,20 +124,8 @@ CREATE TABLE IF NOT EXISTS pvp_v2_active_effects (
   CHECK (tier BETWEEN 1 AND 6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS pvp_v2_scan_reports (
-  id           BIGINT UNSIGNED     NOT NULL AUTO_INCREMENT,
-  attacker_id  BIGINT UNSIGNED     NOT NULL,
-  victim_id    BIGINT UNSIGNED     NOT NULL,
-  scanned_at   DATETIME(6)         NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  expires_at   DATETIME(6)         NOT NULL,
-  report_data  JSON                NOT NULL,
-  PRIMARY KEY (id),
-  INDEX idx_scan_attacker (attacker_id, scanned_at),
-  INDEX idx_scan_victim (victim_id, scanned_at),
-  INDEX idx_scan_expires (expires_at),
-  FOREIGN KEY (attacker_id) REFERENCES players(discord_id) ON DELETE CASCADE,
-  FOREIGN KEY (victim_id)   REFERENCES players(discord_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Table pvp_v2_scan_reports supprimée : les rapports de scan ne sont plus archivés en base
+DROP TABLE IF EXISTS pvp_v2_scan_reports;
 
 CREATE TABLE IF NOT EXISTS pvp_v2_espionage_reports (
   id           BIGINT UNSIGNED     NOT NULL AUTO_INCREMENT,

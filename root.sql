@@ -597,22 +597,6 @@ CREATE TABLE IF NOT EXISTS pvp_v2_active_effects (
   CHECK (tier BETWEEN 1 AND 6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Rapports de scan horodatés figés.
--- report_data : snapshot JSON des champs approuvés (décision 11).
-CREATE TABLE IF NOT EXISTS pvp_v2_scan_reports (
-  id           BIGINT UNSIGNED     NOT NULL AUTO_INCREMENT,
-  attacker_id  BIGINT UNSIGNED     NOT NULL,
-  victim_id    BIGINT UNSIGNED     NOT NULL,
-  scanned_at   DATETIME(6)         NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  expires_at   DATETIME(6)         NOT NULL,
-  report_data  JSON                NOT NULL,
-  PRIMARY KEY (id),
-  INDEX idx_scan_attacker (attacker_id, scanned_at),
-  INDEX idx_scan_victim (victim_id, scanned_at),
-  INDEX idx_scan_expires (expires_at),
-  FOREIGN KEY (attacker_id) REFERENCES players(discord_id) ON DELETE CASCADE,
-  FOREIGN KEY (victim_id)   REFERENCES players(discord_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Rapports d'espionnage horodatés figés.
 -- Révèle uniquement les jobs de développement en cours de la cible (décision 7).

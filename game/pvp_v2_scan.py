@@ -20,12 +20,21 @@ from game.db.hack import HackDB
 from game.db.players import PlayerData, UpdatePlayer
 from game.db.pvp_v2_dev_jobs import PvpV2DevJobsDB
 from game.db.pvp_v2_patches import PvpV2PatchDB
-from game.db.pvp_v2_reports import PvpV2ScanReportsDB
 from game.db.pvp_v2_software import PvpV2SoftwareDB
 from game.game_error import GameError
 from game.math_config import MathConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _get_infra_level(row: dict | None) -> int:
+    """Retourne le niveau d'infrastructure du joueur (alias de firewall_level en BDD)."""
+    if not row:
+        return 0
+    val = row.get('infrastructure_level')
+    if val is not None:
+        return int(val or 0)
+    return int(row.get('firewall_level', 0) or 0)
 
 
 class PvpV2ScanService:
@@ -41,18 +50,24 @@ class PvpV2ScanService:
         if int(attacker_id) == int(victim_id):
             raise GameError('self_target')
 
-        attacker = PlayerData.get(tx, int(attacker_id))
+        try:
+            attacker = PlayerData.get(tx, int(attacker_id))
+        except GameError:
+            attacker = None
         if not attacker:
             raise GameError('player_not_found')
 
-        victim = PlayerData.get(tx, int(victim_id))
+        try:
+            victim = PlayerData.get(tx, int(victim_id))
+        except GameError:
+            victim = None
         if not victim:
             raise GameError('target_not_registered')
 
         elig = MathConfig.get_pvp_v2_eligibility()
         min_lvl = int(elig.get('min_infrastructure_level_attacker', 1))
-        attacker_infra = int(attacker.get('infrastructure_level', 0) or 0)
-        victim_infra = int(victim.get('infrastructure_level', 0) or 0)
+        attacker_infra = _get_infra_level(attacker)
+        victim_infra = _get_infra_level(victim)
 
         # Attaquant doit posséder au moins le niveau minimum d'infrastructure
         if attacker_infra < min_lvl:
@@ -87,21 +102,15 @@ class PvpV2ScanService:
 
         cost_rtm = Decimal(str(scan_cfg.get('cost_rtm', '0.005')))
         duration_seconds = int(scan_cfg.get('base_duration_seconds', 90))
-        validity_hours = int(scan_cfg.get('report_validity_hours', 24))
-
-        latest_valid = PvpV2ScanReportsDB.get_latest_valid(tx, int(attacker_id), int(victim_id))
 
         return {
             'attacker_id': int(attacker_id),
             'victim_id': int(victim_id),
             'cost_rtm': cost_rtm,
             'duration_seconds': duration_seconds,
-            'validity_hours': validity_hours,
-            'attacker_infrastructure': int(attacker.get('infrastructure_level', 0) or 0),
-            'victim_infrastructure': int(victim.get('infrastructure_level', 0) or 0),
+            'attacker_infrastructure': _get_infra_level(attacker),
+            'victim_infrastructure': _get_infra_level(victim),
             'is_retaliation': is_retaliation,
-            'has_valid_report': latest_valid is not None,
-            'latest_report_id': latest_valid['id'] if latest_valid else None,
         }
 
     @classmethod
@@ -170,7 +179,7 @@ class PvpV2ScanService:
         """
         victim_id = int(victim_row['discord_id'])
         victim_stats = MathConfig.calculate_player_stats(victim_row)
-        accrual = MathConfig.calculate_mining_accrual(victim_row, victim_stats, tx.now)
+        accrual = MathConfig.compute_mining_progress(victim_row, victim_stats, tx.now)
 
         tiers = MathConfig.get_pvp_v2_tiers()
         modules_by_tier = {}
@@ -186,7 +195,7 @@ class PvpV2ScanService:
         est_rtm_h = rate_per_min * Decimal('60')
 
         # Ratio mémoire vive utilisée
-        buffer_rtm = Decimal(str(accrual.get('buffer_rtm', 0) or 0))
+        buffer_rtm = Decimal(str(accrual.get('buffer', 0) or 0))
         capacity_rtm = Decimal(str(accrual.get('capacity_rtm', 0) or 0))
         ratio = float(buffer_rtm / capacity_rtm) if capacity_rtm > 0 else 0.0
         used_ratio = max(0.0, min(1.0, ratio))
@@ -217,7 +226,7 @@ class PvpV2ScanService:
 
         return {
             'victim_id': victim_id,
-            'infrastructure_level': int(victim_row.get('infrastructure_level', 0) or 0),
+            'infrastructure_level': _get_infra_level(victim_row),
             'modules_by_tier': modules_by_tier,
             'total_hashrate_hs': int(victim_stats.get('total_hashrate_hs', 0) or 0),
             'estimated_production_rtm_h': f"{est_rtm_h:,.5f}",
@@ -241,7 +250,10 @@ class PvpV2ScanService:
         if p1 != p2:
             tx.acquire_lock(f"player_{p2}")
 
-        victim = PlayerData.get(tx, victim_id)
+        try:
+            victim = PlayerData.get(tx, victim_id)
+        except GameError:
+            victim = None
         if not victim:
             # Cas limite : la cible a été supprimée pendant le scan
             tx.execute('DELETE FROM hack WHERE id = %s', (scan_id,))
@@ -252,26 +264,10 @@ class PvpV2ScanService:
                 'victim_id': victim_id,
             }
 
-        scan_cfg = MathConfig.get_pvp_v2_network_scan()
-        validity_hours = int(scan_cfg.get('report_validity_hours', 24))
-
-        # 1. Capture figée
+        # 1. Capture directe des données au moment de la résolution
         report_data = cls.build_scan_snapshot(tx, victim)
 
-        # 2. Stockage figé dans pvp_v2_scan_reports
-        created_report = PvpV2ScanReportsDB.create(
-            tx,
-            attacker_id=attacker_id,
-            victim_id=victim_id,
-            report_data=report_data,
-            validity_hours=validity_hours,
-        )
-
-        # 3. Droit de représailles pour la cible (72h)
-        window_hours = int(MathConfig.get_pvp_v2_eligibility().get('retaliation_window_hours', 72))
-        ConsequenceDB.insert(tx, victim_id=victim_id, attacker_id=attacker_id, window_hours=window_hours)
-
-        # 4. Suppression du job hack
+        # 2. Suppression du job hack
         tx.execute('DELETE FROM hack WHERE id = %s', (scan_id,))
 
         return {
@@ -279,8 +275,6 @@ class PvpV2ScanService:
             'scan_id': scan_id,
             'attacker_id': attacker_id,
             'victim_id': victim_id,
-            'report_id': created_report['id'],
-            'expires_at': created_report['expires_at'],
             'report_data': report_data,
         }
 
@@ -300,8 +294,3 @@ class PvpV2ScanService:
             delivered.append(res)
 
         return delivered
-
-    @staticmethod
-    def get_latest_scan_report(tx, attacker_id: int, victim_id: int) -> dict | None:
-        """Retourne le dernier rapport de scan valide d'un attaquant sur une cible."""
-        return PvpV2ScanReportsDB.get_latest_valid(tx, int(attacker_id), int(victim_id))

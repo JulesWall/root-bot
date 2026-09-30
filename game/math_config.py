@@ -14,6 +14,7 @@ Ce module résout un problème critique de sécurité et de précision :
 import ast
 import hashlib
 import json
+import math
 import operator
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from pathlib import Path
@@ -517,4 +518,272 @@ class MathConfig:
             return 1
         extra = int(Decimal(str(delta)) // threshold)
         return max(1, 1 + extra)
+
+    # ── Configuration PvP V2 ──────────────────────────────────────────────────
+    @classmethod
+    def get_pvp_v2(cls) -> dict:
+        """Charge et retourne la section pvp_v2 de math.json."""
+        cfg = cls.load()
+        if 'pvp_v2' not in cfg:
+            raise ValueError("Section 'pvp_v2' manquante dans data/math.json.")
+        return cfg['pvp_v2']
+
+    @classmethod
+    def get_pvp_v2_fingerprint(cls) -> dict:
+        return cls.get_pvp_v2().get('fingerprint', {})
+
+    @classmethod
+    def get_pvp_v2_families(cls) -> list[str]:
+        return cls.get_pvp_v2().get('families', [])
+
+    @classmethod
+    def get_pvp_v2_tiers(cls) -> list[int]:
+        return cls.get_pvp_v2().get('tiers', [])
+
+    @classmethod
+    def get_pvp_v2_eligibility(cls) -> dict:
+        return cls.get_pvp_v2().get('eligibility', {})
+
+    @classmethod
+    def get_pvp_v2_simultaneous_ops(cls) -> dict:
+        return cls.get_pvp_v2().get('simultaneous_ops', {})
+
+    @classmethod
+    def get_pvp_v2_development(cls) -> dict:
+        return cls.get_pvp_v2().get('development', {})
+
+    @classmethod
+    def get_pvp_v2_dev_costs(cls, tier: int) -> dict:
+        dev = cls.get_pvp_v2_development()
+        costs_by_tier = dev.get('costs_by_tier', {})
+        t_str = str(tier)
+        if int(tier) not in cls.get_pvp_v2_tiers() or t_str not in costs_by_tier.get('research_rtm', {}):
+            raise ValueError(f"Tier {tier} invalide pour le développement PvP V2.")
+        return {
+            'research_rtm': Decimal(str(costs_by_tier['research_rtm'][t_str])),
+            'compile_rtm': Decimal(str(costs_by_tier['compile_rtm'][t_str])),
+            'patch_research_rtm': Decimal(str(costs_by_tier['patch_research_rtm'][t_str])),
+            'patch_compile_rtm': Decimal(str(costs_by_tier['patch_compile_rtm'][t_str])),
+        }
+
+    @classmethod
+    def get_pvp_v2_dev_work_units(cls, tier: int) -> int:
+        dev = cls.get_pvp_v2_development()
+        units = dev.get('work_units_by_tier', {}).get(str(tier))
+        if units is None:
+            raise ValueError(f"Work units non configurés pour le tier {tier}.")
+        return int(units)
+
+    @classmethod
+    def get_pvp_v2_dev_bits_per_unit(cls, job_type: str) -> int:
+        dev = cls.get_pvp_v2_development()
+        if 'research' in job_type:
+            return int(dev.get('bits_per_research_unit', 100))
+        return int(dev.get('bits_per_compile_unit', 60))
+
+    @classmethod
+    def get_pvp_v2_dev_min_duration(cls) -> int:
+        return int(cls.get_pvp_v2_development().get('min_duration_seconds', 10))
+
+    @classmethod
+    def get_pvp_v2_installation(cls) -> dict:
+        return cls.get_pvp_v2().get('installation', {})
+
+    @classmethod
+    def get_pvp_v2_installation_duration(cls, tier: int) -> int:
+        inst = cls.get_pvp_v2_installation()
+        durations = inst.get('base_duration_seconds_by_tier', {})
+        t_str = str(tier)
+        if int(tier) not in cls.get_pvp_v2_tiers() or t_str not in durations:
+            raise ValueError(f"Tier {tier} invalide pour l'installation PvP V2.")
+        return int(durations[t_str])
+
+    @classmethod
+    def get_pvp_v2_defense_slowdown(cls) -> tuple[int, int]:
+        inst = cls.get_pvp_v2_installation()
+        divisor = int(inst.get('defense_slowdown_divisor', 500))
+        max_mult = int(inst.get('defense_slowdown_max_multiplier', 10))
+        return divisor, max_mult
+
+    @classmethod
+    def get_pvp_v2_hostile_miner(cls) -> dict:
+        return cls.get_pvp_v2().get('hostile_miner', {})
+
+    @classmethod
+    def get_pvp_v2_espionage(cls) -> dict:
+        return cls.get_pvp_v2().get('espionage', {})
+
+    @classmethod
+    def get_pvp_v2_ransomware(cls) -> dict:
+        return cls.get_pvp_v2().get('ransomware', {})
+
+    @classmethod
+    def get_pvp_v2_currency_theft(cls) -> dict:
+        return cls.get_pvp_v2().get('currency_theft', {})
+
+    @classmethod
+    def get_pvp_v2_saturation(cls) -> dict:
+        return cls.get_pvp_v2().get('saturation', {})
+
+    @classmethod
+    def get_pvp_v2_network_scan(cls) -> dict:
+        return cls.get_pvp_v2().get('network_scan', {})
+
+    @classmethod
+    def get_pvp_v2_software_theft(cls) -> dict:
+        return cls.get_pvp_v2().get('software_theft', {})
+
+    @classmethod
+    def get_pvp_v2_diagnosis(cls) -> dict:
+        return cls.get_pvp_v2().get('diagnosis', {})
+
+    @classmethod
+    def get_pvp_v2_trace_analysis(cls) -> dict:
+        return cls.get_pvp_v2().get('trace_analysis', {})
+
+    @classmethod
+    def get_pvp_v2_market(cls) -> dict:
+        return cls.get_pvp_v2().get('market', {})
+
+    @classmethod
+    def get_pvp_v2_attack_points_conversion(cls) -> dict:
+        return cls.get_pvp_v2().get('attack_points_conversion', {})
+
+    @classmethod
+    def validate_pvp_v2_config(cls) -> None:
+        """Valide exhaustivement l'intégrité de la section pvp_v2 dans math.json."""
+        pvp = cls.get_pvp_v2()
+
+        # 1. Fingerprint
+        fp = cls.get_pvp_v2_fingerprint()
+        if not isinstance(fp.get('alphabet'), str) or len(fp['alphabet']) < 2:
+            raise ValueError("Alphabet d'empreinte invalide.")
+        for c in ('0', 'O', 'I', '1'):
+            if c in fp['alphabet']:
+                raise ValueError(f"Caractère ambigu '{c}' dans l'alphabet d'empreinte.")
+        if int(fp.get('length', 0)) < 1:
+            raise ValueError("Longueur d'empreinte doit être >= 1.")
+        if int(fp.get('max_generation_attempts', 0)) < 1:
+            raise ValueError("max_generation_attempts doit être >= 1.")
+
+        # 2. Families & Tiers
+        families = cls.get_pvp_v2_families()
+        if not families or not all(isinstance(f, str) and f for f in families):
+            raise ValueError("Familles PvP V2 invalides.")
+        tiers = cls.get_pvp_v2_tiers()
+        if not tiers or not all(isinstance(t, int) and t >= 1 for t in tiers):
+            raise ValueError("Tiers PvP V2 invalides.")
+        for t in range(1, 7):
+            if t not in tiers:
+                raise ValueError(f"Tier {t} manquant dans pvp_v2.tiers.")
+
+        # 3. Eligibility
+        elig = cls.get_pvp_v2_eligibility()
+        if int(elig.get('min_infrastructure_level_attacker', -1)) < 0:
+            raise ValueError("min_infrastructure_level_attacker doit être >= 0.")
+        if int(elig.get('retaliation_window_hours', 0)) <= 0:
+            raise ValueError("retaliation_window_hours doit être > 0.")
+
+        # 4. Simultaneous Ops
+        sim = cls.get_pvp_v2_simultaneous_ops()
+        if int(sim.get('max_active_per_attacker_total', 0)) < 1:
+            raise ValueError("max_active_per_attacker_total doit être >= 1.")
+        if int(sim.get('max_active_per_attacker_per_family', 0)) < 1:
+            raise ValueError("max_active_per_attacker_per_family doit être >= 1.")
+
+        # 5. Development
+        dev = cls.get_pvp_v2_development()
+        for t in range(1, 7):
+            costs = cls.get_pvp_v2_dev_costs(t)
+            for k, val in costs.items():
+                if val <= 0:
+                    raise ValueError(f"Coût dev {k} T{t} doit être > 0.")
+            wu = cls.get_pvp_v2_dev_work_units(t)
+            if wu <= 0:
+                raise ValueError(f"work_units T{t} doit être > 0.")
+        if cls.get_pvp_v2_dev_bits_per_unit('research') <= 0:
+            raise ValueError("bits_per_research_unit doit être > 0.")
+        if cls.get_pvp_v2_dev_bits_per_unit('compile') <= 0:
+            raise ValueError("bits_per_compile_unit doit être > 0.")
+        if cls.get_pvp_v2_dev_min_duration() <= 0:
+            raise ValueError("min_duration_seconds doit être > 0.")
+
+        # 6. Installation
+        for t in range(1, 7):
+            if cls.get_pvp_v2_installation_duration(t) <= 0:
+                raise ValueError(f"Installation duration T{t} doit être > 0.")
+        divisor, max_mult = cls.get_pvp_v2_defense_slowdown()
+        if divisor <= 0 or max_mult < 1:
+            raise ValueError("Paramètres defense_slowdown invalides.")
+
+        # 7. Hostile Miner
+        hm = cls.get_pvp_v2_hostile_miner()
+        siphon = float(hm.get('siphon_rate', 0))
+        cap = float(hm.get('cumulative_cap_per_tier', 0))
+        if not (0 < siphon <= 1) or not (0 < cap <= 1) or cap <= siphon:
+            raise ValueError("Paramètres hostile_miner invalides.")
+
+        # 8. Espionage
+        esp = cls.get_pvp_v2_espionage()
+        if int(esp.get('report_validity_hours', 0)) <= 0:
+            raise ValueError("report_validity_hours espionage doit être > 0.")
+
+        # 9. Ransomware
+        rw = cls.get_pvp_v2_ransomware()
+        for t in range(1, 7):
+            if int(rw.get('ransom_usd_by_tier', {}).get(str(t), 0)) <= 0:
+                raise ValueError(f"Rançon T{t} manquante ou <= 0.")
+        if int(rw.get('max_duration_hours', 0)) <= 0:
+            raise ValueError("max_duration_hours ransomware doit être > 0.")
+        if int(rw.get('post_resolution_immunity_hours', -1)) < 0:
+            raise ValueError("post_resolution_immunity_hours doit être >= 0.")
+        overlap = set(rw.get('blocked_commands', [])) & set(rw.get('always_allowed_commands', []))
+        if overlap:
+            raise ValueError(f"Commandes en conflit dans ransomware : {overlap}")
+        if 'claim' not in rw.get('always_allowed_commands', []):
+            raise ValueError("claim doit être dans always_allowed_commands.")
+
+        # 10. Currency Theft
+        ct = cls.get_pvp_v2_currency_theft()
+        if not (0 < float(ct.get('exposed_reserve_rate', 0)) <= 1):
+            raise ValueError("exposed_reserve_rate invalide.")
+        if float(ct.get('max_per_operation_usd', 0)) <= 0:
+            raise ValueError("max_per_operation_usd doit être > 0.")
+        if float(ct.get('victim_minimum_balance_usd', -1)) < 0:
+            raise ValueError("victim_minimum_balance_usd doit être >= 0.")
+        if int(ct.get('attacker_cooldown_per_victim_hours', 0)) <= 0:
+            raise ValueError("attacker_cooldown_per_victim_hours doit être > 0.")
+        if not (0 < float(ct.get('cumulative_daily_cap_rate', 0)) <= 1):
+            raise ValueError("cumulative_daily_cap_rate invalide.")
+        if not (0 <= float(ct.get('fee_rate', -1)) < 1):
+            raise ValueError("fee_rate invalide.")
+
+        # 11. Saturation
+        sat = cls.get_pvp_v2_saturation()
+        red = float(sat.get('offensive_reduction_rate', 0))
+        scap = float(sat.get('cumulative_cap', 0))
+        if not (0 < red < 1) or not (0 < scap <= 1) or scap <= red:
+            raise ValueError("Paramètres saturation invalides.")
+        if int(sat.get('duration_hours', 0)) <= 0:
+            raise ValueError("duration_hours saturation doit être > 0.")
+
+        # 12. Network Scan
+        scan = cls.get_pvp_v2_network_scan()
+        if Decimal(str(scan.get('cost_rtm', 0))) <= Decimal('0'):
+            raise ValueError("cost_rtm network_scan doit être > 0.")
+        if int(scan.get('base_duration_seconds', 0)) <= 0:
+            raise ValueError("base_duration_seconds network_scan doit être > 0.")
+        if int(scan.get('report_validity_hours', 0)) <= 0:
+            raise ValueError("report_validity_hours network_scan doit être > 0.")
+
+        # 13. Market
+        mkt = cls.get_pvp_v2_market()
+        pmin = float(mkt.get('min_price_usd', 0))
+        pmax = float(mkt.get('max_price_usd', 0))
+        if pmin <= 0 or pmax <= pmin:
+            raise ValueError("Prix market invalides.")
+        if not (0 <= float(mkt.get('fee_rate', -1)) < 1):
+            raise ValueError("fee_rate market invalide.")
+        if int(mkt.get('max_active_listings_per_player', 0)) < 1:
+            raise ValueError("max_active_listings_per_player doit être >= 1.")
 

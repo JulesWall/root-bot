@@ -42,7 +42,7 @@ class RootService:
         'packet', 'trade', 'claim', 'claim_auto', 'claim_cancel', 'convert', 'compile', 'scan', 'hack',
         'hourly', 'hourly_save_combo', 'contract', 'rmd',
         'pvp_v2_dev_quote', 'pvp_v2_start_job', 'pvp_v2_cancel_job', 'pvp_v2_install_patch', 'pvp_v2_library',
-        'pvp_v2_scan_quote', 'pvp_v2_scan_start', 'pvp_v2_scan_view',
+        'pvp_v2_scan_quote', 'pvp_v2_scan_start',
     }
 
     def __init__(self, database=None):
@@ -260,7 +260,7 @@ class RootService:
         if method in ('top', 'event'):
             return []
         ids = {int(actor)}
-        if method in ('reputation', 'trade', 'scan', 'pvp_v2_scan_quote', 'pvp_v2_scan_start', 'pvp_v2_scan_view'):
+        if method in ('reputation', 'trade', 'scan', 'pvp_v2_scan_quote', 'pvp_v2_scan_start'):
             try:
                 target = int(args.get('target') or 0)
             except (TypeError, ValueError):
@@ -337,9 +337,6 @@ class RootService:
         elif method == 'pvp_v2_scan_start':
             from game.pvp_v2_scan import PvpV2ScanService
             return PvpV2ScanService.start_scan(tx, actor, int(args.get('target', 0)), quoted_rtm=args.get('quoted_rtm'))
-        elif method == 'pvp_v2_scan_view':
-            from game.pvp_v2_scan import PvpV2ScanService
-            return PvpV2ScanService.get_latest_scan_report(tx, actor, int(args.get('target', 0)))
         elif method == 'hack':
             return Player.hack(tx, actor, **args)
         elif method == 'reputation':

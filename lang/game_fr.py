@@ -367,7 +367,24 @@ text = {
     'g_packet_cooldown': '⏳ Le dernier paquet a été retrouvé par {last_found_by} depuis le serveur **{last_found_on}**.\nLa prochaine transmission sera émise dans **{remaining}**.',
     'g_packet_cooldown_no_winner': '⏳ La prochaine transmission sera émise dans **{remaining}**.',
     'g_error_packet_usage': '⚠️ **Paquet invalide** · Indique un numéro de paquet compris entre **1** et **10**.\nUtilisation : `{prefix}packet <1-10>`',
-    # ── Scan ──────────────────────────────────────────────────────────────────
+    # ── Scan PvP V2 ───────────────────────────────────────────────────────────
+    'g_pvp_v2_scan_quote_header': '> {e_scan} **Scan Réseau** · Devis de reconnaissance',
+    'g_pvp_v2_scan_quote_body': (
+        "> {e_fw} **Cible** : <@{target_id}> · Infrastructure Niv. **{victim_infra}**\n"
+        "> {e_tmp} **Durée de sondage** : **{duration}s** (job différé)\n"
+        "> {e_pui} **Coût opérationnel** : **{rtm_cost} RTM**\n"
+        "{status_note}"
+        "> *Confirmer le lancement du scan réseau ?*"
+    ),
+    'g_pvp_v2_scan_started': (
+        "> {e_scan} **Scan réseau initié** · Sondage de <@{target_id}> en cours pour **{rtm_cost} RTM**.\n"
+        "> • {e_tmp} **Résolution estimée** : <t:{timestamp}:R> (<t:{timestamp}:T>)"
+    ),
+    'g_pvp_v2_scan_report_header': '> {e_scan} **Rapport de Sondage Réseau** · <@{target_id}>',
+    'g_pvp_v2_scan_quote_retaliation': '> ⚔️ *Droit de représailles actif (< 72h) : contournement de l\'écart de niveau autorisé.*\n',
+    'g_pvp_v2_scan_dm_delivered': '> {e_scan} **Sondage Réseau Terminé** · Le rapport sur <@{target_id}> a été généré avec succès.',
+    'g_pvp_v2_scan_dm_victim_deleted': '> ⚠️ **Scan Échoué** · La cible <@{target_id}> a été déconnectée ou supprimée du réseau pendant le sondage.',
+    'g_error_scan_victim_deleted': '> ⚠️ **Scan échoué** · La cible a été déconnectée ou supprimée du réseau avant la résolution.',
     'g_scan_quote': '🔍 **Analyse du réseau de <@{target}>**\n• 🎯 Probabilité estimée : **{prob_base}%**\n• ◈ Coût de base : **{rtm} RTM** · ⏱️ **90 secondes**\n• 💳 Solde restant : {cur_rtm} RTM ➔ **{rem_rtm} RTM**\n\n*Choisis ton niveau d\'engagement :*',
     'g_scan_btn_launch': '🚀 Lancer ({prob}%) — {rtm} RTM',
     'g_scan_btn_boost2': '⚡ Boost ×2 ({prob}%) — {rtm} RTM',
@@ -385,10 +402,10 @@ text = {
     'g_scan_expose_cancel_btn': '❌ Annuler',
     'g_error_scan_in_progress': '> ⏳ **Scan déjà actif** · Résultat estimé : <t:{timestamp}:R>.',
     'g_error_scan_no_atk': '> ⚔️ **Aucun stock ATK** · Lance `/compile` avant de scanner.',
-    'g_error_scan_target_invulnerable': '> 🛡️ **Cible invulnérable** · Ce réseau (Firewall Niv. 0) est hors du champ PvP.',
-    'g_error_scan_self_invulnerable': '> 🛡️ **Tu es hors du PvP** · Active ton pare-feu avec `/upgrade` pour participer.',
-    'g_error_scan_target_protected': '> 🔒 **Cible protégée** · Tu ne peux cibler que des réseaux ayant un pare-feu de niveau égal ou supérieur au tien ou les réseaux t\'ayant attaqué dans les 72 dernières heures.',
-    'g_error_scan_usage': '> ⚠️ **Syntaxe invalide** · Utilisation : `{prefix}scan <@joueur>`\n💡 **Exemple** : `{prefix}scan @Joueur`',
+    'g_error_scan_target_invulnerable': '> 🛡️ **Cible invulnérable** · Ce réseau (Infrastructure Niv. 0) est hors du champ PvP.',
+    'g_error_scan_self_invulnerable': '> 🛡️ **Action impossible** · Améliore ton infrastructure au niveau 1 avec `/upgrade` pour participer au PvP.',
+    'g_error_scan_target_protected': '> 🔒 **Cible protégée** · Tu ne peux cibler que des réseaux ayant une infrastructure de niveau supérieur ou égal au tien (sauf en cas de représailles actives sous 72h).',
+    'g_error_scan_usage': '> ⚠️ **Syntaxe invalide** · Utilisation : `{prefix}scan <@joueur> [confirm]`\n💡 **Exemple** : `{prefix}scan @Joueur`',
     'g_upgrade_quote_scan_alert_3': '🔎 **Détection de scan** : tu seras alerté anonymement de toute tentative d\'intrusion',
     'g_upgrade_quote_scan_alert_4': '🕵️ **Identification du scanner** : l\'identité de l\'attaquant te sera révélée',
     'g_upgrade_quote_perk_1': '⚔️ **Arène PvP active** : Débloque les attaques `/hack` et sondages `/scan`',

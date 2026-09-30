@@ -35,7 +35,7 @@ class RootEmbed(discord.Embed):
         'trade':       discord.Color.from_rgb(46, 204, 113),   # Vert émeraude (Échange)
         'convert':     discord.Color.from_rgb(46, 204, 113),   # Vert émeraude (Vente de tokens)
         'compile':     discord.Color.from_rgb(231, 76, 60),    # Rouge offensif (Production d'ATK)
-        'scan':        discord.Color.from_rgb(220, 50, 50),    # Rouge offensif (Scan PvP)
+        'scan':        discord.Color.from_rgb(84, 226, 209),   # Turquoise (#54E2D1) Root OS (Scan PvP)
         'hourly':      discord.Color.from_rgb(52, 152, 219),   # Bleu azur (Récompense horaire)
         'contract':    discord.Color.from_rgb(0, 168, 204),    # Bleu canard (Root CyberSec)
         'rmd':         discord.Color.from_rgb(155, 89, 182),   # Violet / Améthyste (Rappels)

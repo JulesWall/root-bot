@@ -2,6 +2,22 @@
 
 ## 2026-09-30
 
+- PvP V2 Étape 5 : Scan réseau direct & rapport de reconnaissance enrichi.
+  - Réactivation et refonte intégrale des commandes `/scan` et `!scan` sans concept d'ATK V1 ni tirage aléatoire de secret_id.
+  - Sondage réseau déterministe (0.005 RTM, durée 90s) avec éligibilité stricte (Infrastructure >= 1, cible >= attaquant sauf si représailles actives sous 72h).
+  - Devis interactif Two-Phase Commit avec composant `Confirmation` unifié (✅ Confirmer / ❌ Annuler), Embed Turquoise Root OS (`#54E2D1`) et emotes Root OS officielles.
+  - Simplification d'architecture : suppression de l'archivage en base (`pvp_v2_scan_reports`) et de la sous-commande `view` pour éviter le stockage inutile. La photographie live est capturée à t=résolution et délivrée directement en MP au scanner.
+  - Rendu visuel hautement enrichi du rapport de reconnaissance en MP :
+    - Embed Root OS Turquoise (`#54E2D1`) avec avatar officiel et horodatage UTC.
+    - Jauge ASCII de niveau d'infrastructure/pare-feu (`▰▰▰▰▱` 4/5).
+    - Puissance de calcul et hashrate formaté (`H/s` et estimation `RTM/h`).
+    - Jauge ASCII de saturation du tampon RAM (`▰▰▰▰▰▱▱▱▱▱` avec ratio et montants précis en RTM).
+    - Modules matériels regroupés par Baie (Tier).
+    - Logiciels compilés et correctifs déployés avec leurs familles et empreintes `[ABCD]`.
+    - Détection de l'activité de recherche & développement en cours.
+  - Worker de livraison persistant avec envoi du rapport en MP au scanner et alertes pare-feu pour la cible (Niv. 3 anonyme, Niv. 4 avec identité du scanner).
+  - Correction de l'accès au niveau d'infrastructure du joueur en base (résolution de l'alias `firewall_level` en `infrastructure_level`).
+  - 16 tests unitaires dédiés dans `tests/test_pvp_v2_scan.py` (16/16 OK). Suite globale : 511 tests, 0 erreur, 9 échecs historiques inchangés.
 - Commande préfixe `!dev` : affiche désormais un lexique détaillé et complet de la syntaxe de développement (canaux `offense` / `defense`, 4 types de jobs, sous-commandes et exemples) au lieu d'ouvrir directement la bibliothèque. Également accessible via `!dev help` et `/dev help`.
 - Harmonisation complète du système de confirmation pour les devis de développement logiciel : utilisation du composant unifié `Confirmation` (boutons Valider / Annuler standards et protection anti-spam), avec intégration systématique du registre des emotes Root OS (`root_*` animées prioritaires, avec replis Unicode) via `utils/emojis.py`.
 - Résolution des clés d'erreurs métier Discord (`g_error_channel_busy`, `g_error_research_already_completed`, `g_error_research_folder_required`, etc.) et harmonisation globale des retours visuels (formatage avec préfixe quote `> `, émoticônes thématiques, syntaxes d'usage).

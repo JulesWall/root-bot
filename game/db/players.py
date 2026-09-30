@@ -148,6 +148,8 @@ class PlayerData:
         row = tx.one('SELECT * FROM players WHERE discord_id=%s', (user_id,))
         if not row:
             raise GameError('no_network')
+        if 'infrastructure_level' not in row:
+            row['infrastructure_level'] = int(row.get('firewall_level') or 0)
         return row
 
 

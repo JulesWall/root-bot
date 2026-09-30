@@ -367,7 +367,24 @@ text = {
     'g_packet_cooldown': '⏳ The last packet was recovered by {last_found_by} on server **{last_found_on}**.\nNext transmission will broadcast in **{remaining}**.',
     'g_packet_cooldown_no_winner': '⏳ Next transmission will broadcast in **{remaining}**.',
     'g_error_packet_usage': '⚠️ **Invalid packet** · Please enter a packet number between **1** and **10**.\nUsage: `{prefix}packet <1-10>`',
-    # ── Scan ──────────────────────────────────────────────────────────────────
+    # ── Scan PvP V2 ───────────────────────────────────────────────────────────
+    'g_pvp_v2_scan_quote_header': '> {e_scan} **Network Scan** · Reconnaissance Quote',
+    'g_pvp_v2_scan_quote_body': (
+        "> {e_fw} **Target**: <@{target_id}> · Infrastructure Lv. **{victim_infra}**\n"
+        "> {e_tmp} **Probe duration**: **{duration}s** (deferred job)\n"
+        "> {e_pui} **Operational cost**: **{rtm_cost} RTM**\n"
+        "{status_note}"
+        "> *Confirm launching network scan?*"
+    ),
+    'g_pvp_v2_scan_started': (
+        "> {e_scan} **Network scan started** · Probing <@{target_id}> for **{rtm_cost} RTM**.\n"
+        "> • {e_tmp} **Estimated resolution**: <t:{timestamp}:R> (<t:{timestamp}:T>)"
+    ),
+    'g_pvp_v2_scan_report_header': '> {e_scan} **Network Probe Report** · <@{target_id}>',
+    'g_pvp_v2_scan_quote_retaliation': '> ⚔️ *Active retaliation window (< 72h): level difference bypass granted.*\n',
+    'g_pvp_v2_scan_dm_delivered': '> {e_scan} **Network Probe Completed** · The report for <@{target_id}> has been generated successfully.',
+    'g_pvp_v2_scan_dm_victim_deleted': '> ⚠️ **Scan Failed** · Target <@{target_id}> was disconnected or removed from the network during the probe.',
+    'g_error_scan_victim_deleted': '> ⚠️ **Scan failed** · Target was disconnected or removed from the network before resolution.',
     'g_scan_quote': '🔍 **Network scan of <@{target}>**\n• 🎯 Estimated probability: **{prob_base}%**\n• ◈ Base cost: **{rtm} RTM** · ⏱️ **90 seconds**\n• 💳 Remaining balance: {cur_rtm} RTM ➔ **{rem_rtm} RTM**\n\n*Choose your commitment level:*',
     'g_scan_btn_launch': '🚀 Launch ({prob}%) — {rtm} RTM',
     'g_scan_btn_boost2': '⚡ Boost ×2 ({prob}%) — {rtm} RTM',
@@ -385,10 +402,10 @@ text = {
     'g_scan_expose_cancel_btn': '❌ Cancel',
     'g_error_scan_in_progress': '> ⏳ **Scan already active** · Estimated result: <t:{timestamp}:R>.',
     'g_error_scan_no_atk': '> ⚔️ **No ATK stock** · Run `/compile` before scanning.',
-    'g_error_scan_target_invulnerable': '> 🛡️ **Invulnerable target** · This network (Firewall Lv. 0) is outside the PvP zone.',
-    'g_error_scan_self_invulnerable': '> 🛡️ **You are outside PvP** · Activate your firewall with `/upgrade` to participate.',
-    'g_error_scan_target_protected': '> 🔒 **Protected target** · You can only target networks with a firewall level equal to or higher than yours, or networks that attacked you in the last 72 hours.',
-    'g_error_scan_usage': '> ⚠️ **Invalid syntax** · Usage: `{prefix}scan <@player>`\n💡 **Example**: `{prefix}scan @Player`',
+    'g_error_scan_target_invulnerable': '> 🛡️ **Invulnerable target** · This network (Infrastructure Lv. 0) is outside the PvP zone.',
+    'g_error_scan_self_invulnerable': '> 🛡️ **Action impossible** · Upgrade your infrastructure to Level 1 with `/upgrade` to participate in PvP.',
+    'g_error_scan_target_protected': '> 🔒 **Protected target** · You can only target networks with an infrastructure level equal to or higher than yours (unless active retaliation under 72h).',
+    'g_error_scan_usage': '> ⚠️ **Invalid syntax** · Usage: `{prefix}scan <@player> [confirm]`\n💡 **Example**: `{prefix}scan @Player`',
     'g_upgrade_quote_scan_alert_3': '🔎 **Scan detection**: you will be anonymously alerted of any intrusion attempt',
     'g_upgrade_quote_scan_alert_4': '🕵️ **Scanner identification**: the attacker\'s identity will be revealed to you',
     'g_upgrade_quote_perk_1': '⚔️ **PvP Arena Active**: Unlocks `/hack` attacks and `/scan` probes',
