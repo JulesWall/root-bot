@@ -41,6 +41,8 @@ class RootService:
         'hash', 'pin', 'event', 'decode', 'anomaly', 'buffer', 'signal',
         'packet', 'trade', 'claim', 'claim_auto', 'claim_cancel', 'convert', 'compile', 'scan', 'hack',
         'hourly', 'hourly_save_combo', 'contract', 'rmd',
+        'pvp_v2_dev_quote', 'pvp_v2_start_job', 'pvp_v2_cancel_job', 'pvp_v2_install_patch', 'pvp_v2_library',
+        'pvp_v2_scan_quote', 'pvp_v2_scan_start', 'pvp_v2_scan_view',
     }
 
     def __init__(self, database=None):
@@ -95,9 +97,10 @@ class RootService:
         )
 
     async def deliver_expired_scans(self) -> list[dict]:
-        """Récupère et supprime les jobs de scan arrivés à échéance pour livraison."""
+        """Récupère et résout les jobs de scan arrivés à échéance pour livraison V2."""
+        from game.pvp_v2_scan import PvpV2ScanService
         return await self.database.run(
-            HackDB.complete_and_delete_expired_scans,
+            PvpV2ScanService.deliver_expired_scans,
             locks=['hack'],
         )
 
@@ -114,6 +117,24 @@ class RootService:
         return await self.database.run(
             PvpDB.complete_and_delete_expired,
             locks=['pvp'],
+        )
+
+    async def deliver_expired_pvp_v2_jobs(self) -> list[dict]:
+        """Résout les jobs de développement PvP V2 arrivés à échéance et supprime les lignes `pvp_v2_dev_jobs`."""
+        from game.pvp_v2_dev import PvpV2DevService
+        from game.db.pvp_v2_dev_jobs import PvpV2DevJobsDB
+
+        def _deliver_tx(tx):
+            expired = PvpV2DevJobsDB.get_expired(tx)
+            results = []
+            for job in expired:
+                delivered = PvpV2DevService.deliver_job(tx, job)
+                results.append(delivered)
+            return results
+
+        return await self.database.run(
+            _deliver_tx,
+            locks=['pvp_v2_dev'],
         )
 
     async def process_due_autoclaims(self) -> list[dict]:
@@ -239,7 +260,7 @@ class RootService:
         if method in ('top', 'event'):
             return []
         ids = {int(actor)}
-        if method in ('reputation', 'trade', 'scan'):
+        if method in ('reputation', 'trade', 'scan', 'pvp_v2_scan_quote', 'pvp_v2_scan_start', 'pvp_v2_scan_view'):
             try:
                 target = int(args.get('target') or 0)
             except (TypeError, ValueError):
@@ -305,7 +326,20 @@ class RootService:
         elif method == 'compile':
             return Player.compile(tx, actor, **args)
         elif method == 'scan':
-            return Player.scan(tx, actor, **args)
+            from game.pvp_v2_scan import PvpV2ScanService
+            target_id = int(args.get('target', 0))
+            if args.get('confirm'):
+                return PvpV2ScanService.start_scan(tx, actor, target_id, quoted_rtm=args.get('quoted_rtm'))
+            return PvpV2ScanService.calculate_scan_quote(tx, actor, target_id)
+        elif method == 'pvp_v2_scan_quote':
+            from game.pvp_v2_scan import PvpV2ScanService
+            return PvpV2ScanService.calculate_scan_quote(tx, actor, int(args.get('target', 0)))
+        elif method == 'pvp_v2_scan_start':
+            from game.pvp_v2_scan import PvpV2ScanService
+            return PvpV2ScanService.start_scan(tx, actor, int(args.get('target', 0)), quoted_rtm=args.get('quoted_rtm'))
+        elif method == 'pvp_v2_scan_view':
+            from game.pvp_v2_scan import PvpV2ScanService
+            return PvpV2ScanService.get_latest_scan_report(tx, actor, int(args.get('target', 0)))
         elif method == 'hack':
             return Player.hack(tx, actor, **args)
         elif method == 'reputation':
@@ -346,6 +380,47 @@ class RootService:
         # 4. Rappels et Alertes Temporelles (/rmd)
         elif method == 'rmd':
             return self._dispatch_rmd(tx, actor, args)
+
+        # 5. PvP V2 — Développement et correctifs
+        elif method == 'pvp_v2_dev_quote':
+            from game.pvp_v2_dev import PvpV2DevService
+            return PvpV2DevService.get_quote(
+                tx,
+                actor,
+                job_type=args.get('job_type'),
+                family=args.get('family'),
+                tier=int(args.get('tier', 1)),
+                fingerprint=args.get('fingerprint'),
+            )
+        elif method == 'pvp_v2_start_job':
+            from game.pvp_v2_dev import PvpV2DevService
+            return PvpV2DevService.start_job(
+                tx,
+                actor,
+                job_type=args.get('job_type'),
+                family=args.get('family'),
+                tier=int(args.get('tier', 1)),
+                fingerprint=args.get('fingerprint'),
+                quoted_rtm=args.get('quoted_rtm'),
+            )
+        elif method == 'pvp_v2_cancel_job':
+            from game.pvp_v2_dev import PvpV2DevService
+            return PvpV2DevService.cancel_job(
+                tx,
+                actor,
+                channel=args.get('channel'),
+            )
+        elif method == 'pvp_v2_install_patch':
+            from game.pvp_v2_dev import PvpV2DevService
+            return PvpV2DevService.install_patch(
+                tx,
+                actor,
+                patch_id=args.get('patch_id'),
+                fingerprint=args.get('fingerprint'),
+            )
+        elif method == 'pvp_v2_library':
+            from game.pvp_v2_dev import PvpV2DevService
+            return PvpV2DevService.get_library(tx, actor)
 
         # Ne devrait jamais être atteint si ACTIONS et _dispatch sont synchronisés
         raise GameError('invalid_selection')

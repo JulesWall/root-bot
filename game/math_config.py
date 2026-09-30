@@ -360,11 +360,13 @@ class MathConfig:
                 'bay_defense_power': d_power,
             }
 
-        fw_level = int(player_row.get('firewall_level', 0) or 0)
+        fw_level = int(player_row.get('infrastructure_level', player_row.get('firewall_level', 0)) or 0)
         net_def = cls.get_firewall_network_defense(fw_level)
         total_def = total_bay_defense + net_def
 
         return {
+            'infrastructure_level': fw_level,
+            'firewall_level': fw_level,
             'total_hashrate_hs': total_hashrate,
             'total_hashrate_formatted': cls.format_hashrate(total_hashrate),
             'total_ram_bytes': total_ram,
@@ -566,6 +568,39 @@ class MathConfig:
         return result
 
     @classmethod
+    def get_pvp_v2_dev_work_units(cls, tier: int) -> int:
+        """Retourne le volume de travail de base (unités) pour le développement d'un tier donné."""
+        valid_tiers = cls.get_pvp_v2_tiers()
+        if tier not in valid_tiers:
+            raise ValueError(f"pvp_v2 : tier {tier} inconnu (valides : {valid_tiers}).")
+        wu_cfg = cls.get_pvp_v2().get('development', {}).get('work_units_by_tier', {})
+        val = wu_cfg.get(str(tier))
+        if val is None or not isinstance(val, int) or val <= 0:
+            raise ValueError(f"pvp_v2.development.work_units_by_tier.{tier} doit être int > 0.")
+        return val
+
+    @classmethod
+    def get_pvp_v2_dev_bits_per_unit(cls, job_type: str) -> int:
+        """Retourne les bits requis par unité de travail selon le type de job."""
+        dev_cfg = cls.get_pvp_v2().get('development', {})
+        if job_type in ('research', 'patch_research'):
+            key = 'bits_per_research_unit'
+        else:
+            key = 'bits_per_compile_unit'
+        val = dev_cfg.get(key)
+        if val is None or not isinstance(val, int) or val <= 0:
+            raise ValueError(f"pvp_v2.development.{key} doit être int > 0.")
+        return val
+
+    @classmethod
+    def get_pvp_v2_dev_min_duration(cls) -> int:
+        """Retourne le plancher de durée (secondes) pour tout job de développement."""
+        val = cls.get_pvp_v2().get('development', {}).get('min_duration_seconds', 10)
+        if not isinstance(val, int) or val <= 0:
+            raise ValueError("pvp_v2.development.min_duration_seconds doit être int > 0.")
+        return val
+
+    @classmethod
     def get_pvp_v2_installation_duration(cls, tier: int) -> int:
         """Retourne la durée de base d'installation (secondes) pour un tier donné.
 
@@ -720,6 +755,26 @@ class MathConfig:
         return cfg
 
     @classmethod
+    def get_pvp_v2_network_scan(cls) -> dict:
+        """Retourne la configuration du scan réseau (pvp_v2.network_scan).
+
+        Valide : base_duration_seconds int > 0, cost_rtm > 0, report_validity_hours int > 0.
+        """
+        cfg = cls.get_pvp_v2().get('network_scan')
+        if not isinstance(cfg, dict):
+            raise ValueError("pvp_v2.network_scan doit être un objet JSON.")
+        dur = cfg.get('base_duration_seconds')
+        cost = cfg.get('cost_rtm')
+        val_h = cfg.get('report_validity_hours')
+        if not isinstance(dur, int) or dur <= 0:
+            raise ValueError("pvp_v2.network_scan.base_duration_seconds doit être int > 0.")
+        if not isinstance(cost, (int, float)) or cost <= 0:
+            raise ValueError("pvp_v2.network_scan.cost_rtm doit être > 0.")
+        if not isinstance(val_h, int) or val_h <= 0:
+            raise ValueError("pvp_v2.network_scan.report_validity_hours doit être int > 0.")
+        return cfg
+
+    @classmethod
     def validate_pvp_v2_config(cls) -> None:
         """Valide exhaustivement toute la section pvp_v2.
 
@@ -731,9 +786,14 @@ class MathConfig:
         cls.get_pvp_v2_families()
         tiers = cls.get_pvp_v2_tiers()
         cls.get_pvp_v2_eligibility()
+        cls.get_pvp_v2_network_scan()
         for t in tiers:
             cls.get_pvp_v2_dev_costs(t)
+            cls.get_pvp_v2_dev_work_units(t)
             cls.get_pvp_v2_installation_duration(t)
+        cls.get_pvp_v2_dev_bits_per_unit('research')
+        cls.get_pvp_v2_dev_bits_per_unit('compile')
+        cls.get_pvp_v2_dev_min_duration()
         cls.get_pvp_v2_defense_slowdown()
         cls.get_pvp_v2_hostile_miner()
         cls.get_pvp_v2_ransomware()

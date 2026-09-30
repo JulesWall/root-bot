@@ -167,7 +167,11 @@ class MockPvpV2Transaction:
 
         # --- Dev Jobs ---
         if "INSERT INTO PVP_V2_DEV_JOBS" in q:
-            player_id, channel, job_type, family, tier, rtm_paid, bits_per_s, started_at, resolves_at = params
+            if len(params) == 10:
+                player_id, channel, job_type, family, tier, fingerprint, rtm_paid, bits_per_s, started_at, resolves_at = params
+            else:
+                player_id, channel, job_type, family, tier, rtm_paid, bits_per_s, started_at, resolves_at = params
+                fingerprint = None
             for j in self.dev_jobs:
                 if j['player_id'] == int(player_id) and j['channel'] == str(channel):
                     raise Exception(f"Duplicate entry for unique key 'uq_job_player_channel'")
@@ -179,7 +183,7 @@ class MockPvpV2Transaction:
                 'job_type': str(job_type),
                 'family': str(family),
                 'tier': int(tier),
-                'fingerprint': None,
+                'fingerprint': fingerprint,
                 'rtm_paid': Decimal(str(rtm_paid)),
                 'bits_per_s': int(bits_per_s),
                 'started_at': started_at,
@@ -774,3 +778,4 @@ class TestPvpV2DatabaseRepositories(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

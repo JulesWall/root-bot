@@ -293,7 +293,16 @@
         }
       },
       "bits_per_research_unit": 100,
-      "bits_per_compile_unit": 60
+      "bits_per_compile_unit": 60,
+      "min_duration_seconds": 10,
+      "work_units_by_tier": {
+        "1": 60,
+        "2": 150,
+        "3": 400,
+        "4": 1200,
+        "5": 3600,
+        "6": 10000
+      }
     },
     "installation": {
       "base_duration_seconds_by_tier": {

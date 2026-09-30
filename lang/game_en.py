@@ -108,6 +108,113 @@ text = {
     'g_net_retaliation_identified': '• ⚖️ Retaliation authorized: Retaliation against {target} (expires in {remaining})',
     'g_net_claim_toast': 'Successfully extracted **{amount} RTM**!',
     'g_net_footer': 'Root OS • Node #{discord_id}',
+    'g_infra_name_0': 'Jury-rigged smartphone',
+    'g_infra_name_1': 'Custom desktop PC',
+    'g_infra_name_2': 'Workstation',
+    'g_infra_name_3': 'Dedicated server',
+    'g_infra_name_4': 'Server room',
+    'g_infra_name_5': 'Datacenter',
+    'g_infra_desc_0': 'Improvised mobile workstation and local relay',
+    'g_infra_desc_1': 'Modular desktop tower and network station',
+    'g_infra_desc_2': 'High-performance workstation for intensive compute',
+    'g_infra_desc_3': 'Professional rack-mounted server chassis',
+    'g_infra_desc_4': 'Multiple server racks and dedicated facility',
+    'g_infra_desc_5': 'Ultra-secure high-availability enterprise data center',
+    'g_net_v2_header': 'ROOT OS / {name}',
+    'g_net_v2_sub': '{infra_name} · Personal network · Active session',
+    'g_net_v2_sub_hardware': '{infra_name} · Detailed hardware inventory',
+    'g_net_v2_infra_title': '{infra_name} · Level {level}',
+    'g_net_v2_farm_stat': '**Mining farm** · {count} miners ({hashrate})',
+    'g_net_v2_compute_stat': '**Compute power** · {power}',
+    'g_net_v2_defense_stat': '**Defense** · {bay_def} DEF (Bays) · {net_def} DEF (Network)',
+    'g_net_v2_prod_stat': '**Production** · {rate} RTM/h',
+    'g_net_v2_memory_stat': '**Memory (RAM)** · {bar} {pct}% ({used} / {total})',
+    'g_net_v2_claim_stat': '**To claim** · {buffer} RTM',
+    'g_net_v2_balances_stat': '**Wallet** · {usd} USD · {rtm} RTM · {reputation} reputation pts{rep_bonus_str}',
+    'g_net_v2_status_operational': '**System operational** · Monitoring active',
+    'g_net_v2_status_alert': '**Memory saturation alert** · Claim required',
+    'g_net_v2_btn_claim': 'Claim',
+    'g_net_v2_btn_hardware': 'Hardware',
+    'g_net_v2_btn_station': 'Station',
+    'g_net_v2_btn_refresh': 'Refresh',
+    'g_net_v2_btn_back': 'Back',
+    'g_net_v2_hardware_title': 'Installed bays and modules',
+    'g_net_v2_hardware_tier_row': '**Tier {tier}**: {m_count}x Mining ({m_power}) · {a_count}x Attack ({a_power}) · {d_count}x Defense ({d_power})',
+    'g_net_v2_hardware_empty': '*No modules installed in this bay.*',
+    'g_pvp_v2_maintenance': '⚠️ **PvP V2 Maintenance** · This feature is temporarily unavailable during the deployment of the new electronic warfare system.',
+    'g_pvp_v2_compile_deprecated': '> ⚠️ **ATK Production Disabled** · Manual ATK production is replaced by the V2 software development cycle. Use `/dev` or the Software button in your `/network`.',
+    'g_pvp_v2_channel_busy': '> ⏱️ **Channel Busy** · A development job is already active on the **{channel}** channel. Wait for its completion or cancel it.',
+    'g_pvp_v2_research_already_completed': '> 📦 **Research Already Completed** · You already own the research folder for this family and tier.',
+    'g_pvp_v2_research_folder_required': '> 📁 **Research Folder Required** · You must first research and own the corresponding research folder to compile this software.',
+    'g_pvp_v2_patch_already_installed': '> 🛡️ **Patch Already Active** · This patch is already installed and permanently protects your modules of this tier.',
+    'g_pvp_v2_no_attack_module': '> ⚠️ **Zero Offensive Power** · You must own at least one attack module to power the offensive channel.',
+    'g_pvp_v2_no_defense_module': '> ⚠️ **Zero Bay Defense** · You must own at least one bay defense module to power the defensive channel.',
+    'g_error_channel_busy': '> ⏱️ **Channel Busy** · A development job is already active on the **{channel}** channel. Wait for completion or cancel it with `{prefix}dev cancel {channel}`.',
+    'g_error_research_already_completed': '> 📦 **Research Already Completed** · You already hold the research folder for **{family} T{tier}**.',
+    'g_error_research_folder_required': '> 📁 **Folder Required** · You must first research and hold the research folder for **{family} T{tier}** prior to compiling.',
+    'g_error_patch_already_installed': '> 🛡️ **Patch Already Active** · This patch ({fingerprint}) is already installed and permanently protects your modules of this tier.',
+    'g_error_no_attack_module': '> ⚠️ **No Offensive Power** · You must own at least one attack module to power the offense channel (`{prefix}buy attack`).',
+    'g_error_no_defense_module': '> ⚠️ **No Bay Defense** · You must own at least one bay defense module to power the defense channel (`{prefix}buy defense`).',
+    'g_error_insufficient_rootium': '> ⚠️ **Insufficient Funds** · Insufficient Rootium balance to fund this development (cost: **{rtm} RTM**).',
+    'g_error_quote_changed': '> ⚠️ **Quote Expired** · Conditions or resources changed since the quote was generated. Please run the command again.',
+    'g_error_no_active_job': '> ⚠️ **No Active Job** · No development job is currently active on the **{channel}** channel.',
+    'g_error_patch_not_found': '> ⚠️ **Patch Not Found** · No matching patch found in your software library.',
+    'g_error_fingerprint_collision': '> ⚠️ **Fingerprint Collision** · Unable to assign a unique fingerprint for this family. Please retry shortly.',
+    'g_error_dev_start_usage': '> ⚠️ **Invalid Syntax** · Usage: `{prefix}dev start <research|compile|patch_research|patch_compile> <family> <tier> [fingerprint] [confirm]`',
+    'g_error_dev_cancel_usage': '> ⚠️ **Invalid Syntax** · Usage: `{prefix}dev cancel <offense|defense>`',
+    'g_pvp_v2_quote_header': '{e_ops} **SOFTWARE DEVELOPMENT QUOTE**',
+    'g_pvp_v2_quote_body': (
+        "> {e_log} **Type**: `{job_type_label}`\n"
+        "> {e_con} **Family**: `{family}` · **Tier**: `T{tier}`{fp_str}\n"
+        "> {e_con} **Channel**: `{channel_label}`\n"
+        "> {e_pui} **Allocated Power**: `{power}`\n"
+        "> {e_mem} **RTM Cost**: `{rtm_cost} RTM`\n"
+        "> {e_tmp} **Estimated Duration**: `{duration}`\n\n"
+        "*Confirm launching development with the buttons below.*"
+    ),
+    'g_pvp_v2_job_started': (
+        "> {e_log} **Development Started** · `{job_type_label}` · `{family}` T{tier}{fp_str}\n"
+        "> {e_con} **Channel**: `{channel_label}`\n"
+        "> {e_mem} **Cost Paid**: `{rtm_cost} RTM`\n"
+        "> {e_tmp} **Expected Delivery**: <t:{timestamp}:R> *(around <t:{timestamp}:t>)*"
+    ),
+    'g_pvp_v2_job_cancelled': '> {e_alt} **Development Cancelled** · The active job on channel `{channel_label}` has been cancelled. Engaged RTM was consumed.',
+    'g_pvp_v2_delivered_dm': '> {e_mem} **DEVELOPMENT COMPLETE** · Your `{job_type_label}` job for **{family} T{tier}** is complete!\n> • **Fingerprint**: `{fingerprint}`\n> • View your library with `/network` (Software) or `/library`.',
+    'g_pvp_v2_patch_installed': '> {e_fw} **Patch Deployed** · Patch for `{family}` (Fingerprint `{fingerprint}`) is now installed. Modules of this tier are protected.',
+    'g_pvp_v2_library_title': '{e_mem} **SOFTWARE & PATCH LIBRARY**',
+    'g_pvp_v2_library_active_jobs': '{e_tmp} **Active Development Jobs:**',
+    'g_pvp_v2_library_no_active_jobs': '> *No active development jobs.*',
+    'g_pvp_v2_library_folders': '{e_ops} **Owned Research Folders:**',
+    'g_pvp_v2_library_no_folders': '> *No research folders.*',
+    'g_pvp_v2_library_copies': '{e_log} **Compiled Software Copies:**',
+    'g_pvp_v2_library_no_copies': '> *No compiled software.*',
+    'g_pvp_v2_library_patches': '{e_fw} **Network Patches:**',
+    'g_pvp_v2_library_no_patches': '> *No patches.*',
+    'g_pvp_v2_btn_library': 'Software',
+    'g_pvp_v2_btn_install': 'Install {fp}',
+    'g_dev_syntax': (
+        "{e_ops} **SOFTWARE DEVELOPMENT & PATCH CENTER (PvP V2)**\n\n"
+        "The development cycle allows crafting offensive tools or defensive patches. "
+        "You operate **two parallel computation channels**: the **offense** channel (powered by your attack modules) "
+        "and the **defense** channel (powered by your bay defense modules).\n\n"
+        "**Channels & Job Types:**\n"
+        "> • `{prefix}dev start research <family> <tier>`\n"
+        ">   Research a source folder (**offense**). Required prior to compiling.\n"
+        "> • `{prefix}dev start compile <family> <tier>`\n"
+        ">   Compile an executable software copy (**offense**). Uses an existing research folder.\n"
+        "> • `{prefix}dev start patch_research <family> <tier> <fingerprint>`\n"
+        ">   Research a countermeasure for a targeted fingerprint (**defense**).\n"
+        "> • `{prefix}dev start patch_compile <family> <tier> <fingerprint>`\n"
+        ">   Fabricate the network patch (**defense**). Ready to deploy to your server bays.\n\n"
+        "**Available Commands:**\n"
+        "> • `{prefix}dev start ... [confirm]`: Displays a cost quote, or starts immediately if `confirm` is specified.\n"
+        "> • `{prefix}dev status`: Displays active development jobs.\n"
+        "> • `{prefix}dev cancel <offense|defense>`: Aborts the active job on the specified channel (spent RTM is consumed).\n"
+        "> • `{prefix}dev help`: Displays this lexicon and guide.\n"
+        "> • `{prefix}library` (or `!lib`): Shows held research folders, compiled tools, and defensive patches.\n\n"
+        "**Available Software Families:**\n"
+        "> `hostile_miner`, `ransomware`, `currency_theft`, `saturation`, `network_scan`, `software_theft`, `espionage`"
+    ),
     'g_welcome_lang_pick': '🌐 **Welcome to Root.** Choose your language:',
     'g_welcome_onboarding': '> 👋 **Network created.** Start by buying a **tier 1 miner** with `{prefix}buy`!\n> You can then mine with `{prefix}claim` and earn new USD with **events** (`{prefix}event`).',
     'g_shop_title': '🛒 Network Components Market',
@@ -389,6 +496,8 @@ descriptions = {
     'hourly': 'Claim your hourly USD reward with streak combo bonus.',
     'contract': 'Consult, accept, or collect guaranteed work contracts for USD.',
     'rmd': 'Schedule, view, or cancel time-based reminders.',
+    'dev': 'Manage the software and patch development cycle.',
+    'library': 'View your library of folders, software copies, and patches.',
 }
 
 labels = {
@@ -433,4 +542,6 @@ labels = {
     'act_hack': '⚔️ PvP Attack',
     'act_contract': '💼 Work Contracts',
     'act_rmd': '🔔 Reminder & Alert',
+    'act_dev': '💻 Software Development',
+    'act_library': '💾 Software Library',
 }

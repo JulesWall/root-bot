@@ -39,6 +39,8 @@ class RootEmbed(discord.Embed):
         'hourly':      discord.Color.from_rgb(52, 152, 219),   # Bleu azur (Récompense horaire)
         'contract':    discord.Color.from_rgb(0, 168, 204),    # Bleu canard (Root CyberSec)
         'rmd':         discord.Color.from_rgb(155, 89, 182),   # Violet / Améthyste (Rappels)
+        'dev':         discord.Color.from_rgb(84, 226, 209),   # Turquoise (#54E2D1) Root OS (Développement)
+        'library':     discord.Color.from_rgb(84, 226, 209),   # Turquoise (#54E2D1) Root OS (Bibliothèque)
     }
 
     def __init__(self, ctx, action: str, content: str):

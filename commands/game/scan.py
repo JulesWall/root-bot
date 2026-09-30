@@ -476,31 +476,27 @@ class Scan(BaseGameCog):
         self,
         ctx,
         target: discord.Option(
-            discord.User,
+            discord.Member,
             description=desc['scan_target'],
             description_localizations=desc_loc['scan_target'],
         ),
     ):
         """Commande Slash /scan pour lancer un scan de réseau adverse."""
-        await self._invoke(ctx, 'scan', target=target.id)
+        await self._prefetch_lang(ctx.author.id)
+        msg = text.get(ctx, 'g_pvp_v2_maintenance')
+        kwargs = {'content': msg, 'allowed_mentions': discord.AllowedMentions.none()}
+        if getattr(ctx, 'interaction', None):
+            await ctx.respond(**kwargs)
+        else:
+            await ctx.send(**kwargs)
 
     # ── Préfixe ──────────────────────────────────────────────────────────────
     @commands.command(name='scan', help=FR['scan'])
     async def prefix_scan(self, ctx, target: str = None):
         """Commande préfixe !scan <@cible>."""
-        if not target:
-            await self._prefetch_lang(ctx.author.id)
-            prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
-            return await ctx.send(text.get(ctx, 'g_error_scan_usage', prefix=prefix))
-
-        try:
-            resolved_user = await commands.UserConverter().convert(ctx, target)
-        except commands.BadArgument:
-            await self._prefetch_lang(ctx.author.id)
-            prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
-            return await ctx.send(text.get(ctx, 'g_error_scan_usage', prefix=prefix))
-
-        await self._invoke(ctx, 'scan', target=resolved_user.id)
+        await self._prefetch_lang(ctx.author.id)
+        msg = text.get(ctx, 'g_pvp_v2_maintenance')
+        await ctx.send(msg)
 
     # ── Rendu ────────────────────────────────────────────────────────────────
     async def _send(self, ctx, method, result):

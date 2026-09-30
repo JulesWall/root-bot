@@ -36,6 +36,17 @@ desc = {
     "rmd_timer": "Duration (e.g. 30m, 2h) or smart target (hourly, claim, events)",
     "math": "Calculate a mathematical expression",
     "math_expression": "The mathematical expression to evaluate (e.g. 2 + 2, sqrt(16), 5^3)",
+    "dev": "Manage software and patch development cycle",
+    "dev_start": "Start a software or patch development job",
+    "dev_status": "View status of active development jobs",
+    "dev_cancel": "Cancel an active development job on a channel",
+    "dev_job_type": "Job type: research, compile, patch_research, patch_compile",
+    "dev_family": "Software family (e.g. hostile_miner, ransomware...)",
+    "dev_tier": "Module tier (1 to 6)",
+    "dev_channel": "Channel to cancel: offense or defense",
+    "dev_fingerprint": "Fingerprint code (required for patches, optional for compile)",
+    "dev_help": "Show software development syntax, lexicon, and guide",
+    "library": "View your library of folders, compiled software, and patches",
 }
 
 desc_loc = {
@@ -223,6 +234,61 @@ desc_loc = {
         "en-US": "Duration (e.g. 30m, 2h) or smart target (all, hourly, claim, events)",
         "en-GB": "Duration (e.g. 30m, 2h) or smart target (all, hourly, claim, events)",
         "fr": "Durée (ex: 30m, 2h) ou cible de jeu (all, hourly, claim, events)",
+    },
+    "dev": {
+        "en-US": "Manage software and patch development cycle",
+        "en-GB": "Manage software and patch development cycle",
+        "fr": "Gérer le cycle de développement de logiciels et de correctifs",
+    },
+    "dev_start": {
+        "en-US": "Start a software or patch development job",
+        "en-GB": "Start a software or patch development job",
+        "fr": "Lancer un travail de développement logiciel ou de correctif",
+    },
+    "dev_status": {
+        "en-US": "View status of active development jobs",
+        "en-GB": "View status of active development jobs",
+        "fr": "Consulter l'état des travaux de développement en cours",
+    },
+    "dev_cancel": {
+        "en-US": "Cancel an active development job on a channel",
+        "en-GB": "Cancel an active development job on a channel",
+        "fr": "Annuler un travail de développement actif sur un canal",
+    },
+    "dev_job_type": {
+        "en-US": "Job type: research, compile, patch_research, patch_compile",
+        "en-GB": "Job type: research, compile, patch_research, patch_compile",
+        "fr": "Type de job : research, compile, patch_research, patch_compile",
+    },
+    "dev_family": {
+        "en-US": "Software family (e.g. hostile_miner, ransomware...)",
+        "en-GB": "Software family (e.g. hostile_miner, ransomware...)",
+        "fr": "Famille de logiciel (ex: hostile_miner, ransomware...)",
+    },
+    "dev_tier": {
+        "en-US": "Module tier (1 to 6)",
+        "en-GB": "Module tier (1 to 6)",
+        "fr": "Tier ciblé (1 à 6)",
+    },
+    "dev_channel": {
+        "en-US": "Channel to cancel: offense or defense",
+        "en-GB": "Channel to cancel: offense or defense",
+        "fr": "Canal à annuler : offense ou defense",
+    },
+    "dev_fingerprint": {
+        "en-US": "Fingerprint code (required for patches, optional for compile)",
+        "en-GB": "Fingerprint code (required for patches, optional for compile)",
+        "fr": "Code d'empreinte (requis pour les patches, facultatif pour compile)",
+    },
+    "dev_help": {
+        "en-US": "Show software development syntax, lexicon, and guide",
+        "en-GB": "Show software development syntax, lexicon, and guide",
+        "fr": "Afficher le lexique et la syntaxe complète du développement logiciel",
+    },
+    "library": {
+        "en-US": "View your library of folders, compiled software, and patches",
+        "en-GB": "View your library of folders, compiled software, and patches",
+        "fr": "Consulter votre bibliothèque de dossiers, logiciels et correctifs",
     },
 }
 

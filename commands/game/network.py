@@ -18,6 +18,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import discord
 from discord.ext import commands, tasks
@@ -35,6 +36,53 @@ from utils.logger import Logger
 from utils.time_format import format_duration
 
 logger = logging.getLogger(__name__)
+
+COLOR_TURQUOISE = 0x54E2D1
+COLOR_AMBER = 0xFFC15A
+
+FALLBACKS = {
+    "terminal": "🖥️", "firewall": "🛡️", "ferme": "🗄️",
+    "puissance": "⚙️", "production": "📊", "memoire": "💾",
+    "temps": "⏱️", "recolter": "📥", "materiel": "⚙️",
+    "logiciels": "💻", "operations": "📋", "journal": "📄",
+    "alerte": "⚠️", "scan": "🔍", "connexions": "🌐",
+    "retour": "↩️", "bilan": "📊", "dollars": "💵",
+}
+
+INFRASTRUCTURE_IMAGES = {
+    0: "niveau-0-smartphone.png",
+    1: "niveau-1-pc-assemble.png",
+    2: "niveau-2-station-de-travail.png",
+    3: "niveau-3-serveur-dedie.png",
+    4: "niveau-4-salle-des-serveurs.png",
+    5: "niveau-5-datacenter.png",
+}
+
+
+def get_infrastructure_image_path(level: int) -> Path | None:
+    """Retourne le chemin local de l'illustration de l'infrastructure si elle existe sur disque."""
+    lvl = max(0, min(5, int(level or 0)))
+    filename = INFRASTRUCTURE_IMAGES.get(lvl)
+    if not filename:
+        return None
+    p = Path(__file__).resolve().parent.parent.parent / "design" / "infrastructures-controle" / filename
+    return p if p.exists() else None
+
+
+def select_emojis(emojis) -> dict:
+    """Résout les emojis personnalisés root_* en priorisant les versions animées utilisables."""
+    selected = {}
+    if not emojis:
+        return selected
+    for emoji in sorted(emojis, key=lambda item: (getattr(item, 'animated', False), getattr(item, 'id', 0))):
+        name = getattr(emoji, 'name', '')
+        if name.startswith("root_"):
+            clean_name = name.removeprefix("root_")
+            if clean_name in FALLBACKS:
+                is_usable = getattr(emoji, 'is_usable', None)
+                if is_usable is None or is_usable():
+                    selected[clean_name] = emoji
+    return selected
 
 
 def _secret_id_check_interval() -> int:
@@ -289,6 +337,488 @@ class NetworkActionView(discord.ui.View):
     async def on_timeout(self):
         for child in self.children:
             child.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
+
+
+class NetworkDesignerView(discord.ui.DesignerView):
+    """Panneau Discord Components V2 représentant l'infrastructure de contrôle du joueur."""
+
+    def __init__(self, cog, ctx, result, emojis=None, image_url=None):
+        timeout = 600
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            timeout = None
+        super().__init__(timeout=timeout, disable_on_timeout=True)
+        self.cog = cog
+        self.ctx = ctx
+        self.result = result
+        self.emojis = emojis or {}
+        self.image_url = image_url
+        self.author_id = int(result.get('discord_id') or (getattr(ctx, 'author', None) and ctx.author.id) or 0)
+        self.detail = None
+        self.library_data = None
+        self.lock = asyncio.Lock()
+        self.message = None
+        self.rebuild()
+
+    def emoji(self, name: str):
+        return self.emojis.get(name, FALLBACKS.get(name, "⚙️"))
+
+    def rebuild(self):
+        self.clear_items()
+        e = self.emoji
+        ctx = self.ctx
+        result = self.result
+
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        author_name = getattr(author, 'display_name', str(result.get('discord_id', '')))
+
+        infra_level = int(result.get('infrastructure_level', result.get('firewall_level', 0)) or 0)
+        infra_level = max(0, min(5, infra_level))
+        infra_name = text.get(ctx, f'g_infra_name_{infra_level}')
+
+        stats = result.get('stats') or MathConfig.calculate_player_stats(result)
+        mining_state = result.get('mining_state')
+        if mining_state is None:
+            mining_state = MathConfig.compute_mining_progress(result, stats, datetime.now(timezone.utc))
+
+        mem_pct = float(mining_state.get('memory_pct', 0))
+        is_mem_full = mem_pct >= 100.0 or bool(mining_state.get('is_full'))
+        panel_color = COLOR_AMBER if is_mem_full else COLOR_TURQUOISE
+
+        panel = discord.ui.Container(color=panel_color)
+
+        if self.image_url:
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(self.image_url, description=infra_name)
+            panel.add_item(gallery)
+
+        def text_elem(content: str):
+            panel.add_item(discord.ui.TextDisplay(content))
+
+        def separator():
+            panel.add_item(discord.ui.Separator())
+
+        actions = []
+
+        if self.detail == "hardware":
+            header = text.get(ctx, 'g_net_v2_header', name=author_name.upper())
+            sub = text.get(ctx, 'g_net_v2_sub_hardware', infra_name=infra_name)
+            text_elem(f"## {e('terminal')} {header}\n-# {sub}")
+            separator()
+
+            hw_title = text.get(ctx, 'g_net_v2_hardware_title')
+            text_elem(f"### {e('materiel')} {hw_title}")
+
+            max_tier_unlocked = max(1, min(5, infra_level + 1))
+            tier_rows = []
+            for tier in range(1, 6):
+                bay = stats['bay_details'].get(tier, {})
+                m_count = bay.get('mining_count', 0)
+                a_count = bay.get('attack_count', 0)
+                d_count = bay.get('bay_defense_count', 0)
+
+                if tier <= max_tier_unlocked or m_count > 0 or a_count > 0 or d_count > 0:
+                    m_hs = MathConfig.format_hashrate(bay.get('mining_hashrate', 0))
+                    a_pow = MathConfig.format_bits_per_s(bay.get('attack_bits_per_s', 0))
+                    d_pow = f"{bay.get('bay_defense_power', 0)} DEF"
+                    row_txt = text.get(
+                        ctx, 'g_net_v2_hardware_tier_row',
+                        tier=tier,
+                        m_count=m_count, m_power=m_hs,
+                        a_count=a_count, a_power=a_pow,
+                        d_count=d_count, d_power=d_pow,
+                    )
+                    tier_rows.append(f"> {row_txt}")
+
+            if not tier_rows:
+                tier_rows.append(f"> {text.get(ctx, 'g_net_v2_hardware_empty')}")
+            text_elem("\n".join(tier_rows))
+            separator()
+
+            tot_hs = stats.get('total_hashrate_formatted', '0 H/s')
+            tot_atk = stats.get('total_bits_per_s_formatted', '0 Bit/s')
+            tot_bdef = stats.get('total_bay_defense', 0)
+            tot_ndef = stats.get('network_defense', 0)
+            tot_ram = mining_state.get('total_ram_formatted', '0 o')
+            text_elem(
+                f"{e('puissance')} **Hashrate total** · {tot_hs}\n"
+                f"{e('puissance')} **Attaque totale** · {tot_atk}\n"
+                f"{e('firewall')} **Défense** · {tot_bdef} DEF (Baies) · {tot_ndef} DEF (Réseau)\n"
+                f"{e('memoire')} **Mémoire vive totale** · {tot_ram}"
+            )
+
+            btn_back_label = text.get(ctx, 'g_net_v2_btn_back')
+            back_btn = discord.ui.Button(
+                label=btn_back_label,
+                emoji=e('retour'),
+                style=discord.ButtonStyle.secondary,
+                custom_id="root_net:back",
+            )
+            back_btn.callback = self._on_back
+            actions.append(back_btn)
+
+        elif self.detail == "software":
+            header = text.get(ctx, 'g_net_v2_header', name=author_name.upper())
+            sub = text.get(ctx, 'g_pvp_v2_library_title')
+            text_elem(f"## 💾 {header}\n-# {sub}")
+            separator()
+
+            lib = self.library_data or {}
+            active_jobs = lib.get('active_jobs', [])
+            folders = lib.get('research_folders', [])
+            copies = lib.get('software_copies', [])
+            patches = lib.get('patches', [])
+
+            # 1. Jobs actifs
+            job_lines = [f"### ⏳ {text.get(ctx, 'g_pvp_v2_library_active_jobs')}"]
+            if not active_jobs:
+                job_lines.append(f"> *{text.get(ctx, 'g_pvp_v2_library_no_active_jobs')}*")
+            else:
+                for j in active_jobs:
+                    res_at = j.get('resolves_at')
+                    ts = int(res_at.replace(tzinfo=timezone.utc).timestamp()) if res_at and hasattr(res_at, 'timestamp') else 0
+                    fp_part = f" (`{j.get('fingerprint')}`)" if j.get('fingerprint') else ""
+                    job_lines.append(f"> • **[{j['channel'].upper()}]** `{j['job_type']}` · {j['family']} T{j['tier']}{fp_part} — fin <t:{ts}:R>")
+            text_elem("\n".join(job_lines))
+            separator()
+
+            # 2. Dossiers de recherche
+            folder_lines = [f"### 📁 {text.get(ctx, 'g_pvp_v2_library_folders')}"]
+            if not folders:
+                folder_lines.append(f"> *{text.get(ctx, 'g_pvp_v2_library_no_folders')}*")
+            else:
+                for f in folders:
+                    folder_lines.append(f"> • 📁 **{f['family']}** T{f['tier']} · Empreinte : `{f['fingerprint']}` ({f['channel']})")
+            text_elem("\n".join(folder_lines))
+            separator()
+
+            # 3. Copies de logiciels
+            copy_lines = [f"### 💿 {text.get(ctx, 'g_pvp_v2_library_copies')}"]
+            if not copies:
+                copy_lines.append(f"> *{text.get(ctx, 'g_pvp_v2_library_no_copies')}*")
+            else:
+                for c in copies:
+                    resell = "Revente autorisée" if c.get('resellable') else "Non revendable"
+                    copy_lines.append(f"> • 💾 **{c['family']}** T{c['tier']} · Empreinte : `{c['fingerprint']}` ({resell})")
+            text_elem("\n".join(copy_lines))
+            separator()
+
+            # 4. Correctifs (patches)
+            patch_lines = [f"### 🛡️ {text.get(ctx, 'g_pvp_v2_library_patches')}"]
+            uninstalled_patches = [p for p in patches if not p.get('installed')]
+            if not patches:
+                patch_lines.append(f"> *{text.get(ctx, 'g_pvp_v2_library_no_patches')}*")
+            else:
+                for p in patches:
+                    st = "🛡️ **Installé**" if p.get('installed') else "📦 *Non installé*"
+                    patch_lines.append(f"> • 🩹 **{p['family']}** · Empreinte : `{p['fingerprint']}` — {st}")
+            text_elem("\n".join(patch_lines))
+
+            # Boutons d'installation pour les patches non installés (max 2)
+            for p in uninstalled_patches[:2]:
+                inst_btn = discord.ui.Button(
+                    label=text.get(ctx, 'g_pvp_v2_btn_install', fp=p['fingerprint']),
+                    emoji="🛡️",
+                    style=discord.ButtonStyle.success,
+                    custom_id=f"root_net:install_{p['id']}",
+                )
+                inst_btn.callback = self._make_install_callback(p['id'])
+                actions.append(inst_btn)
+
+            btn_back_label = text.get(ctx, 'g_net_v2_btn_back')
+            back_btn = discord.ui.Button(
+                label=btn_back_label,
+                emoji=e('retour'),
+                style=discord.ButtonStyle.secondary,
+                custom_id="root_net:back",
+            )
+            back_btn.callback = self._on_back
+            actions.append(back_btn)
+
+        else:
+            header = text.get(ctx, 'g_net_v2_header', name=author_name.upper())
+            sub = text.get(ctx, 'g_net_v2_sub', infra_name=infra_name)
+            text_elem(f"## {e('terminal')} {header}\n-# {sub}")
+            separator()
+
+            infra_heading = text.get(ctx, 'g_net_v2_infra_title', infra_name=infra_name, level=infra_level)
+            text_elem(f"### {e('materiel')} {infra_heading}")
+
+            total_miners = sum(stats['bay_details'][t]['mining_count'] for t in range(1, 6))
+            hashrate = stats.get('total_hashrate_formatted', '0 H/s')
+            atk_power = stats.get('total_bits_per_s_formatted', '0 Bit/s')
+            bay_def = stats.get('total_bay_defense', 0)
+            net_def = stats.get('network_defense', 0)
+
+            rate_per_min = Decimal(str(mining_state.get('rate_per_min', 0)))
+            rtm_per_h = (rate_per_min * Decimal('60')).quantize(Decimal('0.00001'))
+            rtm_h_str = text.format_rtm(rtm_per_h)
+
+            bar_blocks = max(0, min(10, int(round(mem_pct / 10.0))))
+            ram_bar = '▰' * bar_blocks + '▱' * (10 - bar_blocks)
+            used_str = mining_state.get('memory_used_formatted', '0 o')
+            total_ram_str = mining_state.get('total_ram_formatted', '0 o')
+            pending_rtm = text.format_rtm(mining_state.get('buffer', 0))
+
+            usd_str = text.format_usd(result.get('dollars') or 0)
+            rtm_balance = f"{Decimal(str(result.get('rootium') or 0)):,.5f}"
+            reputation = int(result.get('reputation') or 0)
+            rep_bonus_pct = Decimal(str(reputation)) * Decimal('0.5')
+            rep_bonus_str = f" *(+{rep_bonus_pct:.1f}% minage)*" if reputation > 0 else ""
+
+            farm_line = text.get(ctx, 'g_net_v2_farm_stat', count=total_miners, hashrate=hashrate)
+            compute_line = text.get(ctx, 'g_net_v2_compute_stat', power=atk_power)
+            defense_line = text.get(ctx, 'g_net_v2_defense_stat', bay_def=bay_def, net_def=net_def)
+            prod_line = text.get(ctx, 'g_net_v2_prod_stat', rate=rtm_h_str)
+            mem_line = text.get(ctx, 'g_net_v2_memory_stat', bar=ram_bar, pct=f"{mem_pct:.1f}", used=used_str, total=total_ram_str)
+            claim_line = text.get(ctx, 'g_net_v2_claim_stat', buffer=pending_rtm)
+            balances_line = text.get(ctx, 'g_net_v2_balances_stat', usd=usd_str, rtm=rtm_balance, reputation=reputation, rep_bonus_str=rep_bonus_str)
+
+            stats_block = (
+                f"{e('ferme')} {farm_line}\n"
+                f"{e('puissance')} {compute_line}\n"
+                f"{e('firewall')} {defense_line}\n"
+                f"{e('production')} {prod_line}\n"
+                f"{e('memoire')} {mem_line}\n"
+                f"{e('recolter')} {claim_line}\n"
+                f"{e('dollars')} {balances_line}"
+            )
+            text_elem(stats_block)
+            separator()
+
+            status_lines = []
+            pending_up = result.get('pending_upgrade')
+            if pending_up:
+                exp = pending_up.get('expires_at')
+                up_ts = int(exp.replace(tzinfo=timezone.utc).timestamp()) if exp and hasattr(exp, 'timestamp') else 0
+                status_lines.append(f"{e('temps')} Amélioration vers Niveau **{pending_up.get('target_level')}** en cours (<t:{up_ts}:R>)")
+
+            pending_hack = result.get('pending_hack')
+            if pending_hack:
+                exp = pending_hack.get('expires_at')
+                hack_ts = int(exp.replace(tzinfo=timezone.utc).timestamp()) if exp and hasattr(exp, 'timestamp') else 0
+                atk_yield = int(pending_hack.get('atk_yield') or 0)
+                status_lines.append(f"{e('temps')} Compilation de **{atk_yield} ATK** en cours (<t:{hack_ts}:R>)")
+
+            pending_scan = result.get('pending_scan')
+            if pending_scan:
+                exp = pending_scan.get('expires_at')
+                scan_ts = int(exp.replace(tzinfo=timezone.utc).timestamp()) if exp and hasattr(exp, 'timestamp') else 0
+                status_lines.append(f"{e('scan')} Scan en cours sur <@{pending_scan.get('target_id')}> (<t:{scan_ts}:R>)")
+
+            retaliations = result.get('retaliations') or []
+            if retaliations:
+                for r in retaliations[:2]:
+                    rem_str = _format_retaliation_countdown(r.get('delete_at'))
+                    status_lines.append(f"{e('alerte')} Riposte autorisée contre <@{r.get('attacker_id')}> ({rem_str})")
+
+            pending_dev_jobs = result.get('pending_dev_jobs') or []
+            for j in pending_dev_jobs:
+                res_at = j.get('resolves_at')
+                ts = int(res_at.replace(tzinfo=timezone.utc).timestamp()) if res_at and hasattr(res_at, 'timestamp') else 0
+                fp_part = f" (`{j.get('fingerprint')}`)" if j.get('fingerprint') else ""
+                status_lines.append(f"{e('temps')} Dev [{j['channel'].upper()}] `{j['job_type']}` · {j['family']} T{j['tier']}{fp_part} (<t:{ts}:R>)")
+
+            if is_mem_full:
+                status_lines.append(f"{e('alerte')} {text.get(ctx, 'g_net_v2_status_alert')}")
+
+            if not status_lines:
+                status_lines.append(f"{e('firewall')} {text.get(ctx, 'g_net_v2_status_operational')}")
+
+            text_elem("\n".join(status_lines))
+
+            buffer_val = Decimal(str(mining_state.get('buffer', 0)))
+            has_buffer = buffer_val > 0
+            btn_claim_label = text.get(ctx, 'g_net_v2_btn_claim')
+            if has_buffer:
+                claim_label = f"{btn_claim_label} ({pending_rtm} RTM)"
+                claim_btn = discord.ui.Button(
+                    label=claim_label[:80],
+                    emoji=e('recolter'),
+                    style=discord.ButtonStyle.success,
+                    disabled=False,
+                    custom_id="root_net:claim",
+                )
+            else:
+                claim_btn = discord.ui.Button(
+                    label=btn_claim_label,
+                    emoji=e('recolter'),
+                    style=discord.ButtonStyle.secondary,
+                    disabled=True,
+                    custom_id="root_net:claim_disabled",
+                )
+            claim_btn.callback = self._on_claim
+            actions.append(claim_btn)
+
+            btn_hw_label = text.get(ctx, 'g_net_v2_btn_hardware')
+            hw_btn = discord.ui.Button(
+                label=btn_hw_label,
+                emoji=e('materiel'),
+                style=discord.ButtonStyle.secondary,
+                custom_id="root_net:hardware",
+            )
+            hw_btn.callback = self._on_hardware
+            actions.append(hw_btn)
+
+            sw_btn = discord.ui.Button(
+                label=text.get(ctx, 'g_pvp_v2_btn_library'),
+                emoji="💾",
+                style=discord.ButtonStyle.secondary,
+                custom_id="root_net:software",
+            )
+            sw_btn.callback = self._on_software
+            actions.append(sw_btn)
+
+        refresh_btn = discord.ui.Button(
+            label=text.get(ctx, 'g_net_v2_btn_refresh'),
+            emoji="🔄",
+            style=discord.ButtonStyle.primary,
+            custom_id="root_net:refresh",
+        )
+        refresh_btn.callback = self._on_refresh
+        actions.append(refresh_btn)
+
+        if actions:
+            panel.add_item(discord.ui.ActionRow(*actions))
+
+        self.add_item(panel)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                text.get(self.ctx, 'no_permission'),
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def _on_claim(self, interaction: discord.Interaction):
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(text.get(self.ctx, 'no_permission'), ephemeral=True)
+            return
+        checks = Check()
+        allowed, err_key = await checks.check_interaction_access(self.cog.bot, interaction, allow_network=False)
+        if not allowed:
+            await interaction.response.send_message(text.get(self.ctx, err_key), ephemeral=True)
+            return
+        async with self.lock:
+            await interaction.response.defer()
+            try:
+                claim_res = await self.cog.service.execute(
+                    self.author_id,
+                    interaction.guild.id if interaction.guild else None,
+                    'claim',
+                )
+                if claim_res.get('claimed'):
+                    amount = Decimal(str(claim_res.get('amount', 0)))
+                    toast = text.get(self.ctx, 'g_net_claim_toast', amount=text.format_rtm(amount))
+                    await interaction.followup.send(toast, ephemeral=True)
+                    log_ctx = interaction if getattr(interaction, 'guild', None) else self.ctx
+                    await log_claim_events(self.cog.bot, log_ctx, amount, claim_res)
+            except Exception as err:
+                if hasattr(err, 'key'):
+                    err_msg = text.get(self.ctx, 'g_error_' + err.key, **getattr(err, 'values', {}))
+                else:
+                    err_msg = str(err)
+                await interaction.followup.send(err_msg, ephemeral=True)
+                return
+
+            self.result = await self.cog.service.execute(
+                self.author_id,
+                interaction.guild.id if interaction.guild else None,
+                'network',
+            )
+            self.rebuild()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
+
+    async def _on_hardware(self, interaction: discord.Interaction):
+        async with self.lock:
+            self.detail = "hardware"
+            self.rebuild()
+            await interaction.response.edit_message(view=self)
+
+    async def _on_software(self, interaction: discord.Interaction):
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(text.get(self.ctx, 'no_permission'), ephemeral=True)
+            return
+        async with self.lock:
+            await interaction.response.defer()
+            self.detail = "software"
+            try:
+                self.library_data = await self.cog.service.execute(
+                    self.author_id,
+                    interaction.guild.id if interaction.guild else None,
+                    'pvp_v2_library',
+                )
+            except Exception:
+                self.library_data = None
+            self.rebuild()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
+
+    def _make_install_callback(self, patch_id: int):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.author_id:
+                await interaction.response.send_message(text.get(self.ctx, 'no_permission'), ephemeral=True)
+                return
+            async with self.lock:
+                await interaction.response.defer()
+                try:
+                    await self.cog.service.execute(
+                        self.author_id,
+                        interaction.guild.id if interaction.guild else None,
+                        'pvp_v2_install_patch',
+                        patch_id=patch_id,
+                    )
+                    self.library_data = await self.cog.service.execute(
+                        self.author_id,
+                        interaction.guild.id if interaction.guild else None,
+                        'pvp_v2_library',
+                    )
+                except Exception as exc:
+                    logger.exception("Erreur lors de l'installation du patch")
+                self.rebuild()
+                try:
+                    await interaction.message.edit(view=self)
+                except Exception:
+                    pass
+        return callback
+
+    async def _on_back(self, interaction: discord.Interaction):
+        async with self.lock:
+            self.detail = None
+            self.rebuild()
+            await interaction.response.edit_message(view=self)
+
+    async def _on_refresh(self, interaction: discord.Interaction):
+        async with self.lock:
+            await interaction.response.defer()
+            self.result = await self.cog.service.execute(
+                self.author_id,
+                interaction.guild.id if interaction.guild else None,
+                'network',
+            )
+            self.rebuild()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
+
+    async def on_timeout(self):
+        for child in self.walk_children():
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
         if self.message:
             try:
                 await self.message.edit(view=self)
@@ -613,10 +1143,31 @@ class Network(BaseGameCog):
         return embed
 
     async def _send(self, ctx, method, result):
-        """Envoie l'Embed complet d'affichage du réseau joueur avec les boutons d'action rapide."""
-        embed = self._build_network_embed(ctx, result)
-        view = NetworkActionView(self, ctx, result)
-        kwargs = {'embed': embed, 'view': view, 'allowed_mentions': discord.AllowedMentions.none()}
+        """Envoie le panneau Discord Components V2 d'affichage de l'infrastructure joueur."""
+        guild = getattr(ctx, 'guild', None)
+        emojis = {}
+        if guild and hasattr(guild, 'emojis'):
+            try:
+                emojis = select_emojis(guild.emojis)
+            except Exception:
+                emojis = {}
+
+        infra_level = int(result.get('infrastructure_level', result.get('firewall_level', 0)) or 0)
+        img_path = get_infrastructure_image_path(infra_level)
+
+        files = []
+        image_url = None
+        if img_path:
+            filename = f"infrastructure-{infra_level}.png"
+            file = discord.File(str(img_path), filename=filename)
+            files.append(file)
+            image_url = f"attachment://{filename}"
+
+        view = NetworkDesignerView(self, ctx, result, emojis=emojis, image_url=image_url)
+        kwargs = {'view': view, 'allowed_mentions': discord.AllowedMentions.none()}
+        if files:
+            kwargs['files'] = files
+
         if getattr(ctx, 'interaction', None):
             msg = await ctx.respond(**kwargs)
         else:

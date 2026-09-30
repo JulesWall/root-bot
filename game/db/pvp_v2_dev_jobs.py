@@ -53,21 +53,23 @@ class PvpV2DevJobsDB:
         rtm_paid,
         bits_per_s: int,
         resolves_at: datetime,
+        fingerprint: str | None = None,
     ) -> dict:
         """Insère un nouveau job de développement.
 
         Lève IntegrityError si le canal est déjà occupé (contrainte UNIQUE player_id, channel).
         L'appelant doit vérifier get_active_by_player_channel() avant ou intercepter l'erreur.
-        fingerprint est NULL à la création ; il sera assigné à la résolution pour 'research'.
+        fingerprint est NULL pour 'research' ; il est renseigné pour 'compile' ou 'patch_*'.
         """
         from decimal import Decimal
         rtm_paid_d = Decimal(str(rtm_paid))
+        fp_val = str(fingerprint) if fingerprint else None
         job_id = tx.execute(
             """
             INSERT INTO pvp_v2_dev_jobs
                 (player_id, channel, job_type, family, tier, fingerprint,
                  rtm_paid, bits_per_s, started_at, resolves_at)
-            VALUES (%s, %s, %s, %s, %s, NULL, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 int(player_id),
@@ -75,6 +77,7 @@ class PvpV2DevJobsDB:
                 str(job_type),
                 str(family),
                 int(tier),
+                fp_val,
                 rtm_paid_d,
                 int(bits_per_s),
                 tx.now,
@@ -88,7 +91,7 @@ class PvpV2DevJobsDB:
             'job_type': str(job_type),
             'family': str(family),
             'tier': int(tier),
-            'fingerprint': None,
+            'fingerprint': fp_val,
             'rtm_paid': rtm_paid_d,
             'bits_per_s': int(bits_per_s),
             'started_at': tx.now,

@@ -108,6 +108,113 @@ text = {
     'g_net_retaliation_identified': '• ⚖️ Riposte autorisée : Riposte contre {target} (expire dans {remaining})',
     'g_net_claim_toast': 'Extraction de **{amount} RTM** effectuée avec succès !',
     'g_net_footer': 'Root OS • Node #{discord_id}',
+    'g_infra_name_0': 'Smartphone bricolé',
+    'g_infra_name_1': 'PC assemblé',
+    'g_infra_name_2': 'Station de travail',
+    'g_infra_name_3': 'Serveur dédié',
+    'g_infra_name_4': 'Salle des serveurs',
+    'g_infra_name_5': 'Datacenter',
+    'g_infra_desc_0': 'Poste mobile improvisé et relais local',
+    'g_infra_desc_1': 'Tour modulaire de bureau et station réseau',
+    'g_infra_desc_2': 'Poste haute performance pour calculs intensifs',
+    'g_infra_desc_3': 'Châssis serveur professionnel en armoire',
+    'g_infra_desc_4': 'Racks multiples et infrastructure dédiée',
+    'g_infra_desc_5': 'Centre de données ultra-sécurisé à haute disponibilité',
+    'g_net_v2_header': 'ROOT OS / {name}',
+    'g_net_v2_sub': '{infra_name} · Réseau personnel · Session active',
+    'g_net_v2_sub_hardware': '{infra_name} · Inventaire matériel détaillé',
+    'g_net_v2_infra_title': '{infra_name} · Niveau {level}',
+    'g_net_v2_farm_stat': '**Ferme de minage** · {count} mineurs ({hashrate})',
+    'g_net_v2_compute_stat': '**Puissance de calcul** · {power}',
+    'g_net_v2_defense_stat': '**Défense** · {bay_def} DEF (Baies) · {net_def} DEF (Réseau)',
+    'g_net_v2_prod_stat': '**Production** · {rate} RTM/h',
+    'g_net_v2_memory_stat': '**Mémoire vive** · {bar} {pct}% ({used} / {total})',
+    'g_net_v2_claim_stat': '**À récolter** · {buffer} RTM',
+    'g_net_v2_balances_stat': '**Portefeuille** · {usd} USD · {rtm} RTM · {reputation} pts réputation{rep_bonus_str}',
+    'g_net_v2_status_operational': '**Système opérationnel** · Surveillance active',
+    'g_net_v2_status_alert': '**Alerte saturation mémoire** · Récolte nécessaire',
+    'g_net_v2_btn_claim': 'Récolter',
+    'g_net_v2_btn_hardware': 'Matériel',
+    'g_net_v2_btn_station': 'Poste',
+    'g_net_v2_btn_refresh': 'Actualiser',
+    'g_net_v2_btn_back': 'Retour',
+    'g_net_v2_hardware_title': 'Baies et modules installés',
+    'g_net_v2_hardware_tier_row': '**Tier {tier}** : {m_count}x Minage ({m_power}) · {a_count}x Attaque ({a_power}) · {d_count}x Défense ({d_power})',
+    'g_net_v2_hardware_empty': '*Aucun module installé dans cette baie.*',
+    'g_pvp_v2_maintenance': '⚠️ **Maintenance PvP V2** · Cette fonctionnalité est temporairement indisponible durant le déploiement du nouveau système de guerre électronique.',
+    'g_pvp_v2_compile_deprecated': '> ⚠️ **Production d\'ATK désactivée** · La production d\'ATK est remplacée par le cycle de développement logiciel V2. Utilisez `/dev` ou le bouton Logiciels de votre `/network`.',
+    'g_pvp_v2_channel_busy': '> ⏱️ **Canal occupé** · Un travail de développement est déjà actif sur le canal **{channel}**. Attends son terme ou annule-le.',
+    'g_pvp_v2_research_already_completed': '> 📦 **Recherche déjà effectuée** · Tu détiens déjà le dossier de recherche pour cette famille et ce tier.',
+    'g_pvp_v2_research_folder_required': '> 📁 **Dossier requis** · Tu dois d\'abord rechercher et détenir le dossier de recherche correspondant pour compiler ce logiciel.',
+    'g_pvp_v2_patch_already_installed': '> 🛡️ **Correctif déjà actif** · Ce patch est déjà installé et protège de manière permanente tes modules de ce tier.',
+    'g_pvp_v2_no_attack_module': '> ⚠️ **Puissance offensive nulle** · Tu dois posséder au moins un module d\'attaque pour alimenter le canal offensif.',
+    'g_pvp_v2_no_defense_module': '> ⚠️ **Défense de baie nulle** · Tu dois posséder au moins un module de défense de baie pour alimenter le canal défensif.',
+    'g_error_channel_busy': '> ⏱️ **Canal occupé** · Un travail de développement est déjà actif sur le canal **{channel}**. Attends son terme ou annule-le avec `{prefix}dev cancel {channel}`.',
+    'g_error_research_already_completed': '> 📦 **Recherche déjà effectuée** · Tu détiens déjà le dossier de recherche pour **{family} T{tier}**.',
+    'g_error_research_folder_required': '> 📁 **Dossier requis** · Tu dois d\'abord rechercher et détenir le dossier de recherche de **{family} T{tier}** avant de compiler ce logiciel.',
+    'g_error_patch_already_installed': '> 🛡️ **Correctif déjà actif** · Ce patch ({fingerprint}) est déjà installé et protège de manière permanente tes modules de ce tier.',
+    'g_error_no_attack_module': '> ⚠️ **Puissance offensive nulle** · Tu dois posséder au moins un module d\'attaque pour alimenter le canal offensif (`{prefix}buy attack`).',
+    'g_error_no_defense_module': '> ⚠️ **Défense de baie nulle** · Tu dois posséder au moins un module de défense de baie pour alimenter le canal défensif (`{prefix}buy defense`).',
+    'g_error_insufficient_rootium': '> ⚠️ **Fonds insuffisants** · Solde en Rootium insuffisant pour financer ce développement (coût : **{rtm} RTM**).',
+    'g_error_quote_changed': '> ⚠️ **Devis expiré** · Les conditions ou ressources ont changé depuis l\'émission du devis. Merci de renouveler ta commande.',
+    'g_error_no_active_job': '> ⚠️ **Aucun job actif** · Aucun développement n\'est actuellement en cours sur le canal **{channel}**.',
+    'g_error_patch_not_found': '> ⚠️ **Correctif introuvable** · Aucun patch correspondant n\'a été trouvé dans ta bibliothèque.',
+    'g_error_fingerprint_collision': '> ⚠️ **Collision d\'empreinte** · Impossible d\'attribuer une empreinte unique pour cette famille. Réessaie dans un instant.',
+    'g_error_dev_start_usage': '> ⚠️ **Syntaxe invalide** · Utilisation : `{prefix}dev start <research|compile|patch_research|patch_compile> <family> <tier> [fingerprint] [confirm]`',
+    'g_error_dev_cancel_usage': '> ⚠️ **Syntaxe invalide** · Utilisation : `{prefix}dev cancel <offense|defense>`',
+    'g_pvp_v2_quote_header': '{e_ops} **DEVIS DE DÉVELOPPEMENT LOGICIEL**',
+    'g_pvp_v2_quote_body': (
+        "> {e_log} **Type** : `{job_type_label}`\n"
+        "> {e_con} **Famille** : `{family}` · **Tier** : `T{tier}`{fp_str}\n"
+        "> {e_con} **Canal** : `{channel_label}`\n"
+        "> {e_pui} **Puissance allouée** : `{power}`\n"
+        "> {e_mem} **Coût RTM** : `{rtm_cost} RTM`\n"
+        "> {e_tmp} **Durée estimée** : `{duration}`\n\n"
+        "*Confirmez le lancement du développement avec les boutons ci-dessous.*"
+    ),
+    'g_pvp_v2_job_started': (
+        "> {e_log} **Développement lancé** · `{job_type_label}` · `{family}` T{tier}{fp_str}\n"
+        "> {e_con} **Canal** : `{channel_label}`\n"
+        "> {e_mem} **Coût payé** : `{rtm_cost} RTM`\n"
+        "> {e_tmp} **Livraison prévue** : <t:{timestamp}:R> *(vers <t:{timestamp}:t>)*"
+    ),
+    'g_pvp_v2_job_cancelled': '> {e_alt} **Développement annulé** · Le job actif sur le canal `{channel_label}` a été interrompu. Les RTM engagés ont été consommés.',
+    'g_pvp_v2_delivered_dm': '> {e_mem} **DÉVELOPPEMENT TERMINÉ** · Ton travail `{job_type_label}` pour **{family} T{tier}** est achevé !\n> • **Empreinte** : `{fingerprint}`\n> • Consulte ta bibliothèque avec `/network` (Logiciels) ou `/library`.',
+    'g_pvp_v2_patch_installed': '> {e_fw} **Correctif déployé** · Le patch pour `{family}` (Empreinte `{fingerprint}`) est maintenant installé avec succès. Vos modules de ce tier sont protégés.',
+    'g_pvp_v2_library_title': '{e_mem} **BIBLIOTHÈQUE LOGICIELLE & CORRECTIFS**',
+    'g_pvp_v2_library_active_jobs': '{e_tmp} **Jobs de développement en cours :**',
+    'g_pvp_v2_library_no_active_jobs': '> *Aucun job de développement en cours.*',
+    'g_pvp_v2_library_folders': '{e_ops} **Dossiers de recherche détenus :**',
+    'g_pvp_v2_library_no_folders': '> *Aucun dossier de recherche.*',
+    'g_pvp_v2_library_copies': '{e_log} **Logiciels compilés disponibles :**',
+    'g_pvp_v2_library_no_copies': '> *Aucun logiciel compilé.*',
+    'g_pvp_v2_library_patches': '{e_fw} **Correctifs réseau (Patches) :**',
+    'g_pvp_v2_library_no_patches': '> *Aucun correctif.*',
+    'g_pvp_v2_btn_library': 'Logiciels',
+    'g_pvp_v2_btn_install': 'Installer {fp}',
+    'g_dev_syntax': (
+        "{e_ops} **CENTRE DE DÉVELOPPEMENT LOGICIEL & CORRECTIFS (PvP V2)**\n\n"
+        "Le cycle de développement permet de créer des outils d'attaque offensive ou de concevoir des correctifs défensifs (patches). "
+        "Vous disposez de **deux canaux de calcul parallèles** : le canal **offense** (alimenté par vos modules d'attaque) "
+        "et le canal **defense** (alimenté par vos modules de défense de baie).\n\n"
+        "**Canaux & Types de jobs :**\n"
+        "> • `{prefix}dev start research <family> <tier>`\n"
+        ">   Recherche d'un dossier source (**offense**). Nécessaire avant de compiler.\n"
+        "> • `{prefix}dev start compile <family> <tier>`\n"
+        ">   Compilation d'une copie logicielle exécutable (**offense**). Consomme un dossier de recherche.\n"
+        "> • `{prefix}dev start patch_research <family> <tier> <fingerprint>`\n"
+        ">   Conception de la contre-mesure d'une empreinte (**defense**).\n"
+        "> • `{prefix}dev start patch_compile <family> <tier> <fingerprint>`\n"
+        ">   Fabrication du patch réseau (**defense**). Prêt à être déployé sur vos baies.\n\n"
+        "**Commandes disponibles :**\n"
+        "> • `{prefix}dev start ... [confirm]` : Affiche un devis ou lance directement le job si `confirm` est spécifié.\n"
+        "> • `{prefix}dev status` : Liste vos jobs actuellement en cours d'exécution.\n"
+        "> • `{prefix}dev cancel <offense|defense>` : Interrompt le job en cours sur le canal indiqué (RTM non remboursés).\n"
+        "> • `{prefix}dev help` : Affiche ce lexique et guide complet.\n"
+        "> • `{prefix}library` (ou `!lib`) : Affiche vos dossiers de recherche, logiciels prêts à l'emploi et patchs.\n\n"
+        "**Familles logicielles disponibles :**\n"
+        "> `hostile_miner`, `ransomware`, `currency_theft`, `saturation`, `network_scan`, `software_theft`, `espionage`"
+    ),
     'g_welcome_lang_pick': '🌐 **Bienvenue sur Root.** Choisis ta langue :',
     'g_welcome_onboarding': '> 👋 **Réseau créé.** Commence par acheter un **mineur de tiers 1** avec `{prefix}buy` !\n> Tu pourras ensuite miner avec `{prefix}claim` et gagner de nouveaux USD avec les **events** (`{prefix}event`).',
     'g_shop_title': '🛒 Marché des Composants Réseau',
@@ -389,6 +496,8 @@ descriptions = {
     'hourly': 'Réclamer sa récompense horaire en USD avec bonus de combo.',
     'contract': 'Consulter, accepter ou récupérer des contrats de travail garantis en USD.',
     'rmd': 'Programmer, consulter ou annuler un rappel automatique ou personnalisé.',
+    'dev': 'Gérer le cycle de développement de logiciels et de correctifs.',
+    'library': 'Consulter votre bibliothèque de dossiers, logiciels et correctifs.',
 }
 
 labels = {
@@ -433,4 +542,6 @@ labels = {
     'act_hack': '⚔️ Attaque PvP',
     'act_contract': '💼 Contrats de Travail',
     'act_rmd': '🔔 Rappel & Alerte',
+    'act_dev': '💻 Développement Logiciel',
+    'act_library': '💾 Bibliothèque Logicielle',
 }

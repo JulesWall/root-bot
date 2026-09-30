@@ -383,35 +383,25 @@ class Hack(BaseGameCog):
         ) = None,
     ):
         """Commande Slash /hack <secret_id> <attack_points> <mining|attack> [confirm]."""
-        await self._invoke(
-            ctx, 'hack',
-            secret_id=secret_id,
-            attack_points=attack_points,
-            zone=zone,
-            confirm=_is_confirm(confirm),
-        )
+        await self._prefetch_lang(ctx.author.id)
+        msg = text.get(ctx, 'g_pvp_v2_maintenance')
+        kwargs = {'content': msg, 'allowed_mentions': discord.AllowedMentions.none()}
+        if getattr(ctx, 'interaction', None):
+            await ctx.respond(**kwargs)
+        else:
+            await ctx.send(**kwargs)
 
     # ── Commande Préfixe ─────────────────────────────────────────────────────
     @commands.command(name='hack', aliases=['hk'], help=FR['hack'])
     async def prefix_hack(self, ctx, secret_id: str = None, attack_points: str = None, zone: str = None, *args):
         """Commande préfixe !hack <secret_id> <points_atk> <mining|attack> [confirm]."""
-        if not secret_id or not attack_points or not zone:
-            await self._prefetch_lang(ctx.author.id)
-            prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
-            return await ctx.send(text.get(ctx, 'g_error_hack_usage', prefix=prefix))
-
-        try:
-            atk_val = int(attack_points.strip())
-        except (ValueError, TypeError):
-            await self._prefetch_lang(ctx.author.id)
-            prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
-            return await ctx.send(text.get(ctx, 'g_error_hack_usage', prefix=prefix))
-
         confirm = any(_is_confirm(a) for a in args)
+        pts = int(attack_points) if attack_points and attack_points.isdigit() else attack_points
         await self._invoke(
-            ctx, 'hack',
+            ctx,
+            'hack',
             secret_id=secret_id,
-            attack_points=atk_val,
+            attack_points=pts,
             zone=zone,
             confirm=confirm,
         )

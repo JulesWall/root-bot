@@ -196,10 +196,15 @@ class Player:
         active_scan = HackDB.get_active(tx, actor, type='scan')
         if active_scan:
             row['pending_scan'] = active_scan
+        from game.db.pvp_v2_dev_jobs import PvpV2DevJobsDB
+        active_dev_jobs = PvpV2DevJobsDB.get_all_active_by_player(tx, actor)
+        if active_dev_jobs:
+            row['pending_dev_jobs'] = active_dev_jobs
         retaliations = ConsequenceDB.get_for_victim(tx, actor)
         if retaliations:
             row['retaliations'] = retaliations
 
+        row['infrastructure_level'] = int(row.get('firewall_level') or 0)
         stats = MathConfig.calculate_player_stats(row)
         if int(row.get('network_defense') or 0) != stats['network_defense']:
             UpdatePlayer.set(tx, actor, network_defense=stats['network_defense'])
