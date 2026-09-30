@@ -445,23 +445,42 @@ class Buy(BaseGameCog):
             description_localizations=desc_loc['confirm'],
             required=False, default=None,
         ) = None,
+        count: discord.Option(
+            str,
+            description="Quantity to buy — integer or 'all' for max affordable (défaut: 1)",
+            description_localizations={"fr": "Quantité à acheter — entier ou 'all' pour le maximum (défaut : 1)"},
+            required=False,
+            default='1',
+        ) = '1',
     ):
         """Commande Slash /buy."""
         if not kind:
             await self._prefetch_lang(ctx.author.id)
             return await self._send_catalog(ctx)
-        await self._invoke(ctx, 'buy', kind=kind, tier=tier, confirm=_is_confirm(confirm))
+        _ALL_TOKENS = {'all', 'max', 'tout'}
+        raw = str(count).strip().lower()
+        if raw in _ALL_TOKENS:
+            await self._invoke(ctx, 'buy', kind=kind, tier=tier, all=True, confirm=_is_confirm(confirm))
+        else:
+            try:
+                cnt = int(raw)
+            except (ValueError, TypeError):
+                cnt = 1
+            await self._invoke(ctx, 'buy', kind=kind, tier=tier, count=cnt, confirm=_is_confirm(confirm))
 
-    # ── Préfixe ──────────────────────────────────────────────────────────────
+
     @commands.command(name='buy', help=FR['buy'])
     async def prefix_buy(self, ctx, kind: str = None, *args):
-        """Commande préfixe !buy [kind] [tier] [confirm].
+        """Commande préfixe !buy [kind] [tier] [count|all] [confirm].
 
         Exemples :
         - `!buy` -> affiche le catalogue interactif.
         - `!buy mining` -> devis pour un module de minage T1.
         - `!buy attack 3` -> devis pour un module d'attaque T3.
-        - `!buy defense 2 confirm` -> validation immédiate sans devis.
+        - `!buy defense 3 20` -> devis pour 20 modules de défense T3.
+        - `!buy defense 3 all` -> devis pour le maximum de modules de défense T3 achetables.
+        - `!buy defense 3 20 confirm` -> validation immédiate pour 20 modules de défense T3.
+        - `!buy defense 3 all confirm` -> achat immédiat du maximum de modules de défense T3.
         """
         if not kind:
             await self._prefetch_lang(ctx.author.id)
@@ -475,33 +494,50 @@ class Buy(BaseGameCog):
             prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
             return await ctx.send(text.get(ctx, 'g_error_buy_usage', prefix=prefix))
 
-        # Vérification du tier si spécifié
+        # Détecter "all" / "max" / "tout" comme token de quantité
+        _ALL_TOKENS = {'all', 'max', 'tout'}
+        want_all = any(str(a).strip().lower() in _ALL_TOKENS for a in args)
+
+        # Extraire les chiffres (tier en premier, count éventuel en second)
         digits = [int(a) for a in args if str(a).isdigit()]
-        if digits:
+        tier = 1
+        count = 1
+        if len(digits) >= 2:
             tier = digits[0]
-            if tier < 1 or tier > 5:
-                await self._prefetch_lang(ctx.author.id)
-                prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
-                return await ctx.send(text.get(ctx, 'g_error_buy_usage', prefix=prefix))
-        else:
-            tier = 1
+            count = digits[1]
+        elif len(digits) == 1:
+            tier = digits[0]
+            # Si "all" est présent, le second chiffre est ignoré et want_all prévaut.
+
+        if tier < 1 or tier > 5 or (not want_all and count < 1):
+            await self._prefetch_lang(ctx.author.id)
+            prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
+            return await ctx.send(text.get(ctx, 'g_error_buy_usage', prefix=prefix))
 
         confirm = any(_is_confirm(a) for a in args)
-        await self._invoke(ctx, 'buy', kind=cleaned_kind, tier=tier, confirm=confirm)
+        invoke_kwargs = dict(kind=cleaned_kind, tier=tier, confirm=confirm)
+        if want_all:
+            invoke_kwargs['all'] = True
+        else:
+            invoke_kwargs['count'] = count
+        await self._invoke(ctx, 'buy', **invoke_kwargs)
 
     # ── Rendu ────────────────────────────────────────────────────────────────
-    def _label(self, ctx, kind, tier):
-        """Construit le libellé localisé de l'équipement (ex: 'Module de minage T2')."""
+    def _label(self, ctx, kind, tier, count: int = 1):
+        """Construit le libellé localisé de l'équipement (ex: 'Module de minage T2' ou '20x Module de minage T2')."""
         from lang import game_en, game_fr
         lang = game_fr if text.get_locale(ctx) == 'fr' else game_en
-        return f"{lang.labels.get(kind, kind)} T{tier}"
+        base = f"{lang.labels.get(kind, kind)} T{tier}"
+        if count and count > 1:
+            return f"{count}x {base}"
+        return base
 
     def _build_quote_content_and_view(self, ctx, result):
         """Construit le texte et la vue Confirmation du devis d'achat avec bilans avant/après."""
         usd_val = Decimal(str(result.get('usd_price', 0)))
         rtm_val = Decimal(str(result.get('rtm_price', 0)))
-        kind, tier = result.get('kind'), result.get('tier')
-        item = self._label(ctx, kind, tier)
+        kind, tier, count = result.get('kind'), result.get('tier'), result.get('count', 1)
+        item = self._label(ctx, kind, tier, count)
         usd = text.format_usd(usd_val)
         rtm = f"{rtm_val:,.5f}"
         cur_usd = text.format_usd(result.get('current_usd', 0))
@@ -541,7 +577,7 @@ class Buy(BaseGameCog):
                 stat_new_formatted=stat_new_fmt,
             )
 
-        confirmation_args = {'kind': kind, 'tier': tier, 'confirm': True}
+        confirmation_args = {'kind': kind, 'tier': tier, 'count': count, 'confirm': True}
         view = Confirmation(self._send, self.service, ctx, 'buy', confirmation_args)
         return content, view
 
@@ -559,8 +595,8 @@ class Buy(BaseGameCog):
         """Affiche le devis interactif ou la confirmation finale de l'achat."""
         usd_val = Decimal(str(result.get('usd_price', 0)))
         rtm_val = Decimal(str(result.get('rtm_price', 0)))
-        kind, tier = result.get('kind'), result.get('tier')
-        item = self._label(ctx, kind, tier)
+        kind, tier, count = result.get('kind'), result.get('tier'), result.get('count', 1)
+        item = self._label(ctx, kind, tier, count)
         usd = text.format_usd(usd_val)
         rtm = f"{rtm_val:,.5f}"
         stat_gain_fmt = result.get('stat_gain_formatted', '')

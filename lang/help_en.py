@@ -168,7 +168,7 @@ PAGES = {
             "• **/lang** — Configure display language (fr/en)\n"
             "• **/rmd** — Set custom or automated game reminders\n"
             "• **/ping** — Measure bot latency & Gateway heartbeat\n"
-            "• **/math** — Evaluate a mathematical expression\n"
+            "• **/maths** — Evaluate a mathematical expression\n"
             "• **/botinfo** — System statistics and uptime\n"
             "• **/invite** — Get official bot invitation link\n\n"
             "👉 *Select any command below to open its detailed sheet.*"
@@ -205,7 +205,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`) — Configure language\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`) — Schedule reminders\n"
             "• **{prefix}ping** — Measure bot latency\n"
-            "• **{prefix}math** (alias `{prefix}calc`) — Calculate a mathematical expression\n"
+            "• **{prefix}maths** (alias `{prefix}math`, `{prefix}calc`) — Calculate a mathematical expression\n"
             "• **{prefix}botinfo** — System statistics\n"
             "• **{prefix}invite** — Get official invite link\n\n"
             "👉 *Select any command below to open its detailed sheet.*"
@@ -310,7 +310,7 @@ PAGES = {
             "• **/lang**: Set or check your display language (French or English).\n"
             "• **/rmd**: Set a custom timer or sync automatic reminders (hourly, claim, events, or all).\n"
             "• **/ping**: Measure bot latency and Discord Gateway responsiveness.\n"
-            "• **/math**: Evaluate a mathematical expression or formula.\n"
+            "• **/maths**: Evaluate a mathematical expression or formula.\n"
             "• **/botinfo**: View general bot stats, uptime, and system status.\n"
             "• **/invite**: Get the official link to invite Root to your Discord server.\n\n"
             "💬 **Official Server:** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -320,7 +320,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`): Set language (fr/en).\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`): Schedule an automated reminder or timer.\n"
             "• **{prefix}ping**: Check bot latency.\n"
-            "• **{prefix}math** (alias `{prefix}calc`): Calculate a mathematical expression.\n"
+            "• **{prefix}maths** (alias `{prefix}math`, `{prefix}calc`): Calculate a mathematical expression.\n"
             "• **{prefix}botinfo**: System stats and uptime.\n"
             "• **{prefix}invite**: Official Root bot invite link.\n\n"
             "💬 **Official Server:** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -387,15 +387,16 @@ COMMANDS = {
         "category": "network",
         "title": "🛒 `/buy` — Purchase Hardware",
         "description": "Buy mining rigs (RTM), attack processors (ATK), or defense nodes to equip your network.",
-        "slash_syntax": "/buy [kind:<mining|attack|defense>] [tier:<1–5>] [confirm:confirm]",
-        "text_syntax": "{prefix}buy [mining|attack|defense] [tier] [confirm]",
+        "slash_syntax": "/buy [kind:<mining|attack|defense>] [tier:<1–5>] [count:<amount>] [confirm:confirm]",
+        "text_syntax": "{prefix}buy [mining|attack|defense] [tier] [count] [confirm]",
         "parameters": (
             "• `kind`: Module type (`mining`, `attack`, `defense`). Opens shop catalog if omitted.\n"
             "• `tier`: Module tier from 1 to 5 (defaults to 1 if `kind` is provided).\n"
+            "• `count`: Quantity of modules to purchase (defaults to 1).\n"
             "• `confirm`: Skips the interactive quote and executes immediately."
         ),
-        "slash_example": "/buy kind:mining tier:1",
-        "text_example": "{prefix}buy mining 1",
+        "slash_example": "/buy kind:defense tier:3 count:20",
+        "text_example": "{prefix}buy defense 3 20 confirm",
         "prerequisites": "An active network, required funds (USD or RTM), and sufficient firewall level.",
         "advice": "Run `/buy` without parameters to browse the interactive shop catalog.",
         "aliases": ["Text synonym: `{prefix}buy bay_defense` for defense modules"],
@@ -829,19 +830,19 @@ COMMANDS = {
         "aliases": [],
         "linked_commands": ["botinfo"],
     },
-    "math": {
-        "name": "math",
+    "maths": {
+        "name": "maths",
         "category": "info",
-        "title": "🧮 `/math` — Calculator",
+        "title": "🧮 `/maths` — Calculator",
         "description": "Safely evaluates mathematical expressions (arithmetic operations, functions, constants).",
-        "slash_syntax": "/math expression:<calculation>",
-        "text_syntax": "{prefix}math <calculation>",
+        "slash_syntax": "/maths expression:<calculation>",
+        "text_syntax": "{prefix}maths <calculation>",
         "parameters": "• `expression`: The calculation to evaluate (e.g. `2 + 2`, `sqrt(144)`, `2^8`).",
-        "slash_example": "/math expression:2 + 2 * 5",
-        "text_example": "{prefix}math sqrt(144)",
+        "slash_example": "/maths expression:2 + 2 * 5",
+        "text_example": "{prefix}maths sqrt(144)",
         "prerequisites": "None.",
         "advice": "Supports standard operators (+, -, *, /, //, %, ^, **), constants (pi, e, tau), and functions (sqrt, abs, round, sin, cos, log, factorial).",
-        "aliases": ["{prefix}calc", "{prefix}calcul"],
+        "aliases": ["{prefix}math", "{prefix}calc", "{prefix}calcul"],
         "linked_commands": [],
     },
 }
@@ -872,8 +873,9 @@ COMMAND_ALIASES = {
     "language": "lang",
     "remind": "rmd",
     "reminder": "rmd",
-    "calc": "math",
-    "calculate": "math",
-    "calcul": "math",
+    "math": "maths",
+    "calc": "maths",
+    "calculate": "maths",
+    "calcul": "maths",
 }
 

@@ -1,4 +1,4 @@
-"""Module de commande /math et !math (alias !calc).
+"""Module de commande /maths et !maths (alias !math, !calc).
 
 Ce module fournit un moteur de calcul mathématique sécurisé basé sur l'analyse syntaxique (AST) :
 - Zéro utilisation d'eval() : isolation totale contre l'exécution de code arbitraire (RCE).
@@ -287,29 +287,39 @@ class Math(commands.Cog):
 
     # ── Version Commande Slash ───────────────────────────────────────────────────
     @discord.slash_command(
-        name="math",
+        name="maths",
         guild_ids=GUILD_WHITELIST or None,
-        description=desc["math"],
-        description_localizations=desc_loc["math"],
+        description=desc["maths"],
+        description_localizations=desc_loc["maths"],
     )
-    async def math_slash(
+    async def maths_slash(
         self,
         ctx,
         expression: discord.Option(
             str,
-            description=desc["math_expression"],
-            description_localizations=desc_loc["math_expression"],
+            description=desc["maths_expression"],
+            description_localizations=desc_loc["maths_expression"],
             required=True,
         ),
     ):
-        """Commande Slash /math <expression>."""
+        """Commande Slash /maths <expression>."""
         await self._math_logic(ctx, expression)
 
+    # Alias pour compatibilité interne
+    @property
+    def math_slash(self):
+        return self.maths_slash
+
     # ── Version Commande avec Préfixe ────────────────────────────────────────────
-    @commands.command(name="math", aliases=["calc", "calculate", "calcul"])
-    async def prefix_math(self, ctx, *, expression: str = None):
-        """Commande préfixe !math <expression> (alias !calc, !calcul)."""
+    @commands.command(name="maths", aliases=["math", "calc", "calculate", "calcul"])
+    async def prefix_maths(self, ctx, *, expression: str = None):
+        """Commande préfixe !maths <expression> (alias !math, !calc, !calcul)."""
         await self._math_logic(ctx, expression)
+
+    # Alias pour compatibilité interne
+    @property
+    def prefix_math(self):
+        return self.prefix_maths
 
 
 def setup(bot):

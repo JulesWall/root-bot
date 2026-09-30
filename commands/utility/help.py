@@ -30,7 +30,7 @@ PUBLIC_COMMANDS = [
     "compile", "scan", "hack",
     "event", "hash", "pin", "decode", "anomaly", "buffer", "signal", "packet",
     "rep", "trade", "attest", "top",
-    "lang", "rmd", "ping", "botinfo", "invite", "math",
+    "lang", "rmd", "ping", "botinfo", "invite", "maths",
 ]
 
 
