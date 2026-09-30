@@ -1056,10 +1056,11 @@ class TestPricingAndEconomics(unittest.TestCase):
         self.assertEqual(MathConfig.get_module_stat("bay_defense", 1), int(bdef["1"]))
         self.assertEqual(MathConfig.get_module_stat("unknown", 1), 0)
 
-        self.assertEqual(MathConfig.get_firewall_network_defense(0), 0)
-        self.assertEqual(MathConfig.get_firewall_network_defense(1), 100)
-        self.assertEqual(MathConfig.get_firewall_network_defense(2), 300)
-        self.assertEqual(MathConfig.get_firewall_network_defense(5), 5000)
+        fdef = cfg.get("firewall_network_defense", {})
+        self.assertEqual(MathConfig.get_firewall_network_defense(0), int(fdef.get("0", 0)))
+        self.assertEqual(MathConfig.get_firewall_network_defense(1), int(fdef.get("1", 250)))
+        self.assertEqual(MathConfig.get_firewall_network_defense(2), int(fdef.get("2", 500)))
+        self.assertEqual(MathConfig.get_firewall_network_defense(5), int(fdef.get("5", 15000)))
 
         self.assertEqual(MathConfig.format_hashrate(50), "50 H/s")
         self.assertEqual(MathConfig.format_hashrate(1500), "1.50 KH/s")
@@ -3682,9 +3683,67 @@ class TestPreExistingGameCoverage(unittest.TestCase):
             Player.buy(self.tx, self.actor, kind="gpu", tier=1, confirm=False)
         self.assertEqual(cm.exception.key, "invalid_selection")
 
+    def test_buy_multiple_quantity(self):
+        self.tx.players[self.actor]["firewall_level"] = 2
+        unit_usd, unit_rtm = _calculate_module_price("bay_defense_t3", 3)
+        self.tx.players[self.actor]["dollars"] = unit_usd * 20
+        self.tx.players[self.actor]["rootium"] = unit_rtm * 20
+        self.tx.players[self.actor]["bay_defense_t3"] = 0
+
+        # Quote for 20 modules
+        quote = Player.buy(self.tx, self.actor, kind="defense", tier=3, count=20, confirm=False)
+        self.assertTrue(quote.get("buy_quote"))
+        self.assertEqual(quote.get("count"), 20)
+        self.assertEqual(quote.get("usd_price"), unit_usd * 20)
+        self.assertEqual(quote.get("unit_usd_price"), unit_usd)
+
+        # Purchase 20 modules
+        bought = Player.buy(self.tx, self.actor, kind="defense", tier=3, count=20, confirm=True)
+        self.assertTrue(bought.get("bought"))
+        self.assertEqual(bought.get("count"), 20)
+        self.assertEqual(self.tx.players[self.actor]["bay_defense_t3"], 20)
+        self.assertEqual(self.tx.players[self.actor]["dollars"], Decimal("0"))
+
+        # Invalid quantity (e.g. 0 or negative) raises invalid_selection
+        with self.assertRaises(GameError) as cm:
+            Player.buy(self.tx, self.actor, kind="defense", tier=3, count=0, confirm=False)
+        self.assertEqual(cm.exception.key, "invalid_selection")
+
+        with self.assertRaises(GameError) as cm:
+            Player.buy(self.tx, self.actor, kind="defense", tier=3, count=-5, confirm=False)
+        self.assertEqual(cm.exception.key, "invalid_selection")
+
+    def test_buy_all_keyword(self):
+        """Vérifie que count='all' achète le maximum abordable selon le solde."""
+        self.tx.players[self.actor]["firewall_level"] = 0
+        unit_usd, _ = _calculate_module_price("mining_t1", 1)
+        # Donne exactement 5 fois le prix unitaire
+        self.tx.players[self.actor]["dollars"] = unit_usd * 5
+        self.tx.players[self.actor]["mining_t1"] = 0
+
+        # count='all' => devis pour 5 modules
+        quote = Player.buy(self.tx, self.actor, kind="mining", tier=1, count="all", confirm=False)
+        self.assertTrue(quote.get("buy_quote"))
+        self.assertEqual(quote.get("count"), 5)
+        self.assertEqual(quote.get("usd_price"), unit_usd * 5)
+
+        # all=True keyword => achat de 5 modules
+        bought = Player.buy(self.tx, self.actor, kind="mining", tier=1, all=True, confirm=True)
+        self.assertTrue(bought.get("bought"))
+        self.assertEqual(bought.get("count"), 5)
+        self.assertEqual(self.tx.players[self.actor]["mining_t1"], 5)
+        self.assertEqual(self.tx.players[self.actor]["dollars"], Decimal("0"))
+
+        # Si fonds insuffisants pour même 1 module => GameError insufficient_funds
+        self.tx.players[self.actor]["dollars"] = Decimal("0")
+        with self.assertRaises(GameError) as cm:
+            Player.buy(self.tx, self.actor, kind="mining", tier=1, all=True, confirm=False)
+        self.assertIn(cm.exception.key, ("insufficient_funds_usd", "insufficient_funds_rtm", "insufficient_funds_both"))
+
     def test_firewall_upgrade_price_duration_and_funds(self):
         cfg = MathConfig.load()
         t1 = Decimal(str(cfg["firewall"]["first_upgrade_usd"]))
+
         mult = Decimal(str(cfg["firewall"]["upgrade_multiplier"]))
         duration = int(cfg["firewall"]["upgrade_duration_seconds"])
         usd_t2, _ = _calculate_module_price("firewall", 2)
@@ -4731,8 +4790,8 @@ class TestPvPFeature(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertFalse(result["intrusion_success"])
         self.assertEqual(result["destroyed_defense_points"], 130)
-        self.assertEqual(result["initial_total_defense"], 630)
-        self.assertEqual(result["firewall_def_points"], 300)
+        self.assertEqual(result["initial_total_defense"], 830)
+        self.assertEqual(result["firewall_def_points"], 500)
         self.assertIsNone(result["destroyed_attack_tier"])
 
         # Vérification sur les modules réels de la victime
@@ -4751,8 +4810,8 @@ class TestPvPFeature(unittest.TestCase):
     def test_pvp_resolution_intrusion_attack_target(self):
         """
         Cas avec intrusion réussie sur cible 'attack' :
-        Total defense victime = 630 DEF.
-        Attaque avec 631 ATK (> 630 strictly !).
+        Total defense victime = 830 DEF.
+        Attaque avec 831 ATK (> 830 strictly !).
         Tous les modules DEF détruits :
         3x T1 (30), 2x T2 (100), 1x T3 (200) = 330 DEF détruits.
         Intrusion réussie !
@@ -4764,7 +4823,7 @@ class TestPvPFeature(unittest.TestCase):
             self.tx,
             attacker_id=self.attacker_id,
             victim_id=self.victim_id,
-            attack_points=631,
+            attack_points=831,
             target="attack",
             resolves_at=self.tx.now,
         )["id"]
@@ -4788,8 +4847,8 @@ class TestPvPFeature(unittest.TestCase):
     def test_pvp_resolution_intrusion_mining_target(self):
         """
         Cas avec intrusion réussie sur cible 'mining' :
-        Total defense = 630 DEF.
-        Attaque avec 700 ATK (> 630).
+        Total defense = 830 DEF.
+        Attaque avec 900 ATK (> 830).
         Target 'mining' -> transfert de 1 module de minage du tier le plus haut possédé (T5).
         Victime mining_t5 : 1 -> 0
         Attaquant mining_t5 : 0 -> 1
@@ -4798,7 +4857,7 @@ class TestPvPFeature(unittest.TestCase):
             self.tx,
             attacker_id=self.attacker_id,
             victim_id=self.victim_id,
-            attack_points=700,
+            attack_points=900,
             target="mining",
             resolves_at=self.tx.now,
         )["id"]
@@ -4814,11 +4873,11 @@ class TestPvPFeature(unittest.TestCase):
 
     def test_pvp_resolution_strict_equality_no_intrusion(self):
         """
-        Cas d'égalité stricte : attack_points == total_defense (630 ATK contre 630 DEF).
+        Cas d'égalité stricte : attack_points == total_defense (830 ATK contre 830 DEF).
         Règle : l'intrusion exige un '>' strict.
         Résultat attendu :
         - Tous les modules DEF sont détruits (330 DEF).
-        - attack_points (630) n'est PAS > total_defense (630).
+        - attack_points (830) n'est PAS > total_defense (830).
         - intrusion_success = False !
         - Aucun module d'attaque de la victime n'est détruit.
         """
@@ -4826,7 +4885,7 @@ class TestPvPFeature(unittest.TestCase):
             self.tx,
             attacker_id=self.attacker_id,
             victim_id=self.victim_id,
-            attack_points=630,
+            attack_points=830,
             target="attack",
             resolves_at=self.tx.now,
         )["id"]
@@ -4855,7 +4914,7 @@ class TestPvPFeature(unittest.TestCase):
             self.tx,
             attacker_id=self.attacker_id,
             victim_id=self.victim_id,
-            attack_points=700,
+            attack_points=900,
             target="mining",
             resolves_at=self.tx.now,
         )["id"]
@@ -4864,6 +4923,64 @@ class TestPvPFeature(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result["intrusion_success"])
         self.assertIsNone(result["captured_mining_tier"])
+
+    def test_pvp_overrun_multi_modules(self):
+        """
+        Vérifie la mécanique d'overrun multi-modules PvP :
+        - Attaquant Firewall 2 -> seuil V ≈ 628.60 ATK.
+        - Total defense victime = 830 DEF.
+        - Avec surplus = 1300 ATK (2130 ATK au total) :
+          extra = int(1300 // 628.60) = 2.
+          target_count = 1 + 2 = 3 modules !
+        - Victime a : 1x T4, 2x T1 attack modules.
+          Les 3 modules doivent être détruits !
+        """
+        # Test du calcul direct dans MathConfig
+        v = MathConfig.calculate_pvp_overrun_threshold(2)
+        self.assertAlmostEqual(float(v), 628.60, delta=1.0)
+        self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(830, 830, 2), 0)
+        self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(831, 830, 2), 1)
+        self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(830 + 700, 830, 2), 2)
+        self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(830 + 1300, 830, 2), 3)
+
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=2130,  # 830 DEF + 1300 surplus
+            target="attack",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertIsNotNone(result)
+        self.assertTrue(result["intrusion_success"])
+        self.assertEqual(result["target_count_to_take"], 3)
+        self.assertEqual(result["destroyed_attack_modules"], {4: 1, 1: 2})
+        self.assertEqual(result["destroyed_attack_tier"], 4)
+
+        # Tous les modules d'attaque de la victime sont détruits
+        self.assertEqual(self.tx.players[self.victim_id]["attack_t4"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["attack_t1"], 0)
+
+        # Test de capture multiple sur cible 'mining' (surplus = 700 -> 2 modules)
+        # Victime a 1x T5 et 1x T2
+        attack_id_mining = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=830 + 700,
+            target="mining",
+            resolves_at=self.tx.now,
+        )["id"]
+        res_mining = PvpDB.resolve_single_attack(self.tx, attack_id_mining)
+        self.assertTrue(res_mining["intrusion_success"])
+        self.assertEqual(res_mining["target_count_to_take"], 2)
+        self.assertEqual(res_mining["captured_mining_modules"], {5: 1, 2: 1})
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t5"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t2"], 0)
+        self.assertEqual(self.tx.players[self.attacker_id]["mining_t5"], 1)
+        self.assertEqual(self.tx.players[self.attacker_id]["mining_t2"], 1)
 
     def test_rootservice_hack_dispatch(self):
         """Vérifie l'intégration dans RootService."""
@@ -5816,6 +5933,26 @@ class TestBuyCatalogAndShop(unittest.IsolatedAsyncioTestCase):
         # Le label ne contient pas l'emoji (évite le double emote) et rend le prix très visible
         self.assertEqual(opt.label, f"Minage T1 — {format_usd(t1_price)} $")
         self.assertIn(f"Coût : {format_usd(t1_price)} $", opt.description)
+
+    async def test_prefix_buy_quantity_parsing(self):
+        """Vérifie le parsing des arguments numériques (tier, quantité, confirmation) dans !buy."""
+        self.cog._invoke = AsyncMock()
+
+        # !buy defense 3 20 confirm
+        await self.cog.prefix_buy.callback(self.cog, self.mock_ctx, "defense", "3", "20", "confirm")
+        self.cog._invoke.assert_awaited_with(self.mock_ctx, "buy", kind="defense", tier=3, count=20, confirm=True)
+
+        # !buy attack 2 5
+        await self.cog.prefix_buy.callback(self.cog, self.mock_ctx, "attack", "2", "5")
+        self.cog._invoke.assert_awaited_with(self.mock_ctx, "buy", kind="attack", tier=2, count=5, confirm=False)
+
+        # !buy mining 2 (seul le tier spécifié -> count=1)
+        await self.cog.prefix_buy.callback(self.cog, self.mock_ctx, "mining", "2")
+        self.cog._invoke.assert_awaited_with(self.mock_ctx, "buy", kind="mining", tier=2, count=1, confirm=False)
+
+        # !buy mining (aucun chiffre -> tier=1, count=1)
+        await self.cog.prefix_buy.callback(self.cog, self.mock_ctx, "mining")
+        self.cog._invoke.assert_awaited_with(self.mock_ctx, "buy", kind="mining", tier=1, count=1, confirm=False)
 
 
 class TestRemainingBalancesInQuotes(unittest.TestCase):
@@ -10519,7 +10656,13 @@ class TestMathCommand(unittest.IsolatedAsyncioTestCase):
         mock_ctx.send = AsyncMock()
         mock_ctx.respond = AsyncMock()
 
-        await cog.prefix_math.callback(cog, mock_ctx, expression="2 + 2 * 3")
+        # Vérification des noms et alias de la commande
+        self.assertEqual(cog.prefix_maths.name, "maths")
+        self.assertIn("math", cog.prefix_maths.aliases)
+        self.assertIn("calc", cog.prefix_maths.aliases)
+        self.assertEqual(cog.maths_slash.name, "maths")
+
+        await cog.prefix_maths.callback(cog, mock_ctx, expression="2 + 2 * 3")
         mock_ctx.respond.assert_called_once()
         content = mock_ctx.respond.call_args.args[0]
         self.assertIn("2 + 2 * 3", content)
@@ -10530,7 +10673,7 @@ class TestMathCommand(unittest.IsolatedAsyncioTestCase):
         await cog.prefix_math.callback(cog, mock_ctx, expression=None)
         mock_ctx.respond.assert_called_once()
         help_content = mock_ctx.respond.call_args.args[0]
-        self.assertIn("math <expression>", help_content)
+        self.assertIn("maths <expression>", help_content)
 
         # 3. Erreur de calcul (division par zéro en anglais par défaut)
         mock_ctx.reset_mock()

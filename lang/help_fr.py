@@ -168,7 +168,7 @@ PAGES = {
             "• **/lang** — Configurer sa langue d'affichage (fr/en)\n"
             "• **/rmd** — Programmer des rappels personnalisés ou automatiques\n"
             "• **/ping** — Tester la latence de la passerelle Discord\n"
-            "• **/math** — Évaluer une expression mathématique\n"
+            "• **/maths** — Évaluer une expression mathématique\n"
             "• **/botinfo** — Statistiques système et informations\n"
             "• **/invite** — Obtenir le lien d'invitation officiel\n\n"
             "👉 *Sélectionne n'importe quelle commande ci-dessous pour ouvrir sa fiche détaillée.*"
@@ -205,7 +205,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`) — Configurer sa langue\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`) — Programmer des rappels\n"
             "• **{prefix}ping** — Tester la latence du bot\n"
-            "• **{prefix}math** (alias `{prefix}calc`) — Calculer une expression mathématique\n"
+            "• **{prefix}maths** (alias `{prefix}math`, `{prefix}calc`) — Calculer une expression mathématique\n"
             "• **{prefix}botinfo** — Statistiques système et informations\n"
             "• **{prefix}invite** — Obtenir le lien d'invitation officiel\n\n"
             "👉 *Sélectionne n'importe quelle commande ci-dessous pour ouvrir sa fiche détaillée.*"
@@ -310,7 +310,7 @@ PAGES = {
             "• **/lang** : Définis ou consulte ta langue d'affichage préférée (français ou anglais).\n"
             "• **/rmd** : Définis un rappel sur mesure ou synchronisé avec le jeu (hourly, claim, mini-jeux ou all).\n"
             "• **/ping** : Mesure le temps de réponse et la latence du bot.\n"
-            "• **/math** : Évalue une expression ou formule mathématique.\n"
+            "• **/maths** : Évalue une expression ou formule mathématique.\n"
             "• **/botinfo** : Affiche les informations système et statistiques globales.\n"
             "• **/invite** : Obtiens le lien officiel pour inviter Root sur ton serveur Discord.\n\n"
             "💬 **Serveur officiel :** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -320,7 +320,7 @@ PAGES = {
             "• **{prefix}lang** (alias `{prefix}language`) : Configure ta langue (fr/en).\n"
             "• **{prefix}rmd** (alias `{prefix}remind`, `{prefix}reminder`) : Programme un rappel automatique ou un minuteur.\n"
             "• **{prefix}ping** : Mesure la latence du bot.\n"
-            "• **{prefix}math** (alias `{prefix}calc`) : Calcule une expression mathématique.\n"
+            "• **{prefix}maths** (alias `{prefix}math`, `{prefix}calc`) : Calcule une expression mathématique.\n"
             "• **{prefix}botinfo** : Statistiques et informations système.\n"
             "• **{prefix}invite** : Lien d'invitation officiel de Root.\n\n"
             "💬 **Serveur officiel :** [discord.gg/FtfGuyb6mv](https://discord.gg/FtfGuyb6mv)"
@@ -387,15 +387,16 @@ COMMANDS = {
         "category": "network",
         "title": "🛒 `/buy` — Acheter un module",
         "description": "Achète des modules de minage (RTM), offensifs (ATK) ou défensifs pour renforcer et équiper ton réseau.",
-        "slash_syntax": "/buy [kind:<mining|attack|defense>] [tier:<1–5>] [confirm:confirm]",
-        "text_syntax": "{prefix}buy [mining|attack|defense] [tier] [confirm]",
+        "slash_syntax": "/buy [kind:<mining|attack|defense>] [tier:<1–5>] [count:<quantité>] [confirm:confirm]",
+        "text_syntax": "{prefix}buy [mining|attack|defense] [tier] [quantité] [confirm]",
         "parameters": (
             "• `kind` : Type de module (`mining`, `attack`, `defense`). Ouvre le catalogue interactif si omis.\n"
             "• `tier` : Niveau du module de 1 à 5 (par défaut 1 si `kind` est précisé).\n"
+            "• `count` : Nombre d'exemplaires à acheter (par défaut 1).\n"
             "• `confirm` : Valide l'achat directement sans afficher le devis interactif."
         ),
-        "slash_example": "/buy kind:mining tier:1",
-        "text_example": "{prefix}buy mining 1",
+        "slash_example": "/buy kind:defense tier:3 count:20",
+        "text_example": "{prefix}buy defense 3 20 confirm",
         "prerequisites": "Un réseau créé, les fonds nécessaires (USD ou RTM selon le module) et le niveau de pare-feu requis.",
         "advice": "Ouvre `/buy` sans argument pour parcourir les modules disponibles, leurs statistiques et leurs tarifs.",
         "aliases": ["Synonyme texte : `{prefix}buy bay_defense` pour la défense"],
@@ -829,19 +830,19 @@ COMMANDS = {
         "aliases": [],
         "linked_commands": ["botinfo"],
     },
-    "math": {
-        "name": "math",
+    "maths": {
+        "name": "maths",
         "category": "info",
-        "title": "🧮 `/math` — Calculatrice",
+        "title": "🧮 `/maths` — Calculatrice",
         "description": "Évalue de manière sécurisée une expression mathématique (opérations arithmétiques, fonctions, constantes).",
-        "slash_syntax": "/math expression:<calcul>",
-        "text_syntax": "{prefix}math <calcul>",
+        "slash_syntax": "/maths expression:<calcul>",
+        "text_syntax": "{prefix}maths <calcul>",
         "parameters": "• `expression` : Calcul à effectuer (ex: `2 + 2`, `sqrt(144)`, `2^8`).",
-        "slash_example": "/math expression:2 + 2 * 5",
-        "text_example": "{prefix}math sqrt(144)",
+        "slash_example": "/maths expression:2 + 2 * 5",
+        "text_example": "{prefix}maths sqrt(144)",
         "prerequisites": "Aucun prérequis.",
         "advice": "Supporte les opérateurs usuels (+, -, *, /, //, %, ^, **), constantes (pi, e, tau) et fonctions (sqrt, abs, round, sin, cos, log, factorial).",
-        "aliases": ["{prefix}calc", "{prefix}calcul"],
+        "aliases": ["{prefix}math", "{prefix}calc", "{prefix}calcul"],
         "linked_commands": [],
     },
 }
@@ -872,8 +873,9 @@ COMMAND_ALIASES = {
     "language": "lang",
     "remind": "rmd",
     "reminder": "rmd",
-    "calc": "math",
-    "calculate": "math",
-    "calcul": "math",
+    "math": "maths",
+    "calc": "maths",
+    "calculate": "maths",
+    "calcul": "maths",
 }
 

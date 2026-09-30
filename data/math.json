@@ -43,14 +43,14 @@
   },
   "beta": {
     "attack_price_t1_rtm": 0.005,
-    "bay_defense_usd": 150,
+    "bay_defense_usd": 75,
     "max_tier": 5,
     "required_firewall": {
       "mining": 0,
       "attack": 1,
       "bay_defense": 0
     },
-    "cost_multiplier": 1.5,
+    "cost_multiplier": 2,
     "sponsor_autoclaim_credits": 10,
     "sponsor_combo_saver_credits": 1
   },
@@ -203,7 +203,9 @@
   "pvp": {
     "delay_seconds": 2700,
     "check_interval_seconds": 15,
-    "retaliation_window_hours": 72
+    "retaliation_window_hours": 72,
+    "overrun_multiplier": 10,
+    "overrun_time_factor": 30
   },
   "hourly": {
     "reward_min_usd": 60,

@@ -459,3 +459,62 @@ class MathConfig:
         """Retourne les paramètres d'un tier de contrat donné ('short', 'medium', 'long')."""
         return cls.get_contracts_config().get('tiers', {}).get(tier)
 
+    @classmethod
+    def calculate_pvp_overrun_threshold(cls, attacker_firewall_tier: int) -> Decimal:
+        """Calcule le seuil d'overrun PvP V(T) selon le tier de pare-feu de l'attaquant.
+        
+        Formule :
+        V = (COUT_MODULE_MINAGE_USD / (COUT_MODULE_ATK_RTM * rtm_to_usd)) * overrun_multiplier * sqrt(bits_per_s * overrun_time_factor)
+        """
+        import math
+
+        rules = cls.load()
+        tier = max(1, min(5, int(attacker_firewall_tier or 1)))
+
+        mining_base = Decimal(str(rules.get('mining', {}).get('cost_t1_usd', 200)))
+        mining_mult = Decimal(str(rules.get('mining', {}).get('cost_multiplier', 5)))
+        mining_cost_usd = mining_base * (mining_mult ** (tier - 1))
+
+        beta = rules.get('beta', {})
+        atk_base_rtm = Decimal(str(beta.get('attack_price_t1_rtm', '0.005')))
+        atk_mult = Decimal(str(beta.get('cost_multiplier', 2)))
+        atk_cost_rtm = atk_base_rtm * (atk_mult ** (tier - 1))
+
+        rtm_to_usd = Decimal(str(rules.get('conversion', {}).get('rtm_to_usd', 43567)))
+        atk_cost_usd = atk_cost_rtm * rtm_to_usd
+
+        bits = Decimal(str(rules.get('module_stats', {}).get('attack_bits_per_s', {}).get(str(tier), 0)))
+
+        pvp_cfg = rules.get('pvp', {})
+        overrun_multiplier = Decimal(str(pvp_cfg.get('overrun_multiplier', 10)))
+        overrun_time_factor = Decimal(str(pvp_cfg.get('overrun_time_factor', 30)))
+
+        sqrt_val = Decimal(str(math.sqrt(float(bits * overrun_time_factor))))
+
+        if atk_cost_usd <= 0:
+            return Decimal('1')
+
+        ratio = mining_cost_usd / atk_cost_usd
+        return ratio * overrun_multiplier * sqrt_val
+
+    @classmethod
+    def calculate_pvp_captured_modules_count(
+        cls,
+        attack_points: int,
+        total_defense: int,
+        attacker_firewall_tier: int,
+    ) -> int:
+        """Calcule le nombre de modules capturés ou détruits lors d'une intrusion PvP.
+        
+        - Si attack_points <= total_defense : 0 module (échec intrusion).
+        - Si intrusion réussie : 1 module de base + int((attack_points - total_defense) // seuil).
+        """
+        delta = int(attack_points) - int(total_defense)
+        if delta <= 0:
+            return 0
+        threshold = cls.calculate_pvp_overrun_threshold(attacker_firewall_tier)
+        if threshold <= 0:
+            return 1
+        extra = int(Decimal(str(delta)) // threshold)
+        return max(1, 1 + extra)
+
