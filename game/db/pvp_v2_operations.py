@@ -63,6 +63,23 @@ class PvpV2OperationsDB:
         )
 
     @staticmethod
+    def get_installing_ready(tx, cutoff=None) -> list:
+        """Retourne les opérations en cours d'installation arrivées à échéance (FOR UPDATE)."""
+        cutoff_dt = cutoff or tx.now
+        rows = tx.all(
+            """
+            SELECT * FROM pvp_v2_operations
+            WHERE status = 'installing' AND installed_at IS NOT NULL AND installed_at <= %s
+            ORDER BY installed_at ASC FOR UPDATE
+            """,
+            (cutoff_dt,),
+        )
+        for r in rows:
+            if 'resolves_at' not in r or r['resolves_at'] is None:
+                r['resolves_at'] = r.get('installed_at')
+        return rows
+
+    @staticmethod
     def count_active_by_attacker(tx, attacker_id: int) -> int:
         """Compte les opérations actives (installing+active) d'un attaquant.
 
@@ -102,6 +119,7 @@ class PvpV2OperationsDB:
         fingerprint: str,
         software_copy_id: int,
         rtm_cost,
+        resolves_at=None,
     ) -> dict:
         """Crée une opération en statut 'installing'."""
         from decimal import Decimal
@@ -110,8 +128,8 @@ class PvpV2OperationsDB:
             """
             INSERT INTO pvp_v2_operations
                 (attacker_id, victim_id, family, tier, fingerprint,
-                 software_copy_id, status, rtm_cost, started_at)
-            VALUES (%s, %s, %s, %s, %s, %s, 'installing', %s, %s)
+                 software_copy_id, status, rtm_cost, started_at, installed_at)
+            VALUES (%s, %s, %s, %s, %s, %s, 'installing', %s, %s, %s)
             """,
             (
                 int(attacker_id),
@@ -122,6 +140,7 @@ class PvpV2OperationsDB:
                 int(software_copy_id),
                 rtm_cost_d,
                 tx.now,
+                resolves_at,
             ),
         )
         return {
@@ -135,7 +154,8 @@ class PvpV2OperationsDB:
             'status': 'installing',
             'rtm_cost': rtm_cost_d,
             'started_at': tx.now,
-            'installed_at': None,
+            'installed_at': resolves_at,
+            'resolves_at': resolves_at,
             'ended_at': None,
             'end_reason': None,
         }
@@ -146,10 +166,10 @@ class PvpV2OperationsDB:
         affected = tx.execute(
             """
             UPDATE pvp_v2_operations
-            SET status = 'active', installed_at = %s
+            SET status = 'active'
             WHERE id = %s AND status = 'installing'
             """,
-            (tx.now, int(op_id)),
+            (int(op_id),),
         )
         return bool(affected)
 
@@ -183,6 +203,17 @@ class PvpV2ActiveEffectsDB:
             ORDER BY started_at ASC
             """,
             (int(victim_id),),
+        )
+
+    @staticmethod
+    def get_active_by_attacker(tx, attacker_id: int) -> list:
+        """Retourne tous les effets actifs initiés par un attaquant."""
+        return tx.all(
+            """
+            SELECT * FROM pvp_v2_active_effects
+            WHERE attacker_id = %s AND ended_at IS NULL
+            """,
+            (int(attacker_id),),
         )
 
     @staticmethod

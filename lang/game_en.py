@@ -385,6 +385,125 @@ text = {
     'g_pvp_v2_scan_dm_delivered': '> {e_scan} **Network Probe Completed** · The report for <@{target_id}> has been generated successfully.',
     'g_pvp_v2_scan_dm_victim_deleted': '> ⚠️ **Scan Failed** · Target <@{target_id}> was disconnected or removed from the network during the probe.',
     'g_error_scan_victim_deleted': '> ⚠️ **Scan failed** · Target was disconnected or removed from the network before resolution.',
+    # ── PvP V2 — Offensive Operations & Diagnostics ──────────────────────────
+    'g_pvp_v2_op_quote_header': '> {e_hack} **Offensive Deployment — Infection Quote** · <@{target_id}>',
+    'g_pvp_v2_op_quote_body': (
+        "> {e_ops} **Malware**: **{family_label}** · **Tier {tier}** `[{fingerprint}]`\n"
+        "> {e_fw} **Target Defense**: **{victim_defense} DEF** *(slowdown ×{slowdown_mult:.2f})*\n"
+        "> {e_tmp} **Installation Duration**: **{effective_duration}** *(base: {base_duration}s)*\n"
+        "> {e_pui} **Persistent Effect**: Passive siphon of **15%** of target's Tier {tier} gross hashrate\n"
+        "{status_note}"
+        "> *Confirm stealth deployment with the buttons below.*"
+    ),
+    'g_pvp_v2_op_quote_retaliation': '> ⚔️ *Active retaliation window (< 72h): level difference bypass granted.*\n',
+    'g_pvp_v2_op_started': (
+        "> {e_hack} **Offensive Deployment Initiated**\n"
+        "> Stealth installation of **{family_label} T{tier}** `[{fingerprint}]` underway targeting <@{target_id}>.\n"
+        "> • {e_tmp} **Resolution & Activation**: <t:{timestamp}:R> (<t:{timestamp}:T>)\n"
+        "> *The malware is installing silently in the background.*"
+    ),
+    'g_pvp_v2_op_dm_active': (
+        "🦠 **OFFENSIVE OPERATION CONFIRMED**\n"
+        "> Your **Hostile Miner T{tier}** `[{fingerprint}]` malware is now active on <@{victim_id}>'s network!\n"
+        "> • ⚡ **Active Siphon**: 15% of their Tier {tier} gross mining is siphoned into your RAM buffer.\n"
+        "> • 🛡️ *The infection will persist until the victim applies a defensive patch.*"
+    ),
+    'g_pvp_v2_op_dm_failed': (
+        "⚠️ **OFFENSIVE OPERATION FAILED**\n"
+        "> Your infection attempt on <@{victim_id}> has failed ({reason_label}).\n"
+        "> • 💾 The software copy has been unlocked and returned to your inventory."
+    ),
+    'g_pvp_v2_diag_quote_header': '> {e_scan} **Network Integrity Diagnostic**',
+    'g_pvp_v2_diag_quote_body': (
+        "> {e_ops} **Deep Mining Traffic Analysis**\n"
+        "> • 🪙 **Diagnostic Cost**: **{cost_rtm} RTM**\n"
+        "> • ⏱️ **Execution Time**: Immediate\n\n"
+        "*Run the diagnostic to detect any unauthorized siphoning or hostile malware on your miners.*"
+    ),
+    'g_pvp_v2_diag_clean': '> ✅ **Network integrity verified** · No hostile processes or active siphons detected on your miners.',
+    'g_pvp_v2_diag_detected': (
+        "> ⚠️ **NETWORK ANOMALY ALERT** · **{count}** hostile signature(s) detected on your miners!\n"
+        "{malware_list}\n\n"
+        "> 💡 *Develop and install a patch for the corresponding fingerprint to permanently neutralize the infection.*\n"
+        "> 🔍 *Use `/hack trace` to analyze connections and identify the attacker.*"
+    ),
+    'g_pvp_v2_diag_malware_item': '> • 🦠 **{family_label} Tier {tier}** — Fingerprint: `{fingerprint}` *(Active since <t:{started_ts}:R>)*',
+    # ── PvP V2 — Trace Analysis ───────────────────────────────────────────────
+    'g_pvp_v2_trace_quote_header': '> 🔬 **Network Trace Analysis**',
+    'g_pvp_v2_trace_quote_body': (
+        "> 🔎 **Deep Hostile Traffic Analysis**\n"
+        "> • 🦠 Signatures to analyze: **{count} malware(s)**\n"
+        "> • 🪙 Analysis cost: **{cost_rtm} RTM**\n"
+        "> • ⏱️ Delay: Immediate\n\n"
+        "*Attempts to identify the attacker to gain a 72-hour retaliation right.*"
+    ),
+    'g_pvp_v2_trace_no_malware': '> ℹ️ **No trace detected** · No active malware present on your network.',
+    'g_pvp_v2_trace_result_header': '> 🔬 **Network Trace Analysis Report**',
+    'g_pvp_v2_trace_attacker_found': '> • 🎯 **Signature `[{fingerprint}]`** — Identified Author: <@{attacker_id}>',
+    'g_pvp_v2_trace_attacker_unknown': '> • ❓ **Signature `[{fingerprint}]`** — Scrambled signal / Author self-protected with patch',
+    'g_pvp_v2_trace_summary': (
+        "> 📊 **{found}/{total}** attacker(s) identified.\n"
+        "> ⚖️ *Active **72h** retaliation right granted against identified targets.*"
+    ),
+    # ── PvP V2 — Underground Market ───────────────────────────────────────────
+    'g_pvp_v2_market_header': '> 🏪 **Root OS Underground Market** · Software & Patch Exchange',
+    'g_pvp_v2_market_empty': '> ℹ️ No active listings on the market currently.',
+    'g_pvp_v2_market_list_header': '🛒 **Available Marketplace Offers:**',
+    'g_pvp_v2_market_my_listings_header': '💼 **Your Active Sale Listings:**',
+    'g_pvp_v2_market_sell_quote_header': '> 🏷️ **Sell Listing — Quote**',
+    'g_pvp_v2_market_sell_quote_body': (
+        "> 📦 **Item**: **{family_label}** T{tier} `[{fingerprint}]`\n"
+        "> 💵 **Asking Price**: **{price} USD**\n"
+        "> 🏛️ **Market Fee** (5%): **{fee} USD**\n"
+        "> 💰 **Estimated Net Gain**: **{net} USD**\n\n"
+        "*Confirm publishing this listing? The item will be reserved.*"
+    ),
+    'g_pvp_v2_market_sell_started': (
+        "> ✅ **Listing Published** · Your **{family_label}** T{tier} `[{fingerprint}]` is on sale for **{price} USD**.\n"
+        "> • 🆔 Listing ID: `#{listing_id}`\n"
+        "> • 💡 *Cancel anytime using `/market cancel {listing_id}`*"
+    ),
+    'g_pvp_v2_market_buy_quote_header': '> 🛒 **Market Purchase — Quote**',
+    'g_pvp_v2_market_buy_quote_body': (
+        "> 📦 **Item**: **{family_label}** T{tier} `[{fingerprint}]`\n"
+        "> 👤 **Seller**: <@{seller_id}>\n"
+        "> 💵 **Purchase Price**: **{price} USD**\n"
+        "> 💳 **Balance After Transaction**: **{balance_after} USD**\n\n"
+        "*Confirm direct purchase of this item?*"
+    ),
+    'g_pvp_v2_market_buy_success': (
+        "> 🎉 **Purchase Complete!** · **{family_label}** T{tier} `[{fingerprint}]` added to your library.\n"
+        "> • 💵 Paid: **{price} USD** · New Balance: **{new_balance} USD**"
+    ),
+    'g_pvp_v2_market_sold_dm': (
+        "🏪 **MARKETPLACE SALE CONFIRMED**\n"
+        "> Your **{family_label}** T{tier} `[{fingerprint}]` (Listing `#{listing_id}`) has been sold!\n"
+        "> • 💰 **Net Earnings**: **+{net} USD** (New balance: **{new_balance} USD**)"
+    ),
+    'g_pvp_v2_market_cancel_success': '> ✅ **Listing `#{listing_id}` cancelled** successfully. Item returned to your library.',
+    'g_error_market_listing_not_found': '> ❌ **Listing not found** or already closed.',
+    'g_error_market_not_owner': '> ⛔ **Action Denied** · You do not own this listing.',
+    'g_error_market_self_buy': '> 🚫 **Action Impossible** · You cannot purchase your own listing.',
+    'g_error_market_not_resellable': '> ⛔ **Non-tradeable Item** · Stolen copies and installed patches cannot be resold.',
+    'g_error_market_max_listings': '> ⛔ **Limit Reached** · You have reached the maximum of {max} active listings.',
+    'g_error_market_item_reserved': '> ⏳ **Item Unavailable** · This item is already reserved in another listing or operation.',
+    'g_error_market_usage': '> ⚠️ **Syntax**: `{prefix}market [list|mine|sell|buy|cancel]`',
+    'g_error_trace_no_malware': '> ℹ️ **No trace** · No active malware on your network to analyze.',
+    'g_error_insufficient_rootium': '> 💳 **Insufficient RTM** · You need **{rtm} RTM** to execute this action.',
+    'g_error_ransomware_blocked': '> 🔒 **SYSTEM LOCKED BY RANSOMWARE**\n> Your economic commands are blocked by ransomware deployed by <@{attacker}>.\n> • 💰 Required ransom: **{ransom_rtm} RTM**\n> • 💡 Pay with `/pay` or develop a defensive patch with `/dev` to unlock your network.',
+    'g_error_no_active_ransomware': '> ℹ️ No active ransomware locking your network currently.',
+    # ── PvP V2 — Operation Errors ─────────────────────────────────────────────
+    'g_error_no_software_copy': '> ⚠️ **Software copy required** · You do not own an available copy of this software (check `/library`).',
+    'g_error_copy_already_reserved': '> ⏳ **Copy already reserved** · This software copy is already committed in another operation.',
+    'g_error_victim_patched': '> 🛡️ **Target immunized** · The target network already has an active patch neutralizing this software fingerprint.',
+    'g_error_fingerprint_already_active': '> ⚠️ **Infection already active** · Malware with the same fingerprint ({fingerprint}) is already active on this system.',
+    'g_error_max_family_operations_reached': '> ⛔ **Limit reached** · You already have an active operation for family {family} (limit: 1 per family).',
+    'g_error_max_total_operations_reached': '> ⛔ **Limit reached** · You have reached the limit of 3 concurrent offensive operations.',
+    'g_error_op_self_target': '> 🚫 **Invalid target** · You cannot deploy malware against your own network.',
+    'g_error_op_target_invulnerable': '> 🛡️ **Invulnerable target** · This network (Infrastructure Lv. 0) is out of PvP bounds.',
+    'g_error_op_self_invulnerable': '> 🛡️ **Action not permitted** · Upgrade your infrastructure to Level 1 with `/upgrade` to participate in offensive operations.',
+    'g_error_op_target_protected': '> 🔒 **Protected target** · You can only target networks with infrastructure level greater than or equal to yours (except under active retaliation < 72h).',
+    'g_error_hack_usage_v2': '> ⚠️ **Invalid syntax** · Usage: `{prefix}hack <@target> [family] [tier] [confirm]` or `{prefix}hack diag` or `{prefix}hack trace`\n💡 **Examples**:\n• `{prefix}hack @Player` ➔ Quote to deploy Hostile Miner\n• `{prefix}hack diag` ➔ Network integrity diagnostic\n• `{prefix}hack trace` ➔ Network trace analysis',
     'g_scan_quote': '🔍 **Network scan of <@{target}>**\n• 🎯 Estimated probability: **{prob_base}%**\n• ◈ Base cost: **{rtm} RTM** · ⏱️ **90 seconds**\n• 💳 Remaining balance: {cur_rtm} RTM ➔ **{rem_rtm} RTM**\n\n*Choose your commitment level:*',
     'g_scan_btn_launch': '🚀 Launch ({prob}%) — {rtm} RTM',
     'g_scan_btn_boost2': '⚡ Boost ×2 ({prob}%) — {rtm} RTM',
@@ -515,6 +634,9 @@ descriptions = {
     'rmd': 'Schedule, view, or cancel time-based reminders.',
     'dev': 'Manage the software and patch development cycle.',
     'library': 'View your library of folders, software copies, and patches.',
+    'market': 'Access the Underground Market for software, patches, and research folders.',
+    'trace': 'Analyze network traces to identify hostile attackers.',
+    'pay': 'Pay the ransom of an active ransomware.',
 }
 
 labels = {
@@ -561,4 +683,7 @@ labels = {
     'act_rmd': '🔔 Reminder & Alert',
     'act_dev': '💻 Software Development',
     'act_library': '💾 Software Library',
+    'act_market': '🏪 Underground Market',
+    'act_trace': '🔬 Trace Analysis',
+    'act_pay': '🔓 Ransom Payment',
 }

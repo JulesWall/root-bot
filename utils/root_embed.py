@@ -41,6 +41,8 @@ class RootEmbed(discord.Embed):
         'rmd':         discord.Color.from_rgb(155, 89, 182),   # Violet / Améthyste (Rappels)
         'dev':         discord.Color.from_rgb(84, 226, 209),   # Turquoise (#54E2D1) Root OS (Développement)
         'library':     discord.Color.from_rgb(84, 226, 209),   # Turquoise (#54E2D1) Root OS (Bibliothèque)
+        'hack':        discord.Color.from_rgb(231, 76, 60),    # Rouge offensif (Attaque PvP)
+        'market':      discord.Color.from_rgb(46, 204, 113),   # Vert émeraude (Marché souterrain)
     }
 
     def __init__(self, ctx, action: str, content: str):

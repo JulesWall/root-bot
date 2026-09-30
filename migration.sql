@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS pvp_v2_operations (
   status            ENUM('installing','active','completed','failed','cancelled') NOT NULL DEFAULT 'installing',
   rtm_cost          DECIMAL(30, 5)      NOT NULL DEFAULT 0,
   started_at        DATETIME(6)         NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  resolves_at       DATETIME(6)         NULL DEFAULT NULL,
   installed_at      DATETIME(6)         NULL,
   ended_at          DATETIME(6)         NULL,
   end_reason        VARCHAR(32)         NULL,
@@ -95,6 +96,7 @@ CREATE TABLE IF NOT EXISTS pvp_v2_operations (
   INDEX idx_op_attacker_status (attacker_id, status),
   INDEX idx_op_victim_status (victim_id, status),
   INDEX idx_op_started_at (started_at),
+  INDEX idx_op_resolves_at (status, resolves_at),
   FOREIGN KEY (attacker_id) REFERENCES players(discord_id) ON DELETE CASCADE,
   FOREIGN KEY (victim_id)   REFERENCES players(discord_id) ON DELETE CASCADE,
   FOREIGN KEY (software_copy_id) REFERENCES pvp_v2_software_copies(id) ON DELETE RESTRICT,
@@ -160,3 +162,18 @@ CREATE TABLE IF NOT EXISTS pvp_v2_market_listings (
   FOREIGN KEY (seller_id) REFERENCES players(discord_id) ON DELETE CASCADE,
   CHECK (price_usd >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ====================================================================
+-- MIGRATION PvP V2 — Étape 6 : Hostile Miner & Opérations Offensives
+-- Note : Le code utilise directement la colonne existante `installed_at`
+-- pour planifier et résoudre l'échéance de l'installation, évitant ainsi
+-- un ALTER TABLE obligatoire en production si le compte DB n'a pas les droits DDL.
+-- Les commandes ci-dessous restent purement optionnelles :
+-- ALTER TABLE pvp_v2_operations ADD COLUMN resolves_at DATETIME(6) NULL DEFAULT NULL AFTER started_at;
+-- ALTER TABLE pvp_v2_operations ADD INDEX idx_op_resolves_at (status, resolves_at);
+
+-- ====================================================================
+-- MIGRATION PvP V2 — Étape 17 : Conversion finale du stock attack_points (1 AP = 20 USD)
+-- ====================================================================
+-- UPDATE players SET dollars = dollars + (attack_points * 20), attack_points = 0 WHERE attack_points > 0;
+

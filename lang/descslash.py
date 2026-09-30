@@ -18,6 +18,9 @@ desc = {
     "hack_secret_id": "Secret ID of the target network",
     "hack_attack_points": "ATK points to engage (integer)",
     "hack_target": "Target zone: mining or attack",
+    "hack_target_player": "The player to infect with hostile malware",
+    "hack_tier": "Module tier of the software copy to deploy",
+    "diag": "Perform a network integrity diagnostic to detect hostile malwares",
     "hourly": "Claim your hourly USD reward with streak combo bonus",
     "contract": "Consult, start, or collect work contracts for guaranteed USD",
     "contract_action": "Action to perform: view (default), start, or collect",
@@ -166,6 +169,21 @@ desc_loc = {
         "en-US": "Target zone: mining or attack",
         "en-GB": "Target zone: mining or attack",
         "fr": "Zone ciblée : mining ou attack",
+    },
+    "hack_target_player": {
+        "en-US": "The player to infect with hostile malware",
+        "en-GB": "The player to infect with hostile malware",
+        "fr": "Le joueur à infecter avec un logiciel malveillant",
+    },
+    "hack_tier": {
+        "en-US": "Module tier of the software copy to deploy",
+        "en-GB": "Module tier of the software copy to deploy",
+        "fr": "Tier de la copie logicielle à déployer",
+    },
+    "diag": {
+        "en-US": "Perform a network integrity diagnostic to detect hostile malwares",
+        "en-GB": "Perform a network integrity diagnostic to detect hostile malwares",
+        "fr": "Effectuer un diagnostic d'intégrité réseau pour détecter les malwares hostiles",
     },
     "hourly": {
         "en-US": "Claim your hourly USD reward with streak combo bonus",

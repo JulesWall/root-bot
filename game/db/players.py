@@ -70,26 +70,79 @@ def _calculate_module_price(column: str, tier: int = 1) -> tuple[Decimal, Decima
     raise GameError('invalid_selection')
 
 
-def _settle_mining(tx, player_row: dict, now, stats: dict | None = None) -> dict:
-    """Met à jour et persiste le tampon de minage du joueur jusqu'à l'instant présent.
-
-    Calcule le Rootium accumulé depuis la dernière mise à jour (plafonné par la mémoire vive
-    disponible), persiste le nouveau tampon et l'horodatage, puis renvoie l'état de minage.
-
-    Cette « matérialisation » du tampon est indispensable avant tout changement de débit de
-    minage (achat de module) afin de figer la production au taux réellement en vigueur.
-    """
+def _settle_victim_siphons(tx, victim_row: dict, now, stats: dict | None = None) -> dict:
+    """Solde le minage d'un joueur en appliquant les déductions Hostile Miner et créditant les attaquants."""
+    victim_id = int(victim_row['discord_id'])
     if stats is None:
-        stats = MathConfig.calculate_player_stats(player_row)
-    state = MathConfig.compute_mining_progress(player_row, stats, now)
+        stats = MathConfig.calculate_player_stats(victim_row)
+
+    # Récupération des effets actifs Hostile Miner sur la victime
+    try:
+        from game.db.pvp_v2_operations import PvpV2ActiveEffectsDB
+        active_effects = PvpV2ActiveEffectsDB.get_active_on_victim_by_family(tx, victim_id, 'hostile_miner')
+    except Exception:
+        active_effects = []
+
+    state = MathConfig.compute_mining_progress(victim_row, stats, now, active_effects=active_effects)
+
+    # Mise à jour de la victime
     UpdatePlayer.set(
-        tx, int(player_row['discord_id']),
+        tx, victim_id,
         mining_buffer=state['buffer'],
         mining_last_update_at=now,
     )
-    player_row['mining_buffer'] = state['buffer']
-    player_row['mining_last_update_at'] = now
+    victim_row['mining_buffer'] = state['buffer']
+    victim_row['mining_last_update_at'] = now
+
+    # Crédit du tampon pour chaque attaquant
+    rules = MathConfig.load()
+    bytes_per_rtm = Decimal(str(rules.get("mining", {}).get("bytes_per_rtm", 1) or 1))
+
+    for d in state.get('siphoned_details', []):
+        attacker_id = int(d['attacker_id'])
+        siphoned_amt = d.get('siphoned_amount', Decimal('0'))
+        if siphoned_amt > Decimal('0'):
+            try:
+                att_row = tx.one("SELECT * FROM players WHERE discord_id = %s FOR UPDATE", (attacker_id,))
+                if att_row:
+                    att_stats = MathConfig.calculate_player_stats(att_row)
+                    att_capacity = (Decimal(str(att_stats.get('total_ram_bytes', 0))) / bytes_per_rtm) if bytes_per_rtm > 0 else Decimal('0')
+                    att_stored = Decimal(str(att_row.get('mining_buffer') or 0))
+                    # Stockage dans le buffer de l'attaquant plafonné par sa mémoire (Décision 6)
+                    att_new_buffer = min(att_capacity, att_stored + siphoned_amt).quantize(Decimal('0.00001'))
+                    UpdatePlayer.set(tx, attacker_id, mining_buffer=att_new_buffer)
+                    att_row['mining_buffer'] = att_new_buffer
+            except Exception:
+                logger.exception("Erreur lors du versement du siphon à l'attaquant %s", attacker_id)
+
     return state
+
+
+def _settle_mining(tx, player_row: dict, now, stats: dict | None = None) -> dict:
+    """Met à jour et persiste le tampon de minage du joueur jusqu'à l'instant présent.
+
+    Prend en compte les infections Hostile Miner (siphonnage passif persistant)
+    et transfère le RTM siphonné dans le tampon des attaquants respectifs (Décision 6).
+    """
+    actor_id = int(player_row['discord_id'])
+
+    # Si ce joueur est attaquant et a un malware Hostile Miner actif sur une victime,
+    # solder d'abord la victime pour rapatrier le siphon jusqu'à maintenant.
+    try:
+        active_as_attacker = tx.all(
+            "SELECT victim_id FROM pvp_v2_active_effects WHERE attacker_id = %s AND family = 'hostile_miner' AND ended_at IS NULL",
+            (actor_id,),
+        )
+        for act in active_as_attacker or []:
+            v_id = int(act['victim_id'])
+            if v_id != actor_id:
+                v_row = tx.one("SELECT * FROM players WHERE discord_id = %s FOR UPDATE", (v_id,))
+                if v_row:
+                    _settle_victim_siphons(tx, v_row, now)
+    except Exception:
+        pass
+
+    return _settle_victim_siphons(tx, player_row, now, stats=stats)
 
 
 class ExistPlayer:
@@ -454,7 +507,7 @@ class Player:
                     raise GameError('claim_cooldown', remaining=remaining, time=remaining)
 
         stats = MathConfig.calculate_player_stats(p)
-        state = MathConfig.compute_mining_progress(p, stats, tx.now)
+        state = _settle_mining(tx, p, tx.now, stats)
 
         claimed = state['buffer']
 

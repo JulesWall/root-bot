@@ -385,6 +385,125 @@ text = {
     'g_pvp_v2_scan_dm_delivered': '> {e_scan} **Sondage Réseau Terminé** · Le rapport sur <@{target_id}> a été généré avec succès.',
     'g_pvp_v2_scan_dm_victim_deleted': '> ⚠️ **Scan Échoué** · La cible <@{target_id}> a été déconnectée ou supprimée du réseau pendant le sondage.',
     'g_error_scan_victim_deleted': '> ⚠️ **Scan échoué** · La cible a été déconnectée ou supprimée du réseau avant la résolution.',
+    # ── PvP V2 — Opérations Offensives & Diagnostics ──────────────────────────
+    'g_pvp_v2_op_quote_header': '> {e_hack} **Déploiement Offensif — Devis d\'Infection** · <@{target_id}>',
+    'g_pvp_v2_op_quote_body': (
+        "> {e_ops} **Malware** : **{family_label}** · **Tier {tier}** `[{fingerprint}]`\n"
+        "> {e_fw} **Défense adverse** : **{victim_defense} DEF** *(ralentissement ×{slowdown_mult:.2f})*\n"
+        "> {e_tmp} **Durée d'installation** : **{effective_duration}** *(durée de base : {base_duration}s)*\n"
+        "> {e_pui} **Effet persistant** : Siphonnage passif de **15 %** de la production brute Tier {tier}\n"
+        "{status_note}"
+        "> *Confirmez le déploiement furtif de ce logiciel malveillant avec les boutons ci-dessous.*"
+    ),
+    'g_pvp_v2_op_quote_retaliation': '> ⚔️ *Droit de représailles actif (< 72h) : contournement de l\'écart de niveau autorisé.*\n',
+    'g_pvp_v2_op_started': (
+        "> {e_hack} **Déploiement Offensif Initié**\n"
+        "> Installation furtive de **{family_label} T{tier}** `[{fingerprint}]` en cours vers <@{target_id}>.\n"
+        "> • {e_tmp} **Résolution & Activation** : <t:{timestamp}:R> (<t:{timestamp}:T>)\n"
+        "> *Le malware s'installe silencieusement en tâche de fond.*"
+    ),
+    'g_pvp_v2_op_dm_active': (
+        "🦠 **OPÉRATION OFFENSIVE CONFIRMÉE**\n"
+        "> Votre malware **Hostile Miner T{tier}** `[{fingerprint}]` est maintenant actif sur le réseau de <@{victim_id}> !\n"
+        "> • ⚡ **Siphonnage actif** : 15 % de la production brute de son mineur T{tier} est dérivé vers votre mémoire vive.\n"
+        "> • 🛡️ *L'infection restera active jusqu'à ce que la cible installe le correctif adapté.*"
+    ),
+    'g_pvp_v2_op_dm_failed': (
+        "⚠️ **OPÉRATION OFFENSIVE ÉCHOUÉE**\n"
+        "> Votre tentative d'infection sur <@{victim_id}> a échoué ({reason_label}).\n"
+        "> • 💾 La copie de logiciel vous a été restituée et déverrouillée."
+    ),
+    'g_pvp_v2_diag_quote_header': '> {e_scan} **Diagnostic d\'Intégrité Réseau**',
+    'g_pvp_v2_diag_quote_body': (
+        "> {e_ops} **Analyse approfondie des flux de minage**\n"
+        "> • 🪙 **Coût d'analyse** : **{cost_rtm} RTM**\n"
+        "> • ⏱️ **Délai d'exécution** : Immédiat\n\n"
+        "*Lancez le diagnostic pour détecter tout détournement ou siphonnage de vos mineurs.*"
+    ),
+    'g_pvp_v2_diag_clean': '> ✅ **Intégrité du réseau vérifiée** · Aucun processus hostile ni siphonnage actif détecté sur vos mineurs.',
+    'g_pvp_v2_diag_detected': (
+        "> ⚠️ **ALERTE ANOMALIE RÉSEAU** · **{count}** signature(s) hostile(s) détectée(s) sur vos mineurs !\n"
+        "{malware_list}\n\n"
+        "> 💡 *Développez et appliquez un correctif pour l'empreinte correspondante afin de neutraliser définitivement l'infection.*\n"
+        "> 🔍 *Utilisez `/hack trace` pour analyser les connexions et identifier l'attaquant.*"
+    ),
+    'g_pvp_v2_diag_malware_item': '> • 🦠 **{family_label} Tier {tier}** — Empreinte : `{fingerprint}` *(Actif depuis <t:{started_ts}:R>)*',
+    # ── PvP V2 — Analyse de Trace ─────────────────────────────────────────────
+    'g_pvp_v2_trace_quote_header': '> 🔬 **Analyse de Trace Réseau**',
+    'g_pvp_v2_trace_quote_body': (
+        "> 🔎 **Analyse approfondie du trafic hostile**\n"
+        "> • 🦠 Signatures à analyser : **{count} malware(s)**\n"
+        "> • 🪙 Coût d'analyse : **{cost_rtm} RTM**\n"
+        "> • ⏱️ Délai : Immédiat\n\n"
+        "*Tente d'identifier l'auteur des attaques pour obtenir un droit de représailles de 72h.*"
+    ),
+    'g_pvp_v2_trace_no_malware': '> ℹ️ **Aucune trace détectée** · Aucun malware actif n\'est présent sur votre réseau.',
+    'g_pvp_v2_trace_result_header': '> 🔬 **Rapport d\'Analyse de Trace Réseau**',
+    'g_pvp_v2_trace_attacker_found': '> • 🎯 **Signature `[{fingerprint}]`** — Auteur identifié : <@{attacker_id}>',
+    'g_pvp_v2_trace_attacker_unknown': '> • ❓ **Signature `[{fingerprint}]`** — Signal brouillé / Auteur auto-protégé par patch',
+    'g_pvp_v2_trace_summary': (
+        "> 📊 **{found}/{total}** attaquant(s) identifié(s).\n"
+        "> ⚖️ *Droit de représailles de **72h** actif contre les cibles identifiées.*"
+    ),
+    # ── PvP V2 — Marché Souterrain ────────────────────────────────────────────
+    'g_pvp_v2_market_header': '> 🏪 **Marché Souterrain Root OS** · Bourse de Logiciels & Correctifs',
+    'g_pvp_v2_market_empty': '> ℹ️ Aucune annonce active sur le marché pour le moment.',
+    'g_pvp_v2_market_list_header': '🛒 **Offres disponibles sur le marché :**',
+    'g_pvp_v2_market_my_listings_header': '💼 **Vos annonces de vente actives :**',
+    'g_pvp_v2_market_sell_quote_header': '> 🏷️ **Mise en Vente — Devis**',
+    'g_pvp_v2_market_sell_quote_body': (
+        "> 📦 **Article** : **{family_label}** T{tier} `[{fingerprint}]`\n"
+        "> 💵 **Prix demandé** : **{price} USD**\n"
+        "> 🏛️ **Commission de place** (5%) : **{fee} USD**\n"
+        "> 💰 **Gain net à la vente** : **{net} USD**\n\n"
+        "*Confirmez la publication de cette annonce ? L'article sera réservé.*"
+    ),
+    'g_pvp_v2_market_sell_started': (
+        "> ✅ **Annonce publiée** · Votre **{family_label}** T{tier} `[{fingerprint}]` est en vente pour **{price} USD**.\n"
+        "> • 🆔 Annonce : `#{listing_id}`\n"
+        "> • 💡 *Retirez l'annonce à tout moment avec `/market cancel {listing_id}`*"
+    ),
+    'g_pvp_v2_market_buy_quote_header': '> 🛒 **Achat au Marché — Devis**',
+    'g_pvp_v2_market_buy_quote_body': (
+        "> 📦 **Article** : **{family_label}** T{tier} `[{fingerprint}]`\n"
+        "> 👤 **Vendeur** : <@{seller_id}>\n"
+        "> 💵 **Prix d'achat** : **{price} USD**\n"
+        "> 💳 **Solde restant après transaction** : **{balance_after} USD**\n\n"
+        "*Confirmez l'achat direct de cet article ?*"
+    ),
+    'g_pvp_v2_market_buy_success': (
+        "> 🎉 **Achat validé !** · **{family_label}** T{tier} `[{fingerprint}]` a été ajouté à votre bibliothèque.\n"
+        "> • 💵 Prix réglé : **{price} USD** · Nouveau solde : **{new_balance} USD**"
+    ),
+    'g_pvp_v2_market_sold_dm': (
+        "🏪 **VENTE EFFECTUÉE SUR LE MARCHÉ**\n"
+        "> Votre **{family_label}** T{tier} `[{fingerprint}]` (Annonce `#{listing_id}`) a été acheté !\n"
+        "> • 💰 **Gain net perçu** : **+{net} USD** (Nouveau solde : **{new_balance} USD**)"
+    ),
+    'g_pvp_v2_market_cancel_success': '> ✅ **Annonce `#{listing_id}` retirée** avec succès. L\'article est de nouveau disponible dans votre bibliothèque.',
+    'g_error_market_listing_not_found': '> ❌ **Annonce introuvable** ou déjà clôturée.',
+    'g_error_market_not_owner': '> ⛔ **Action refusée** · Vous n\'êtes pas le propriétaire de cette annonce.',
+    'g_error_market_self_buy': '> 🚫 **Action impossible** · Vous ne pouvez pas acheter votre propre annonce.',
+    'g_error_market_not_resellable': '> ⛔ **Article non négociable** · Les copies volées et patches installés ne peuvent être revendus.',
+    'g_error_market_max_listings': '> ⛔ **Limite atteinte** · Vous avez déjà atteint le plafond de {max} annonces simultanées.',
+    'g_error_market_item_reserved': '> ⏳ **Article indisponible** · Cet article est déjà engagé dans une annonce ou une opération.',
+    'g_error_market_usage': '> ⚠️ **Syntaxe** : `{prefix}market [list|mine|sell|buy|cancel]`',
+    'g_error_trace_no_malware': '> ℹ️ **Aucune trace** · Aucun malware actif sur votre réseau à analyser.',
+    'g_error_insufficient_rootium': '> 💳 **Solde RTM insuffisant** · Vous avez besoin de **{rtm} RTM** pour exécuter cette opération.',
+    'g_error_ransomware_blocked': '> 🔒 **SYSTÈME PARALYSÉ PAR UN RANSOMWARE**\n> Vos commandes économiques sont bloquées par un ransomware déployé par <@{attacker}>.\n> • 💰 Rançon exigée : **{ransom_rtm} RTM**\n> • 💡 Payez avec `/pay` ou développez un correctif avec `/dev` pour déverrouiller votre réseau.',
+    'g_error_no_active_ransomware': '> ℹ️ Aucun ransomware actif bloquant votre réseau actuellement.',
+    # ── PvP V2 — Erreurs d'Opérations ─────────────────────────────────────────
+    'g_error_no_software_copy': '> ⚠️ **Copie logicielle requise** · Tu ne possèdes aucune copie disponible de ce logiciel pour lancer l\'attaque (consulte `/library`).',
+    'g_error_copy_already_reserved': '> ⏳ **Copie déjà engagée** · Cette copie de logiciel est déjà réservée dans une autre opération.',
+    'g_error_victim_patched': '> 🛡️ **Cible immunisée** · Le réseau adverse dispose déjà d\'un correctif actif neutralisant cette empreinte logicielle.',
+    'g_error_fingerprint_already_active': '> ⚠️ **Infection déjà en cours** · Un malware portant la même empreinte ({fingerprint}) est déjà actif sur ce système.',
+    'g_error_max_family_operations_reached': '> ⛔ **Limite atteinte** · Tu as déjà une opération active pour la famille {family} (limite : 1 par famille).',
+    'g_error_max_total_operations_reached': '> ⛔ **Limite atteinte** · Tu as déjà 3 opérations offensives simultanées en cours.',
+    'g_error_op_self_target': '> 🚫 **Cible invalide** · Tu ne peux pas déployer de malware contre ton propre réseau.',
+    'g_error_op_target_invulnerable': '> 🛡️ **Cible invulnérable** · Ce réseau (Infrastructure Niv. 0) est hors du champ PvP.',
+    'g_error_op_self_invulnerable': '> 🛡️ **Action impossible** · Améliore ton infrastructure au niveau 1 avec `/upgrade` pour participer aux opérations offensives.',
+    'g_error_op_target_protected': '> 🔒 **Cible protégée** · Tu ne peux cibler que des réseaux d\'infrastructure supérieure ou égale à la tienne (sauf en cas de représailles actives sous 72h).',
+    'g_error_hack_usage_v2': '> ⚠️ **Syntaxe invalide** · Utilisation : `{prefix}hack <@cible> [famille] [tier] [confirm]` ou `{prefix}hack diag` ou `{prefix}hack trace`\n💡 **Exemples** :\n• `{prefix}hack @Joueur` ➔ Devis pour déployer Hostile Miner\n• `{prefix}hack diag` ➔ Diagnostic d\'intégrité réseau\n• `{prefix}hack trace` ➔ Analyse de trace réseau',
     'g_scan_quote': '🔍 **Analyse du réseau de <@{target}>**\n• 🎯 Probabilité estimée : **{prob_base}%**\n• ◈ Coût de base : **{rtm} RTM** · ⏱️ **90 secondes**\n• 💳 Solde restant : {cur_rtm} RTM ➔ **{rem_rtm} RTM**\n\n*Choisis ton niveau d\'engagement :*',
     'g_scan_btn_launch': '🚀 Lancer ({prob}%) — {rtm} RTM',
     'g_scan_btn_boost2': '⚡ Boost ×2 ({prob}%) — {rtm} RTM',
@@ -515,6 +634,9 @@ descriptions = {
     'rmd': 'Programmer, consulter ou annuler un rappel automatique ou personnalisé.',
     'dev': 'Gérer le cycle de développement de logiciels et de correctifs.',
     'library': 'Consulter votre bibliothèque de dossiers, logiciels et correctifs.',
+    'market': 'Accéder au Marché Souterrain de logiciels, patches et dossiers.',
+    'trace': 'Analyser les traces réseau pour identifier les attaquants.',
+    'pay': 'Payer la rançon d\'un ransomware actif.',
 }
 
 labels = {
@@ -561,4 +683,7 @@ labels = {
     'act_rmd': '🔔 Rappel & Alerte',
     'act_dev': '💻 Développement Logiciel',
     'act_library': '💾 Bibliothèque Logicielle',
+    'act_market': '🏪 Marché Souterrain',
+    'act_trace': '🔬 Analyse de Trace',
+    'act_pay': '🔓 Paiement de Rançon',
 }

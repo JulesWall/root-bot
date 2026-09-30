@@ -26,11 +26,19 @@ FALLBACKS: dict[str, str] = {
     "journal": "📄",
     "alerte": "⚠️",
     "scan": "🔍",
+    "hack": "⚔️",
     "connexions": "🌐",
     "retour": "↩️",
     "bilan": "📊",
     "dollars": "💵",
 }
+
+
+class EmojiDict(dict):
+    """Dictionnaire d'emojis avec repli par défaut pour éviter tout KeyError."""
+
+    def __missing__(self, key: str) -> str:
+        return FALLBACKS.get(key, "⚙️")
 
 
 def select_emojis(emojis) -> dict[str, Any]:
@@ -89,5 +97,5 @@ def get_root_emojis(ctx_or_guild) -> dict[str, str]:
             result[name] = str(emap[name])
         else:
             result[name] = fallback
-    return result
+    return EmojiDict(result)
 

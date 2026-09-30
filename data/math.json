@@ -400,14 +400,14 @@
     },
     "market": {
       "min_price_usd": 1,
-      "max_price_usd": 100000,
+      "max_price_usd": null,
       "fee_rate": 0.05,
       "max_active_listings_per_player": 5,
       "sellable_types": ["compiled_software", "patch", "research_folder"],
       "non_sellable_types": ["stolen_copy", "installed_patch", "defensive_folder"]
     },
     "attack_points_conversion": {
-      "rate_atk_to_usd": 1
+      "rate_atk_to_usd": 20
     }
   }
 }

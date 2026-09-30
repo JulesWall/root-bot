@@ -39,6 +39,14 @@ class PvpV2SoftwareDB:
         )
 
     @staticmethod
+    def get_available_by_owner_family(tx, owner_id: int, family: str) -> list:
+        """Retourne les copies non réservées d'un joueur pour une famille donnée."""
+        return tx.all(
+            'SELECT * FROM pvp_v2_software_copies WHERE owner_id = %s AND family = %s AND reserved = 0 ORDER BY tier DESC, created_at ASC',
+            (int(owner_id), str(family)),
+        )
+
+    @staticmethod
     def create(
         tx,
         owner_id: int,

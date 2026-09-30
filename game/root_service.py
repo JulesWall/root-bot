@@ -11,6 +11,8 @@ Pattern Architectural : Façade & Dispatcher
 - Vérifie l'existence préalable du joueur pour toutes les commandes autres que l'initialisation 'network'.
 """
 
+from decimal import Decimal
+
 from game.db.database import Database, player_lock_name
 from game.db.economy_stats import EconomyStatsDB
 from game.db.hack import HackDB
@@ -43,6 +45,10 @@ class RootService:
         'hourly', 'hourly_save_combo', 'contract', 'rmd',
         'pvp_v2_dev_quote', 'pvp_v2_start_job', 'pvp_v2_cancel_job', 'pvp_v2_install_patch', 'pvp_v2_library',
         'pvp_v2_scan_quote', 'pvp_v2_scan_start',
+        'pvp_v2_op_quote', 'pvp_v2_op_start', 'pvp_v2_diag_quote', 'pvp_v2_diag_start', 'pvp_v2_active_effects',
+        'pvp_v2_trace_quote', 'pvp_v2_trace_start', 'pvp_v2_pay_ransom',
+        'pvp_v2_market_list', 'pvp_v2_market_sell_quote', 'pvp_v2_market_sell_start',
+        'pvp_v2_market_buy_quote', 'pvp_v2_market_buy_start', 'pvp_v2_market_cancel', 'pvp_v2_market_mine',
     }
 
     def __init__(self, database=None):
@@ -135,6 +141,14 @@ class RootService:
         return await self.database.run(
             _deliver_tx,
             locks=['pvp_v2_dev'],
+        )
+
+    async def deliver_ready_pvp_v2_operations(self) -> list[dict]:
+        """Résout les opérations PvP V2 installées et prêtes pour activation."""
+        from game.pvp_v2_operations import PvpV2OperationService
+        return await self.database.run(
+            PvpV2OperationService.deliver_installed_operations,
+            locks=['pvp_v2_op'],
         )
 
     async def process_due_autoclaims(self) -> list[dict]:
@@ -260,9 +274,9 @@ class RootService:
         if method in ('top', 'event'):
             return []
         ids = {int(actor)}
-        if method in ('reputation', 'trade', 'scan', 'pvp_v2_scan_quote', 'pvp_v2_scan_start'):
+        if method in ('reputation', 'trade', 'scan', 'pvp_v2_scan_quote', 'pvp_v2_scan_start', 'pvp_v2_op_quote', 'pvp_v2_op_start'):
             try:
-                target = int(args.get('target') or 0)
+                target = int(args.get('target') or args.get('target_id') or args.get('victim_id') or 0)
             except (TypeError, ValueError):
                 target = 0
             if target:
@@ -303,6 +317,22 @@ class RootService:
 
         # Vérification d'existence préalable du joueur en base pour toute autre action
         PlayerData.get(tx, actor)
+
+        # Règle Décision 8 : Blocage des commandes économiques sous Ransomware actif
+        if method in ('buy', 'upgrade', 'compile', 'convert', 'trade', 'hourly', 'contract'):
+            from game.db.pvp_v2_operations import PvpV2ActiveEffectsDB
+            import json
+            active_rw = PvpV2ActiveEffectsDB.get_active_on_victim_by_family(tx, actor, 'ransomware')
+            if active_rw:
+                ef = active_rw[0]
+                ef_data = ef.get('effect_data') or {}
+                if isinstance(ef_data, str):
+                    try:
+                        ef_data = json.loads(ef_data)
+                    except Exception:
+                        ef_data = {}
+                ransom_rtm = ef_data.get('ransom_rtm', '0.005')
+                raise GameError('ransomware_blocked', ransom_rtm=f"{Decimal(str(ransom_rtm)):,.5f}", attacker=ef.get('attacker_id'))
 
         # 1. Opérations Joueur & Économie
         if method == 'buy':
@@ -418,6 +448,75 @@ class RootService:
         elif method == 'pvp_v2_library':
             from game.pvp_v2_dev import PvpV2DevService
             return PvpV2DevService.get_library(tx, actor)
+
+        # 6. PvP V2 — Opérations offensives, diagnostics et traces
+        elif method == 'pvp_v2_op_quote':
+            from game.pvp_v2_operations import PvpV2OperationService
+            target_id = int(args.get('target') or args.get('target_id') or args.get('victim_id') or 0)
+            return PvpV2OperationService.calculate_operation_quote(
+                tx,
+                attacker_id=actor,
+                victim_id=target_id,
+                family=args.get('family', 'hostile_miner'),
+                tier=args.get('tier'),
+                copy_id=args.get('copy_id'),
+            )
+        elif method == 'pvp_v2_op_start':
+            from game.pvp_v2_operations import PvpV2OperationService
+            target_id = int(args.get('target') or args.get('target_id') or args.get('victim_id') or 0)
+            return PvpV2OperationService.start_operation(
+                tx,
+                attacker_id=actor,
+                victim_id=target_id,
+                family=args.get('family', 'hostile_miner'),
+                tier=args.get('tier'),
+                copy_id=args.get('copy_id'),
+            )
+        elif method == 'pvp_v2_diag_quote':
+            from game.pvp_v2_operations import PvpV2OperationService
+            return PvpV2OperationService.calculate_diagnosis_quote(tx, actor)
+        elif method == 'pvp_v2_diag_start':
+            from game.pvp_v2_operations import PvpV2OperationService
+            return PvpV2OperationService.run_diagnosis(tx, actor, quoted_rtm=args.get('quoted_rtm'))
+        elif method == 'pvp_v2_trace_quote':
+            from game.pvp_v2_operations import PvpV2OperationService
+            return PvpV2OperationService.calculate_trace_quote(tx, actor)
+        elif method == 'pvp_v2_trace_start':
+            from game.pvp_v2_operations import PvpV2OperationService
+            return PvpV2OperationService.run_trace_analysis(tx, actor, quoted_rtm=args.get('quoted_rtm'))
+        elif method == 'pvp_v2_pay_ransom':
+            from game.pvp_v2_operations import PvpV2OperationService
+            return PvpV2OperationService.pay_ransom(tx, actor, effect_id=args.get('effect_id'))
+        elif method == 'pvp_v2_active_effects':
+            from game.pvp_v2_operations import PvpV2OperationService
+            return PvpV2OperationService.get_active_effects(tx, actor)
+
+        # 7. PvP V2 — Marché Souterrain
+        elif method == 'pvp_v2_market_list':
+            from game.pvp_v2_market import PvpV2MarketService
+            return PvpV2MarketService.get_listings(tx, item_type=args.get('item_type'))
+        elif method == 'pvp_v2_market_mine':
+            from game.pvp_v2_market import PvpV2MarketService
+            return PvpV2MarketService.get_my_listings(tx, actor)
+        elif method == 'pvp_v2_market_sell_quote':
+            from game.pvp_v2_market import PvpV2MarketService
+            return PvpV2MarketService.calculate_sell_quote(
+                tx, actor, item_type=args.get('item_type'), item_id=args.get('item_id'), price_usd=args.get('price_usd')
+            )
+        elif method == 'pvp_v2_market_sell_start':
+            from game.pvp_v2_market import PvpV2MarketService
+            return PvpV2MarketService.create_listing(
+                tx, actor, item_type=args.get('item_type'), item_id=args.get('item_id'), price_usd=args.get('price_usd')
+            )
+        elif method == 'pvp_v2_market_buy_quote':
+            from game.pvp_v2_market import PvpV2MarketService
+            return PvpV2MarketService.calculate_buy_quote(tx, actor, listing_id=args.get('listing_id'))
+        elif method == 'pvp_v2_market_buy_start':
+            from game.pvp_v2_market import PvpV2MarketService
+            return PvpV2MarketService.buy_listing(tx, actor, listing_id=args.get('listing_id'))
+        elif method == 'pvp_v2_market_cancel':
+            from game.pvp_v2_market import PvpV2MarketService
+            return PvpV2MarketService.cancel_listing(tx, actor, listing_id=args.get('listing_id'))
 
         # Ne devrait jamais être atteint si ACTIONS et _dispatch sont synchronisés
         raise GameError('invalid_selection')

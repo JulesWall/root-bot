@@ -227,7 +227,7 @@ class MathConfig:
         return usd.quantize(quantum, rounding=ROUND_HALF_UP)
 
     @classmethod
-    def compute_mining_progress(cls, player_row: dict, stats: dict, now) -> dict:
+    def compute_mining_progress(cls, player_row: dict, stats: dict, now, active_effects: list | None = None) -> dict:
         """Calcule l'état de minage courant d'un joueur (production, mémoire, temps avant saturation).
 
         Modèle économique :
@@ -236,15 +236,18 @@ class MathConfig:
         - La mémoire vive totale (somme des modules) fixe la capacité maximale de stockage.
         - Le minage s'accumule dans un tampon (buffer) jusqu'à saturation de la mémoire,
           après quoi il faut /claim pour vider la mémoire et créditer le Rootium.
+        - Prise en compte du siphonnage passif par malwares Hostile Miner actifs (Décision 6).
 
         Args:
             player_row: Ligne joueur (contient mining_buffer et mining_last_update_at).
             stats: Résultat de calculate_player_stats (fournit total_hashrate_hs et total_ram_bytes).
             now: Horodatage courant (datetime) servant de référence à l'accumulation.
+            active_effects: Liste des effets persistants actifs subis par ce joueur.
 
         Returns:
             dict: État détaillé du minage prêt à être affiché ou crédité par /claim.
         """
+        import json
         rules = cls.load()
         mining_cfg = rules.get("mining", {})
         rate_per_hs = Decimal(str(mining_cfg.get("rootium_per_hs_per_minute", 0)))
@@ -259,8 +262,57 @@ class MathConfig:
         rep_multiplier = Decimal('1') + (Decimal(str(rep_count)) * rep_bonus_per_point)
 
         base_rate_per_min = total_hashrate * rate_per_hs
-        rate_per_min = base_rate_per_min * rep_multiplier
+        gross_rate_per_min = base_rate_per_min * rep_multiplier
         capacity_rtm = (total_ram_bytes / bytes_per_rtm) if bytes_per_rtm > 0 else Decimal('0')
+
+        # ── Siphonnage Hostile Miner (PvP V2, Décision 6) ───────────────────
+        siphoned_details = []
+        total_siphoned_rate_per_min = Decimal('0')
+        if active_effects:
+            bay_details = stats.get('bay_details', {})
+            effects_by_tier = {}
+            for ef in active_effects:
+                if ef.get('family') == 'hostile_miner':
+                    t = int(ef.get('tier', 1))
+                    effects_by_tier.setdefault(t, []).append(ef)
+
+            cap_per_tier = Decimal(str(rules.get('pvp_v2', {}).get('hostile_miner', {}).get('cumulative_cap_per_tier', '0.40')))
+
+            for t, t_effects in effects_by_tier.items():
+                bay = bay_details.get(t, {})
+                t_hashrate = Decimal(str(bay.get('mining_hashrate', 0) or 0))
+                gross_tier_rate = t_hashrate * rate_per_hs
+
+                sum_rates = Decimal('0')
+                ef_rates = []
+                for ef in t_effects:
+                    edata = ef.get('effect_data')
+                    if isinstance(edata, str):
+                        try:
+                            edata = json.loads(edata)
+                        except Exception:
+                            edata = {}
+                    nominal_rate = Decimal(str((edata or {}).get('siphon_rate', '0.15')))
+                    ef_rates.append((ef, nominal_rate))
+                    sum_rates += nominal_rate
+
+                scale = (cap_per_tier / sum_rates) if sum_rates > cap_per_tier else Decimal('1')
+
+                for ef, nominal_rate in ef_rates:
+                    eff_rate = nominal_rate * scale
+                    siph_rate_min = eff_rate * gross_tier_rate
+                    total_siphoned_rate_per_min += siph_rate_min
+                    siphoned_details.append({
+                        'effect_id': ef.get('id'),
+                        'attacker_id': int(ef['attacker_id']),
+                        'tier': t,
+                        'fingerprint': ef.get('fingerprint'),
+                        'siphoned_rate_per_min': siph_rate_min,
+                        'effective_siphon_rate': eff_rate,
+                    })
+
+        net_rate_per_min = max(Decimal('0'), gross_rate_per_min - total_siphoned_rate_per_min)
+        rate_per_min = net_rate_per_min
 
         stored = Decimal(str(player_row.get('mining_buffer') or 0))
         last = player_row.get('mining_last_update_at')
@@ -276,7 +328,18 @@ class MathConfig:
                 last = last.replace(tzinfo=now_ref.tzinfo)
             elapsed_seconds = Decimal(str(max(0.0, (now_ref - last).total_seconds())))
 
-        produced = rate_per_min * (elapsed_seconds / Decimal('60'))
+        elapsed_minutes = elapsed_seconds / Decimal('60')
+        available_space = max(Decimal('0'), capacity_rtm - stored) if capacity_rtm > 0 else Decimal('0')
+
+        if capacity_rtm <= 0 or available_space <= 0:
+            effective_minutes = Decimal('0')
+        elif net_rate_per_min > 0:
+            minutes_to_full = available_space / net_rate_per_min
+            effective_minutes = min(elapsed_minutes, minutes_to_full)
+        else:
+            effective_minutes = elapsed_minutes
+
+        produced = net_rate_per_min * effective_minutes
         buffer = stored + produced
         if capacity_rtm > 0:
             buffer = min(buffer, capacity_rtm)
@@ -285,6 +348,13 @@ class MathConfig:
 
         # Arrondi à la précision RTM (5 décimales)
         buffer = buffer.quantize(Decimal('0.00001'))
+
+        # Calcul des montants siphonnés effectifs
+        total_siphoned_amount = Decimal('0')
+        for d in siphoned_details:
+            amt = (d['siphoned_rate_per_min'] * effective_minutes).quantize(Decimal('0.00001'))
+            d['siphoned_amount'] = amt
+            total_siphoned_amount += amt
 
         memory_used_bytes = buffer * bytes_per_rtm
         memory_pct = (buffer / capacity_rtm * Decimal('100')) if capacity_rtm > 0 else Decimal('0')
@@ -297,7 +367,6 @@ class MathConfig:
             seconds_to_full = 0
 
         # Temps total de remplissage (de 0 % à 100 %), indépendant du tampon courant :
-        # c'est la cadence de /claim du réseau (capacité / débit).
         if rate_per_min > 0 and capacity_rtm > 0:
             seconds_to_fill_total = int((capacity_rtm / rate_per_min * Decimal('60')).to_integral_value())
         else:
@@ -306,6 +375,10 @@ class MathConfig:
         return {
             'rate_per_min': rate_per_min,
             'base_rate_per_min': base_rate_per_min,
+            'gross_rate_per_min': gross_rate_per_min,
+            'total_siphoned_rate_per_min': total_siphoned_rate_per_min,
+            'total_siphoned_amount': total_siphoned_amount,
+            'siphoned_details': siphoned_details,
             'reputation_points': rep_count,
             'reputation_multiplier': rep_multiplier,
             'reputation_bonus_pct': (Decimal(str(rep_count)) * rep_bonus_per_point * Decimal('100')),
@@ -779,9 +852,11 @@ class MathConfig:
         # 13. Market
         mkt = cls.get_pvp_v2_market()
         pmin = float(mkt.get('min_price_usd', 0))
-        pmax = float(mkt.get('max_price_usd', 0))
-        if pmin <= 0 or pmax <= pmin:
-            raise ValueError("Prix market invalides.")
+        pmax = mkt.get('max_price_usd')
+        if pmin <= 0:
+            raise ValueError("Prix min market invalide.")
+        if pmax is not None and float(pmax) <= pmin:
+            raise ValueError("Prix max market invalide.")
         if not (0 <= float(mkt.get('fee_rate', -1)) < 1):
             raise ValueError("fee_rate market invalide.")
         if int(mkt.get('max_active_listings_per_player', 0)) < 1:

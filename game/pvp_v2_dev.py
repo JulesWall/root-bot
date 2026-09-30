@@ -77,7 +77,7 @@ def get_dev_channel_for_job(job_type: str) -> str:
     raise GameError('invalid_selection')
 
 
-def calculate_dev_quote(player_row: dict, stats: dict, job_type: str, family: str, tier: int, fingerprint: str | None = None) -> dict:
+def calculate_dev_quote(player_row: dict, stats: dict, job_type: str, family: str, tier: int, fingerprint: str | None = None, saturation_multiplier: float = 1.0) -> dict:
     """Calcule le devis (coût RTM, durée, puissance requise) pour un job de développement."""
     valid_families = MathConfig.get_pvp_v2_families()
     if family not in valid_families:
@@ -90,9 +90,11 @@ def calculate_dev_quote(player_row: dict, stats: dict, job_type: str, family: st
     channel = get_dev_channel_for_job(job_type)
 
     if channel == 'offense':
-        power = int(stats.get('total_bits_per_s', 0) or 0)
-        if power <= 0:
+        raw_power = int(stats.get('total_bits_per_s', 0) or 0)
+        if raw_power <= 0:
             raise GameError('no_attack_module')
+        sat_mult = max(0.40, min(1.0, float(saturation_multiplier)))
+        power = max(1, int(raw_power * sat_mult))
     else:
         power = int(stats.get('total_bay_defense', 0) or 0)
         if power <= 0:
@@ -145,7 +147,12 @@ class PvpV2DevService:
             raise GameError('player_not_found')
 
         stats = MathConfig.calculate_player_stats(player)
-        quote = calculate_dev_quote(player, stats, job_type, family, tier, fingerprint=fingerprint)
+
+        from game.db.pvp_v2_operations import PvpV2ActiveEffectsDB
+        sat_effects = PvpV2ActiveEffectsDB.get_active_on_victim_by_family(tx, player_id, 'saturation')
+        sat_mult = 1.0 - min(0.60, len(sat_effects) * 0.30) if sat_effects else 1.0
+
+        quote = calculate_dev_quote(player, stats, job_type, family, tier, fingerprint=fingerprint, saturation_multiplier=sat_mult)
         quote['status'] = 'quote'
         quote['player_rtm'] = player.get('rootium', Decimal('0'))
         return quote
@@ -195,7 +202,10 @@ class PvpV2DevService:
                 raise GameError('patch_already_installed', fingerprint=resolved_fp)
 
         # 3. Calcul du devis exact
-        quote = calculate_dev_quote(player, stats, job_type, family, tier, fingerprint=resolved_fp)
+        from game.db.pvp_v2_operations import PvpV2ActiveEffectsDB
+        sat_effects = PvpV2ActiveEffectsDB.get_active_on_victim_by_family(tx, player_id, 'saturation')
+        sat_mult = 1.0 - min(0.60, len(sat_effects) * 0.30) if sat_effects else 1.0
+        quote = calculate_dev_quote(player, stats, job_type, family, tier, fingerprint=resolved_fp, saturation_multiplier=sat_mult)
         rtm_cost = quote['rtm_cost']
 
         # 4. Protection contre le glissement de devis

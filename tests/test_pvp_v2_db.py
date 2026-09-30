@@ -199,7 +199,8 @@ class MockPvpV2Transaction:
 
         # --- Operations ---
         if "INSERT INTO PVP_V2_OPERATIONS" in q:
-            attacker_id, victim_id, family, tier, fingerprint, software_copy_id, rtm_cost, started_at = params
+            attacker_id, victim_id, family, tier, fingerprint, software_copy_id, rtm_cost, started_at, *rest = params
+            resolves_at = rest[0] if rest else None
             row_id = self._next_id()
             self.operations.append({
                 'id': row_id,
@@ -212,6 +213,7 @@ class MockPvpV2Transaction:
                 'status': 'installing',
                 'rtm_cost': Decimal(str(rtm_cost)),
                 'started_at': started_at,
+                'resolves_at': resolves_at,
                 'installed_at': None,
                 'ended_at': None,
                 'end_reason': None,
@@ -219,12 +221,11 @@ class MockPvpV2Transaction:
             return row_id
 
         if "UPDATE PVP_V2_OPERATIONS SET STATUS = 'ACTIVE'" in q:
-            inst_at, op_id = params
+            op_id = params[0] if len(params) == 1 else params[1]
             count = 0
             for op in self.operations:
                 if op['id'] == int(op_id) and op['status'] == 'installing':
                     op['status'] = 'active'
-                    op['installed_at'] = inst_at
                     count += 1
             return count
 
