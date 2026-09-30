@@ -57,6 +57,19 @@ def _is_confirm(val):
     return False
 
 
+def _format_modules_summary(modules_dict: dict, single_fallback: int | None = None) -> str:
+    """Formate proprement la liste des modules capturés ou détruits."""
+    if not modules_dict:
+        return str(single_fallback) if single_fallback is not None else ""
+    if len(modules_dict) == 1:
+        tier, count = next(iter(modules_dict.items()))
+        return f"{tier}" if count == 1 else f"{tier} (×{count})"
+    parts = []
+    for tier, count in sorted(modules_dict.items(), key=lambda x: x[0], reverse=True):
+        parts.append(f"{tier} (×{count})" if count > 1 else f"{tier}")
+    return " + Tier ".join(parts)
+
+
 class HackConfirmView(discord.ui.View):
     """Vue interactive avec bouton de confirmation pour lancer le /hack."""
 
@@ -215,6 +228,7 @@ class Hack(BaseGameCog):
         except Exception:
             logger.exception("Erreur lors du rattrapage des attaques PvP")
 
+
     async def _notify_and_log_resolved(self, item: dict):
         """Notifie l'attaquant et la victime en DM lors de la résolution de l'attaque."""
         attacker_id = item['attacker_id']
@@ -228,6 +242,15 @@ class Hack(BaseGameCog):
         destroyed_defense = item['destroyed_defense_points']
         destroyed_atk_tier = item.get('destroyed_attack_tier')
         captured_mining_tier = item.get('captured_mining_tier')
+
+        destroyed_atk_summary = _format_modules_summary(
+            item.get('destroyed_attack_modules') or {},
+            destroyed_atk_tier,
+        )
+        captured_mining_summary = _format_modules_summary(
+            item.get('captured_mining_modules') or {},
+            captured_mining_tier,
+        )
 
         attacker_lang = item.get('attacker_lang') or 'fr'
         victim_lang = item.get('victim_lang') or 'fr'
@@ -249,14 +272,14 @@ class Hack(BaseGameCog):
                     )
                 else:
                     if target_zone == 'attack':
-                        if destroyed_atk_tier:
+                        if destroyed_atk_summary:
                             attacker_msg = text.get_for_lang(
                                 attacker_lang, 'g_hack_attacker_intrusion_attack',
                                 target_id=victim_id,
                                 attack_points=attack_points,
                                 total_defense=total_defense,
                                 destroyed_defense=destroyed_defense,
-                                tier=destroyed_atk_tier,
+                                tier=destroyed_atk_summary,
                             )
                         else:
                             attacker_msg = text.get_for_lang(
@@ -267,14 +290,14 @@ class Hack(BaseGameCog):
                                 destroyed_defense=destroyed_defense,
                             )
                     else:  # mining
-                        if captured_mining_tier:
+                        if captured_mining_summary:
                             attacker_msg = text.get_for_lang(
                                 attacker_lang, 'g_hack_attacker_intrusion_mining',
                                 target_id=victim_id,
                                 attack_points=attack_points,
                                 total_defense=total_defense,
                                 destroyed_defense=destroyed_defense,
-                                tier=captured_mining_tier,
+                                tier=captured_mining_summary,
                             )
                         else:
                             attacker_msg = text.get_for_lang(
@@ -285,6 +308,40 @@ class Hack(BaseGameCog):
                                 destroyed_defense=destroyed_defense,
                             )
                 await attacker_user.send(attacker_msg)
+
+                # ── Debug : détail du calcul overrun (visible uniquement par l'attaquant) ──
+                try:
+                    overrun_threshold = item.get('overrun_threshold', 'N/A')
+                    target_count = item.get('target_count_to_take', 0)
+                    delta = max(0, attack_points - total_defense)
+                    extra = max(0, target_count - 1) if intrusion_success else 0
+                    overrun_threshold_fmt = f"{float(overrun_threshold):.2f}" if overrun_threshold != 'N/A' else 'N/A'
+                    fw_atk = item.get('attacker_fw', '?')
+                    fw_vic = item.get('victim_fw', '?')
+                    lines_debug = [
+                        "```",
+                        "🔬 ROOT DEBUG — Calcul Overrun PvP",
+                        "─" * 35,
+                        f"⚔️  ATK engagés          : {attack_points}",
+                        f"🛡️  DEF totale victime   : {total_defense}",
+                        f"   ├─ Pare-feu          : {firewall_def} pts  (FW Lv.{fw_vic})",
+                        f"   └─ Modules baie      : {module_def} pts",
+                        f"📉  Modules DEF détruits : {destroyed_defense} pts",
+                        "─" * 35,
+                        f"✅  Intrusion           : {'OUI' if intrusion_success else 'NON'}",
+                        f"🔢  delta (ATK - DEF)   : {delta}",
+                        f"📐  Seuil Overrun V(T{fw_atk}): {overrun_threshold_fmt}",
+                        f"   formule : V = (cost_mining_USD / (cost_atk_RTM * rtm_usd)) * mult * sqrt(bits*time)",
+                        f"🎯  Modules pris (base) : 1" if intrusion_success else "🎯  Modules pris       : 0",
+                        f"➕  Bonus overrun       : +{extra}  (delta // V = {delta} // {overrun_threshold_fmt})" if intrusion_success else "",
+                        f"📦  Total modules pris  : {target_count}",
+                        "```",
+                    ]
+                    debug_msg = "\n".join(l for l in lines_debug if l != "")
+                    await attacker_user.send(debug_msg)
+                except Exception as exc:
+                    logger.debug("Envoi debug overrun échoué pour attaquant %s : %s", attacker_id, exc)
+
         except Exception:
             logger.warning("Impossible d'envoyer le compte-rendu PvP à l'attaquant %s", attacker_id)
 
@@ -305,14 +362,14 @@ class Hack(BaseGameCog):
                     )
                 else:
                     if target_zone == 'attack':
-                        if destroyed_atk_tier:
+                        if destroyed_atk_summary:
                             victim_msg = text.get_for_lang(
                                 victim_lang, 'g_hack_victim_intrusion_attack',
                                 attacker_id=attacker_id,
                                 attack_points=attack_points,
                                 total_defense=total_defense,
                                 destroyed_defense=destroyed_defense,
-                                tier=destroyed_atk_tier,
+                                tier=destroyed_atk_summary,
                                 new_secret_id=new_victim_secret,
                             )
                         else:
@@ -325,14 +382,14 @@ class Hack(BaseGameCog):
                                 new_secret_id=new_victim_secret,
                             )
                     else:  # mining
-                        if captured_mining_tier:
+                        if captured_mining_summary:
                             victim_msg = text.get_for_lang(
                                 victim_lang, 'g_hack_victim_intrusion_mining',
                                 attacker_id=attacker_id,
                                 attack_points=attack_points,
                                 total_defense=total_defense,
                                 destroyed_defense=destroyed_defense,
-                                tier=captured_mining_tier,
+                                tier=captured_mining_summary,
                                 new_secret_id=new_victim_secret,
                             )
                         else:

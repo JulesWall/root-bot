@@ -166,38 +166,63 @@ class PvpDB:
         # 3. Réussite de l'intrusion (strictement supérieur avant application des destructions)
         intrusion_success = attack_points > total_defense
 
+        attacker_fw = int(attacker.get('firewall_level') or 0)
+        overrun_threshold = MathConfig.calculate_pvp_overrun_threshold(attacker_fw)
+        target_count_to_take = (
+            MathConfig.calculate_pvp_captured_modules_count(attack_points, total_defense, attacker_fw)
+            if intrusion_success
+            else 0
+        )
+
         destroyed_attack_tier = None
         captured_mining_tier = None
+        destroyed_attack_modules = {}
+        captured_mining_modules = {}
         updates_attacker = {}
 
-        if intrusion_success:
+        if intrusion_success and target_count_to_take > 0:
+            remaining_to_take = target_count_to_take
             if target_choice == 'attack':
-                # Détruire un module d'attaque du tier le plus haut (T6 -> T1)
+                # Détruire jusqu'à target_count_to_take modules d'attaque du tier le plus haut au plus bas (T6 -> T1)
                 for tier in range(6, 0, -1):
+                    if remaining_to_take <= 0:
+                        break
                     atk_cnt = int(victim.get(f'attack_t{tier}') or 0)
                     if atk_cnt > 0:
-                        updates_victim[f'attack_t{tier}'] = atk_cnt - 1
-                        victim[f'attack_t{tier}'] = atk_cnt - 1
-                        destroyed_attack_tier = tier
-                        break
+                        take = min(atk_cnt, remaining_to_take)
+                        updates_victim[f'attack_t{tier}'] = atk_cnt - take
+                        victim[f'attack_t{tier}'] = atk_cnt - take
+                        destroyed_attack_modules[tier] = take
+                        remaining_to_take -= take
+
+                if destroyed_attack_modules:
+                    destroyed_attack_tier = next(iter(destroyed_attack_modules.keys()))
+
             elif target_choice == 'mining':
-                # Transférer un module de minage du tier le plus haut (T6 -> T1)
+                has_mining = any(int(victim.get(f'mining_t{tier}') or 0) > 0 for tier in range(1, 7))
+                if has_mining:
+                    # Figer le minage des deux joueurs avant tout changement de matériel
+                    _settle_mining(tx, victim, tx.now)
+                    _settle_mining(tx, attacker, tx.now)
+
                 for tier in range(6, 0, -1):
+                    if remaining_to_take <= 0:
+                        break
                     min_cnt = int(victim.get(f'mining_t{tier}') or 0)
                     if min_cnt > 0:
-                        # Figer le minage des deux joueurs avant tout changement de matériel
-                        _settle_mining(tx, victim, tx.now)
-                        _settle_mining(tx, attacker, tx.now)
-
-                        updates_victim[f'mining_t{tier}'] = min_cnt - 1
-                        victim[f'mining_t{tier}'] = min_cnt - 1
+                        take = min(min_cnt, remaining_to_take)
+                        updates_victim[f'mining_t{tier}'] = min_cnt - take
+                        victim[f'mining_t{tier}'] = min_cnt - take
 
                         att_cnt = int(attacker.get(f'mining_t{tier}') or 0)
-                        updates_attacker[f'mining_t{tier}'] = att_cnt + 1
-                        attacker[f'mining_t{tier}'] = att_cnt + 1
+                        updates_attacker[f'mining_t{tier}'] = att_cnt + take
+                        attacker[f'mining_t{tier}'] = att_cnt + take
 
-                        captured_mining_tier = tier
-                        break
+                        captured_mining_modules[tier] = take
+                        remaining_to_take -= take
+
+                if captured_mining_modules:
+                    captured_mining_tier = next(iter(captured_mining_modules.keys()))
 
         # Application des modifications en base de données
         if updates_victim:
@@ -229,9 +254,14 @@ class PvpDB:
             'destroyed_defense_points': destroyed_defense,
             'destroyed_defense_modules': destroyed_modules_by_tier,
             'intrusion_success': intrusion_success,
+            'target_count_to_take': target_count_to_take,
+            'overrun_threshold': overrun_threshold,
             'destroyed_attack_tier': destroyed_attack_tier,
             'captured_mining_tier': captured_mining_tier,
+            'destroyed_attack_modules': destroyed_attack_modules,
+            'captured_mining_modules': captured_mining_modules,
             'victim_fw': victim_fw,
+            'attacker_fw': attacker_fw,
             'new_victim_secret': new_victim_secret,
             'attacker_lang': attacker.get('lang') or 'fr',
             'victim_lang': victim.get('lang') or 'fr',

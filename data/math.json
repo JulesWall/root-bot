@@ -43,14 +43,14 @@
   },
   "beta": {
     "attack_price_t1_rtm": 0.005,
-    "bay_defense_usd": 150,
+    "bay_defense_usd": 75,
     "max_tier": 5,
     "required_firewall": {
       "mining": 0,
       "attack": 1,
       "bay_defense": 0
     },
-    "cost_multiplier": 1.5,
+    "cost_multiplier": 2,
     "sponsor_autoclaim_credits": 10,
     "sponsor_combo_saver_credits": 1
   },
@@ -107,7 +107,7 @@
     "player_cooldown_seconds": 480,
     "reward_min_usd": 75,
     "reward_max_usd": 200,
-    "day_start_hour_paris": 11,
+    "day_start_hour_paris": 9,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 3,
     "day_interval_max_minutes": 8,
@@ -118,7 +118,7 @@
     "range_size": 125,
     "reward_min_usd": 25,
     "reward_max_usd": 75,
-    "day_start_hour_paris": 11,
+    "day_start_hour_paris": 9,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
     "day_interval_max_minutes": 45,
@@ -128,7 +128,7 @@
   "decode_challenge": {
     "reward_min_usd": 25,
     "reward_max_usd": 75,
-    "day_start_hour_paris": 11,
+    "day_start_hour_paris": 9,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
     "day_interval_max_minutes": 45,
@@ -138,7 +138,7 @@
   "anomaly_challenge": {
     "reward_min_usd": 25,
     "reward_max_usd": 75,
-    "day_start_hour_paris": 11,
+    "day_start_hour_paris": 9,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
     "day_interval_max_minutes": 45,
@@ -148,7 +148,7 @@
   "buffer_challenge": {
     "reward_min_usd": 25,
     "reward_max_usd": 75,
-    "day_start_hour_paris": 11,
+    "day_start_hour_paris": 9,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
     "day_interval_max_minutes": 45,
@@ -158,7 +158,7 @@
   "signal_challenge": {
     "reward_min_usd": 25,
     "reward_max_usd": 75,
-    "day_start_hour_paris": 11,
+    "day_start_hour_paris": 9,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
     "day_interval_max_minutes": 45,
@@ -193,7 +193,7 @@
   "packet_challenge": {
     "reward_min_usd": 25,
     "reward_max_usd": 75,
-    "day_start_hour_paris": 11,
+    "day_start_hour_paris": 9,
     "day_end_hour_paris": 1,
     "day_interval_min_minutes": 15,
     "day_interval_max_minutes": 45,
@@ -203,7 +203,9 @@
   "pvp": {
     "delay_seconds": 2700,
     "check_interval_seconds": 15,
-    "retaliation_window_hours": 72
+    "retaliation_window_hours": 72,
+    "overrun_multiplier": 10,
+    "overrun_time_factor": 30
   },
   "hourly": {
     "reward_min_usd": 60,

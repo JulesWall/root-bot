@@ -256,12 +256,50 @@ class Player:
 
         internal_kind = 'bay_defense' if kind == 'defense' else kind
         column = f'{internal_kind}_t{tier}'
-        usd_price, rtm_price = _calculate_module_price(column, tier)
+        unit_usd_price, unit_rtm_price = _calculate_module_price(column, tier)
 
         if 'price' in args:
-            usd_price, rtm_price = Decimal(str(args['price'])), Decimal('0')
+            unit_usd_price, unit_rtm_price = Decimal(str(args['price'])), Decimal('0')
+
+        # --- Résolution du paramètre count (entier ou "all"/"max"/"tout") ---
+        raw_count = args.get('count', args.get('quantity', args.get('amount', 1)))
+        want_all = bool(args.get('all'))
+        if not want_all and isinstance(raw_count, str):
+            token = raw_count.strip().lower()
+            if token in ('all', 'max', 'tout'):
+                want_all = True
+
+        if want_all:
+            # On calcule le maximum abordable APRÈS avoir récupéré le profil joueur.
+            # Pour l'instant on pose count = 0 (sentinel) ; il sera résolu juste après PlayerData.get.
+            count = 0  # sentinel — résolu plus bas
+        else:
+            try:
+                count = int(raw_count)
+            except (ValueError, TypeError):
+                raise GameError('invalid_selection')
+            if count < 1:
+                raise GameError('invalid_selection')
 
         p = PlayerData.get(tx, actor)
+
+        if want_all:
+            # Calcul du maximum abordable selon le solde courant
+            if unit_usd_price > 0 and unit_rtm_price > 0:
+                max_by_usd = int(Decimal(str(p['dollars'])) // unit_usd_price)
+                max_by_rtm = int(Decimal(str(p['rootium'])) // unit_rtm_price)
+                count = min(max_by_usd, max_by_rtm)
+            elif unit_rtm_price > 0:
+                count = int(Decimal(str(p['rootium'])) // unit_rtm_price)
+            elif unit_usd_price > 0:
+                count = int(Decimal(str(p['dollars'])) // unit_usd_price)
+            else:
+                count = 0
+            if count < 1:
+                raise GameError('insufficient_funds_usd', usd=format_usd(unit_usd_price))
+
+        usd_price = unit_usd_price * count
+        rtm_price = unit_rtm_price * count
         max_tier_above = int(settings.get('firewall', {}).get('max_tier_above', 1))
         required_firewall = int(settings.get('beta', {}).get('required_firewall', {}).get(internal_kind, 0))
         required_firewall = max(required_firewall, tier - max_tier_above)
@@ -282,9 +320,11 @@ class Player:
         # Calcul de l'impact statistique
         stats_before = MathConfig.calculate_player_stats(p)
         stat_unit_val = MathConfig.get_module_stat(internal_kind, tier)
+        stat_total_gain = stat_unit_val * count
 
         # Informations mémoire vive (uniquement pertinentes pour le minage)
-        ram_gain = MathConfig.get_module_ram(tier) if kind == 'mining' else 0
+        ram_unit_gain = MathConfig.get_module_ram(tier) if kind == 'mining' else 0
+        ram_gain = ram_unit_gain * count
         ram_gain_fmt = MathConfig.format_memory(ram_gain)
         ram_cur_fmt = MathConfig.format_memory(stats_before['total_ram_bytes'])
         ram_new_fmt = MathConfig.format_memory(stats_before['total_ram_bytes'] + ram_gain)
@@ -292,22 +332,22 @@ class Player:
         if kind == 'mining':
             stat_type = 'mining'
             stat_unit = 'H/s'
-            stat_gain_fmt = MathConfig.format_hashrate(stat_unit_val)
+            stat_gain_fmt = MathConfig.format_hashrate(stat_total_gain)
             cur_fmt = MathConfig.format_hashrate(stats_before['total_hashrate_hs'])
-            new_fmt = MathConfig.format_hashrate(stats_before['total_hashrate_hs'] + stat_unit_val)
+            new_fmt = MathConfig.format_hashrate(stats_before['total_hashrate_hs'] + stat_total_gain)
         elif kind == 'attack':
             stat_type = 'attack'
             stat_unit = 'Bit/s'
             bits_cur = stats_before.get('total_bits_per_s', 0)
-            stat_gain_fmt = MathConfig.format_bits_per_s(stat_unit_val)
+            stat_gain_fmt = MathConfig.format_bits_per_s(stat_total_gain)
             cur_fmt = MathConfig.format_bits_per_s(bits_cur)
-            new_fmt = MathConfig.format_bits_per_s(bits_cur + stat_unit_val)
+            new_fmt = MathConfig.format_bits_per_s(bits_cur + stat_total_gain)
         else:  # bay_defense / defense
             stat_type = 'defense' if kind == 'defense' else 'bay_defense'
             stat_unit = 'DEF'
-            stat_gain_fmt = f"+{stat_unit_val} DEF"
+            stat_gain_fmt = f"+{stat_total_gain} DEF"
             cur_fmt = f"{stats_before['total_bay_defense']} DEF"
-            new_fmt = f"{stats_before['total_bay_defense'] + stat_unit_val} DEF"
+            new_fmt = f"{stats_before['total_bay_defense'] + stat_total_gain} DEF"
 
         # Phase 1 : Devis préalable sans prélèvement
         if not args.get('confirm'):
@@ -316,6 +356,9 @@ class Player:
                 'buy_quote': True,
                 'kind': kind,
                 'tier': tier,
+                'count': count,
+                'unit_usd_price': unit_usd_price,
+                'unit_rtm_price': unit_rtm_price,
                 'usd_price': usd_price,
                 'rtm_price': rtm_price,
                 'current_usd': Decimal(str(p['dollars'])),
@@ -324,7 +367,7 @@ class Player:
                 'remaining_rtm': Decimal(str(p['rootium'])) - rtm_price,
                 'stat_type': stat_type,
                 'stat_unit': stat_unit,
-                'stat_gain': stat_unit_val,
+                'stat_gain': stat_total_gain,
                 'stat_gain_formatted': stat_gain_fmt,
                 'stat_current_formatted': cur_fmt,
                 'stat_new_formatted': new_fmt,
@@ -342,7 +385,7 @@ class Player:
             tx, actor,
             dollars=Decimal(p['dollars']) - usd_price,
             rootium=Decimal(p['rootium']) - rtm_price,
-            **{column: int(p.get(column, 0)) + 1}
+            **{column: int(p.get(column, 0)) + count}
         )
         # Si le joueur achète un module de minage, sa capacité mémoire et son débit évoluent.
         # On recalcule et synchronise l'échéance du rappel de saturation RAM si actif.
@@ -361,11 +404,14 @@ class Player:
             'bought': True,
             'kind': kind,
             'tier': tier,
+            'count': count,
+            'unit_usd_price': unit_usd_price,
+            'unit_rtm_price': unit_rtm_price,
             'usd_price': usd_price,
             'rtm_price': rtm_price,
             'stat_type': stat_type,
             'stat_unit': stat_unit,
-            'stat_gain': stat_unit_val,
+            'stat_gain': stat_total_gain,
             'stat_gain_formatted': stat_gain_fmt,
             'stat_current_formatted': cur_fmt,
             'stat_new_formatted': new_fmt,
