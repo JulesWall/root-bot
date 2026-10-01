@@ -394,7 +394,7 @@ class MathConfig:
         - Les opérations arithmétiques basiques (+, -, *, /, **, %).
         - Les identifiants de variables (Name).
         - Les constantes numériques entières ou flottantes.
-        - Un ensemble restreint de fonctions mathématiques : exp(), min(), max().
+        - Un ensemble restreint de fonctions mathématiques : exp(), min(), max(), sqrt().
         Rejette immédiatement tout import, appel d'attribut (__class__, etc.) ou mot-clé suspect.
         """
         allowed = (
@@ -404,8 +404,8 @@ class MathConfig:
         for child in ast.walk(node):
             if not isinstance(child, allowed):
                 raise ValueError('Unsupported formula syntax')
-            # Seules les fonctions pures 'exp', 'min' et 'max' sans arguments nommés sont autorisées
-            if isinstance(child, ast.Call) and (not isinstance(child.func, ast.Name) or child.func.id not in ('exp', 'min', 'max') or child.keywords):
+            # Seules les fonctions pures 'exp', 'min', 'max' et 'sqrt' sans arguments nommés sont autorisées
+            if isinstance(child, ast.Call) and (not isinstance(child.func, ast.Name) or child.func.id not in ('exp', 'min', 'max', 'sqrt') or child.keywords):
                 raise ValueError('Unsupported formula function')
             # Les constantes doivent obligatoirement être numériques
             if isinstance(child, ast.Constant) and type(child.value) not in (int, float):
@@ -443,7 +443,12 @@ class MathConfig:
                 return -visit(node.operand) if isinstance(node.op, ast.USub) else visit(node.operand)
             if isinstance(node, ast.Call):
                 # Mapping sécurisé des fonctions autorisées
-                fn = {'exp': lambda v: v.exp(), 'min': min, 'max': max}[node.func.id]
+                fn = {
+                    'exp': lambda v: v.exp(),
+                    'min': min,
+                    'max': max,
+                    'sqrt': lambda v: v.sqrt() if hasattr(v, 'sqrt') else Decimal(str(v)).sqrt(),
+                }[node.func.id]
                 return fn(*[visit(arg) for arg in node.args])
             raise ValueError('Unsupported formula')
 
@@ -463,11 +468,9 @@ class MathConfig:
     def calculate_pvp_overrun_threshold(cls, attacker_firewall_tier: int) -> Decimal:
         """Calcule le seuil d'overrun PvP V(T) selon le tier de pare-feu de l'attaquant.
         
-        Formule :
-        V = (COUT_MODULE_MINAGE_USD / (COUT_MODULE_ATK_RTM * rtm_to_usd)) * overrun_multiplier * sqrt(bits_per_s * overrun_time_factor)
+        La formule est configurée et modifiable dans data/math.json (clé formulas.pvp_overrun_threshold) :
+        V = (mining_cost_usd / (atk_cost_rtm * rtm_to_usd)) * overrun_multiplier * sqrt(bits_per_s * overrun_time_factor)
         """
-        import math
-
         rules = cls.load()
         tier = max(1, min(5, int(attacker_firewall_tier or 1)))
 
@@ -489,13 +492,29 @@ class MathConfig:
         overrun_multiplier = Decimal(str(pvp_cfg.get('overrun_multiplier', 10)))
         overrun_time_factor = Decimal(str(pvp_cfg.get('overrun_time_factor', 30)))
 
-        sqrt_val = Decimal(str(math.sqrt(float(bits * overrun_time_factor))))
+        formula_name = pvp_cfg.get('overrun_formula', 'pvp_overrun_threshold')
+        if formula_name in rules.get('formulas', {}):
+            return cls.formula(
+                rules,
+                formula_name,
+                mining_cost_usd=mining_cost_usd,
+                atk_cost_rtm=atk_cost_rtm,
+                atk_cost_usd=atk_cost_usd,
+                rtm_to_usd=rtm_to_usd,
+                bits_per_s=bits,
+                bits=bits,
+                overrun_multiplier=overrun_multiplier,
+                overrun_time_factor=overrun_time_factor,
+                tier=tier,
+                cout_module_minage_usd=mining_cost_usd,
+                cout_module_atk_rtm=atk_cost_rtm,
+            )
 
         if atk_cost_usd <= 0:
             return Decimal('1')
 
         ratio = mining_cost_usd / atk_cost_usd
-        return ratio * overrun_multiplier * sqrt_val
+        return ratio * overrun_multiplier * (bits * overrun_time_factor).sqrt()
 
     @classmethod
     def calculate_pvp_captured_modules_count(

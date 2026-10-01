@@ -80,8 +80,8 @@
       "1": 10,
       "2": 50,
       "3": 200,
-      "4": 800,
-      "5": 3000
+      "4": 600,
+      "5": 900
     }
   },
   "firewall_network_defense": {
@@ -92,7 +92,9 @@
     "4": 2500,
     "5": 15000
   },
-  "formulas": {},
+  "formulas": {
+    "pvp_overrun_threshold": "(mining_cost_usd / (atk_cost_rtm * rtm_to_usd)) * overrun_multiplier * sqrt(bits_per_s * overrun_time_factor)"
+  },
   "reputation_gift_points": 1,
   "event_firewall_multipliers": {
     "0": 1,
@@ -205,7 +207,8 @@
     "check_interval_seconds": 15,
     "retaliation_window_hours": 72,
     "overrun_multiplier": 10,
-    "overrun_time_factor": 30
+    "overrun_time_factor": 30,
+    "overrun_formula": "pvp_overrun_threshold"
   },
   "hourly": {
     "reward_min_usd": 60,

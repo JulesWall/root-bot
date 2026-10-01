@@ -4982,6 +4982,14 @@ class TestPvPFeature(unittest.TestCase):
         self.assertEqual(self.tx.players[self.attacker_id]["mining_t5"], 1)
         self.assertEqual(self.tx.players[self.attacker_id]["mining_t2"], 1)
 
+    def test_pvp_overrun_threshold_formula_in_math_json(self):
+        """Vérifie que la formule d'overrun est bien chargée et évaluée depuis math.json."""
+        cfg = MathConfig.load()
+        self.assertIn("pvp_overrun_threshold", cfg.get("formulas", {}))
+        v1 = MathConfig.calculate_pvp_overrun_threshold(1)
+        self.assertGreater(v1, Decimal("0"))
+        self.assertAlmostEqual(float(v1), 112.45, delta=1.0)
+
     def test_rootservice_hack_dispatch(self):
         """Vérifie l'intégration dans RootService."""
         service = RootService(database=MagicMock())
