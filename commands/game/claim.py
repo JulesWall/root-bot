@@ -271,10 +271,17 @@ class Claim(BaseGameCog):
         await self._reply(ctx, content)
 
     async def _reply(self, ctx, content: str):
-        """Envoie une réponse sous forme d'Embed Root OS harmonisé."""
-        from utils.root_embed import RootEmbed
-        embed = RootEmbed(ctx, 'claim', content)
-        await embed.send(ctx)
+        """Envoie une réponse simple sous forme de message direct sans embed."""
+        interaction = getattr(ctx, 'interaction', None)
+        if interaction:
+            if interaction.response.is_done():
+                await interaction.followup.send(content, allowed_mentions=discord.AllowedMentions.none())
+            else:
+                await interaction.response.send_message(content, allowed_mentions=discord.AllowedMentions.none())
+        elif hasattr(ctx, 'respond'):
+            await ctx.respond(content, allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await ctx.send(content, allowed_mentions=discord.AllowedMentions.none())
 
     async def _log_blockchain(self, ctx, amount: Decimal):
         """Publie la récolte de minage dans le salon #blockchain (best-effort, sans casser la commande)."""

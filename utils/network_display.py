@@ -708,6 +708,95 @@ def build_overview_container(
     return c, file
 
 
+def build_farm_container(
+    result: dict,
+    locale: str = 'fr',
+    display_name: str = 'Opérateur',
+    file_attachment_name: str | None = None,
+) -> tuple[discord.ui.Container, discord.File | None]:
+    """Construit le Container Discord V2 pour la vue Ferme."""
+    is_fr = (locale == 'fr')
+    level = sanitize_level(result.get('firewall_level', 0))
+    file = get_infrastructure_file(level)
+    img_name = file_attachment_name or (file.filename if file else f"niveau-{level}.png")
+
+    stats = result.get('stats') or MathConfig.calculate_player_stats(result)
+    mining_state = result.get('mining_state') or {}
+    buffer_rtm = Decimal(str(mining_state.get('buffer', 0)))
+    mem_pct = float(mining_state.get('memory_pct', 0))
+    is_mem_full = bool(mining_state.get('is_full') or mem_pct >= 100.0)
+
+    color = COLOR_AMBER if is_mem_full else COLOR_TURQUOISE
+    c = discord.ui.Container(colour=color)
+
+    if img_name:
+        c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
+
+    clean_name = display_name.upper()
+    term_icon = get_emoji('root_terminal', True)
+    subtitle = "Ferme de minage & Débits · Production & Stockage" if is_fr else "Mining Farm & Rates · Production & Storage"
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{subtitle}")
+    c.add_separator(divider=True)
+
+    rate_per_min = Decimal(str(mining_state.get('rate_per_min', 0)))
+    hourly_rtm = rate_per_min * Decimal('60')
+    hashrate_str = stats.get('total_hashrate_formatted') or MathConfig.format_hashrate(stats.get('total_hashrate_hs', 0))
+    rep_val = int(result.get('reputation') or 0)
+    rep_pct = Decimal(str(rep_val)) * Decimal('0.5')
+
+    ram_gauge = _build_ram_gauge(mem_pct)
+    used_ram = mining_state.get('memory_used_formatted', '0 o')
+    total_ram = mining_state.get('total_ram_formatted', '0 o')
+    fill_seconds = int(mining_state.get('seconds_to_full', 0) or 0)
+
+    lines = [
+        f"{get_emoji('root_ferme', True)}**{'Production de minage' if is_fr else 'Mining production'}**",
+        f"• {get_emoji('root_puissance', True)}**Hashrate global** : `{hashrate_str}`",
+        f"• {get_emoji('root_production', True)}**Débit réel** : `{text.format_rtm(hourly_rtm)} RTM/h` *({text.format_rtm(rate_per_min)} RTM/min)*",
+    ]
+    if rep_val > 0:
+        lines.append(f"• {get_emoji('root_production', True)}**Bonus de réputation** : `+{rep_pct:.1f}%`")
+
+    lines.append(f"\n{get_emoji('root_memoire', True)}**{'Stockage et récolte' if is_fr else 'Storage and harvest'}**")
+    lines.append(f"• {get_emoji('root_recolter', True)}**À récolter** : **{text.format_rtm(buffer_rtm)} RTM**")
+    lines.append(f"• {get_emoji('root_memoire', True)}**Mémoire vive** : {ram_gauge} **{mem_pct:.1f}%** (`{used_ram} / {total_ram}`)")
+    if is_mem_full:
+        lines.append(f"• {get_emoji('root_alerte', True)}**Mémoire saturée · La récolte libère le stockage.**" if is_fr else f"• {get_emoji('root_alerte', True)}**Memory full · Claiming frees storage.**")
+    elif fill_seconds > 0:
+        lines.append(f"• {get_emoji('root_temps', True)}**Temps avant saturation** : `{format_duration(fill_seconds)}`" if is_fr else f"• {get_emoji('root_temps', True)}**Time until full** : `{format_duration(fill_seconds)}`")
+
+    bay_details = stats.get('bay_details', {})
+    miner_lines = []
+    for tier in range(1, 6):
+        bay = bay_details.get(tier, {})
+        m_count = bay.get('mining_count', 0)
+        if m_count > 0:
+            m_hs = MathConfig.format_hashrate(bay.get('mining_hashrate', 0))
+            m_ram = bay.get('mining_ram_formatted', '0 o')
+            miner_lines.append(f"• **T{tier}** · `×{m_count}` · `{m_hs}` · `+{m_ram}`")
+
+    lines.append(f"\n{get_emoji('root_materiel', True)}**{'Mineurs installés' if is_fr else 'Installed miners'}**")
+    if miner_lines:
+        lines.extend(miner_lines)
+    else:
+        lines.append(f"*{'Aucun mineur installé · Consulter /buy' if is_fr else 'No miners installed · Check /buy'}*")
+
+    autoclaim_credits = int(result.get('autoclaim_credits', 0) or 0)
+    autoclaim_active = int(result.get('autoclaim_active', 0) or 0)
+    combo_saver_credits = int(result.get('combo_saver_credits', 0) or 0)
+
+    lines.append(f"\n{get_emoji('root_logiciels', True)}**{'Automatisation' if is_fr else 'Automation'}**")
+    lines.append(f"• Autoclaim : `{autoclaim_credits}` {'en réserve' if is_fr else 'reserve'} · `{autoclaim_active}` {'actif(s)' if is_fr else 'active'}")
+    lines.append(f"• Combo Saver : `{combo_saver_credits}` {'crédit(s)' if is_fr else 'credit(s)'}")
+
+    c.add_text('\n'.join(lines))
+    c.add_separator(divider=True)
+    status_text = f"{get_emoji('root_ferme', True)}**{'Minage actif' if not is_mem_full else 'Minage suspendu (mémoire pleine)'}** · {'Production en temps réel' if is_fr else 'Real-time production'}"
+    c.add_text(status_text)
+
+    return c, file
+
+
 def build_hardware_container(
     result: dict,
     locale: str = 'fr',

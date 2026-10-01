@@ -8,10 +8,25 @@
 
 ## [Poste de Commande V2] — `/network`
 
-- **Interface Discord Components V2** : Tableau de bord central unifié avec conteneurs interactifs et barre latérale d'état.
-- **Illustration panoramique au sommet** : La scène d'infrastructure correspondant au niveau actuel du joueur est affichée en tête de carte via MediaGallery.
-- **Boutons intégrés directement dans la carte** :
-  - **Récolte dynamique** : Bouton vert actif dès qu'il y a du Rootium en mémoire tampon, ou grisé si vide.
-  - **Matériel** : Bascule instantanément vers l'inventaire complet des modules par tier.
-  - **Actualiser** : Rafraîchit les statistiques et débits en temps réel avec l'icône de temps Root OS.
-- **Navigation fluide** : Déplacement interactif entre les vues Accueil, Matériel et Opérations sans quitter le message initial.
+- **4 Vues Complètes Disponibles** :
+  - **Accueil** : Vue d'ensemble du réseau, identité, statistiques clés, infrastructure et progression.
+  - **Ferme** : Débits de minage en temps réel, jauge mémoire vive, détail des mineurs par tier et automatisation.
+  - **Matériel** : Inventaire exhaustif des baies (Minage, Attaque, Défense) regroupé par tier et accès boutique.
+  - **Opérations** : Stock offensif, statut de compilation/scans, attaques en cours et droits de représailles.
+- **Interface Discord Components V2** : Rendu visuel soigné dans un conteneur unifié avec bordure d'accentuation (turquoise/ambrée).
+- **Illustration panoramique au sommet** : La scène d'infrastructure du joueur est intégrée en tête de conteneur via MediaGallery.
+- **Barre d'actions à 2 rangées intégrée dans le conteneur** :
+  - **Rangée 1 (Onglets de navigation)** : 3 boutons permettant de basculer instantanément vers les autres vues depuis n'importe quel onglet.
+  - **Rangée 2 (Actions rapides)** : Bouton *Récolter* dynamique (vert avec solde prêt ou grisé si vide) et bouton *Actualiser* opérationnels depuis toutes les vues.
+
+## [Cohérence & Esthétique des Messages]
+
+- **Suppression des embeds superflus** :
+  - Les actions simples comme la récolte (`/claim`) s'affichent sous forme de messages directs et aérés plutôt que d'embeds encombrants.
+  - Les erreurs de jeu, annulations de confirmation et expirations restent en messages textuels épurés.
+- **Harmonisation stricte des messages de délai** :
+  - Structure symétrique et identique pour tous les messages de cooldown et d'attente (prime horaire `/hourly`, récolte `/claim`, réputation `/rep`) :
+    `> {root_temps} **Délai insuffisant** · [Raison concise]. Reviens dans / Prochaine récolte dans **[durée]**.`
+- **Remplacement exhaustif des emojis vanilla** :
+  - Toutes les commandes utilisent désormais exclusivement les 17 emojis personnalisés de Root OS.
+  - Couverture étendue incluant les indicateurs de statut, progression, alertes, débits et mémoires.

@@ -38,6 +38,7 @@ from utils.infrastructure_display import (
 from utils.language_manager import set_user_language
 from utils.logger import Logger
 from utils.network_display import (
+    build_farm_container,
     build_farm_embed,
     build_hardware_container,
     build_hardware_embed,
@@ -257,27 +258,51 @@ class NetworkActionView(discord.ui.DesignerView):
 
         locale = text.get_locale(self.ctx)
 
-        if self.current_view == 'hardware':
+        home_btn = discord.ui.Button(
+            label="Accueil" if is_fr else "Home",
+            emoji=get_button_emoji("root_terminal") or "🖥️",
+            style=discord.ButtonStyle.secondary,
+        )
+        home_btn.callback = self._on_switch_overview
+
+        farm_btn = discord.ui.Button(
+            label="Ferme" if is_fr else "Farm",
+            emoji=get_button_emoji("root_ferme") or "🖧",
+            style=discord.ButtonStyle.secondary,
+        )
+        farm_btn.callback = self._on_switch_farm
+
+        mat_btn = discord.ui.Button(
+            label="Matériel" if is_fr else "Hardware",
+            emoji=get_button_emoji("root_materiel") or "⚙️",
+            style=discord.ButtonStyle.secondary,
+        )
+        mat_btn.callback = self._on_switch_hardware
+
+        ops_btn = discord.ui.Button(
+            label="Opérations" if is_fr else "Operations",
+            emoji=get_button_emoji("root_operations") or "⚔️",
+            style=discord.ButtonStyle.secondary,
+        )
+        ops_btn.callback = self._on_switch_operations
+
+        if self.current_view == 'farm':
+            container, file = build_farm_container(
+                self.last_result,
+                locale=locale,
+                display_name=self.display_name,
+            )
+            container.add_row(home_btn, mat_btn, ops_btn)
+            container.add_row(claim_btn, refresh_btn)
+
+        elif self.current_view == 'hardware':
             container, file = build_hardware_container(
                 self.last_result,
                 locale=locale,
                 display_name=self.display_name,
             )
-            back_btn = discord.ui.Button(
-                label="Accueil" if is_fr else "Home",
-                emoji=get_button_emoji("root_retour") or "↩️",
-                style=discord.ButtonStyle.secondary,
-            )
-            back_btn.callback = self._on_switch_overview
-
-            ops_btn = discord.ui.Button(
-                label="Opérations" if is_fr else "Operations",
-                emoji=get_button_emoji("root_operations") or "⚔️",
-                style=discord.ButtonStyle.secondary,
-            )
-            ops_btn.callback = self._on_switch_operations
-
-            container.add_row(back_btn, ops_btn, refresh_btn)
+            container.add_row(home_btn, farm_btn, ops_btn)
+            container.add_row(claim_btn, refresh_btn)
 
         elif self.current_view == 'operations':
             container, file = build_operations_container(
@@ -285,21 +310,8 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            back_btn = discord.ui.Button(
-                label="Accueil" if is_fr else "Home",
-                emoji=get_button_emoji("root_retour") or "↩️",
-                style=discord.ButtonStyle.secondary,
-            )
-            back_btn.callback = self._on_switch_overview
-
-            mat_btn = discord.ui.Button(
-                label="Matériel" if is_fr else "Hardware",
-                emoji=get_button_emoji("root_materiel") or "⚙️",
-                style=discord.ButtonStyle.secondary,
-            )
-            mat_btn.callback = self._on_switch_hardware
-
-            container.add_row(back_btn, mat_btn, refresh_btn)
+            container.add_row(home_btn, farm_btn, mat_btn)
+            container.add_row(claim_btn, refresh_btn)
 
         else:
             # Vue standard : Accueil (Overview)
@@ -308,14 +320,8 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            mat_btn = discord.ui.Button(
-                label="Matériel" if is_fr else "Hardware",
-                emoji=get_button_emoji("root_materiel") or "⚙️",
-                style=discord.ButtonStyle.secondary,
-            )
-            mat_btn.callback = self._on_switch_hardware
-
-            container.add_row(claim_btn, mat_btn, refresh_btn)
+            container.add_row(farm_btn, mat_btn, ops_btn)
+            container.add_row(claim_btn, refresh_btn)
 
         self._container = container
         self.current_file = file
@@ -337,6 +343,17 @@ class NetworkActionView(discord.ui.DesignerView):
                 await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du retour à l'accueil network")
+
+    async def _on_switch_farm(self, interaction: discord.Interaction):
+        """Bascule vers la vue Ferme."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'farm'
+            self._rebuild_components()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du passage à la vue ferme network")
 
     async def _on_switch_hardware(self, interaction: discord.Interaction):
         """Bascule vers la vue Matériel."""
