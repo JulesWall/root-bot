@@ -32,6 +32,7 @@ from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
+from utils.root_embed import RootEmbed
 from utils.time_format import format_duration, parse_duration, to_utc_timestamp
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,9 @@ class Reminder(BaseGameCog):
             if not user:
                 user = await self.bot.fetch_user(discord_id)
             if user:
-                await user.send(dm_content)
+                dm_title = "Rappel" if lang == "fr" else "Reminder"
+                embed = RootEmbed.notification(lang, dm_title, dm_content)
+                await user.send(dm_content, embed=embed)
                 sent = True
         except discord.Forbidden:
             logger.debug("MP bloqués pour l'utilisateur %s lors de la livraison du rappel", discord_id)
@@ -112,7 +115,9 @@ class Reminder(BaseGameCog):
                 if not channel:
                     channel = await self.bot.fetch_channel(channel_id)
                 if channel:
-                    await channel.send(fallback_content)
+                    dm_title = "Rappel" if lang == "fr" else "Reminder"
+                    embed = RootEmbed.notification(lang, dm_title, fallback_content)
+                    await channel.send(fallback_content, embed=embed)
             except Exception:
                 logger.exception(
                     "Échec de l'envoi du rappel sur le salon de repli %s pour l'utilisateur %s",

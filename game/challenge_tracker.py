@@ -14,6 +14,8 @@ import time
 
 import discord
 
+from utils.root_embed import RootEmbed
+from utils.root_theme import VisualState
 from utils.time_format import format_duration
 
 logger = logging.getLogger(__name__)
@@ -146,9 +148,17 @@ class ChallengeTracker:
         if not to_edit:
             return
 
+        embed = RootEmbed(
+            None,
+            action=game_key,
+            content=notice_content,
+            title="ROOT OS · Défi résolu",
+            state=VisualState.SUCCESS,
+        )
+
         async def _safe_edit(msg: discord.Message):
             try:
-                await msg.edit(content=notice_content, embed=None, view=None)
+                await msg.edit(content=notice_content, embed=embed, view=None)
             except (discord.NotFound, discord.Forbidden):
                 pass
             except Exception as exc:

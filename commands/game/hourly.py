@@ -21,6 +21,8 @@ from commands.game.commandgame import BaseGameCog
 from game.game_error import GameError
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+from utils.root_embed import RootEmbed
+from utils.root_theme import VisualState
 from utils.text import format_usd, get as text_get
 
 logger = logging.getLogger(__name__)
@@ -86,10 +88,22 @@ class HourlyComboSaverView(discord.ui.View):
                 credits=save_res["remaining_credits"],
             )
             if interaction.message:
-                await interaction.response.edit_message(
-                    content=f"{interaction.message.content}\n\n{success_msg}",
-                    view=None,
-                )
+                has_embeds = bool(getattr(interaction.message, 'embeds', None)) and len(interaction.message.embeds) > 0 and getattr(interaction.message.embeds[0], 'description', None) is not None
+                if has_embeds:
+                    embed = interaction.message.embeds[0]
+                    new_embed = RootEmbed(
+                        self.ctx,
+                        "hourly",
+                        content=f"{embed.description}\n\n{success_msg}",
+                        state=VisualState.SUCCESS,
+                    )
+                    await interaction.response.edit_message(content=success_msg, embed=new_embed, view=None)
+                else:
+                    orig = getattr(interaction.message, 'content', '') or ''
+                    await interaction.response.edit_message(
+                        content=f"{orig}\n\n{success_msg}".strip(),
+                        view=None,
+                    )
             else:
                 await interaction.response.send_message(success_msg)
         except GameError as err:
@@ -142,8 +156,6 @@ class Hourly(BaseGameCog):
     # ── Rendu ────────────────────────────────────────────────────────────────
     async def _send(self, ctx, method, result):
         """Affiche le rapport de récompense horaire et déclenche la journalisation."""
-        mentions = discord.AllowedMentions.none()
-
         if method == "hourly_save_combo":
             success_msg = text_get(
                 ctx,
@@ -152,10 +164,8 @@ class Hourly(BaseGameCog):
                 bonus=_pct(result["restored_bonus"]),
                 credits=result["remaining_credits"],
             )
-            if getattr(ctx, "interaction", None):
-                await ctx.respond(success_msg, allowed_mentions=mentions)
-            else:
-                await ctx.send(success_msg, allowed_mentions=mentions)
+            embed = RootEmbed.result(ctx, text_get(ctx, "act_hourly"), success_msg, state=VisualState.SUCCESS)
+            await embed.send(ctx)
             return
 
         base_usd = result["base_usd"]
@@ -193,17 +203,12 @@ class Hourly(BaseGameCog):
                 lost_bonus=_pct(result.get("lost_bonus", 0)),
                 credits=result.get("combo_saver_credits", 0),
             )
-            content = f"{content}\n{saver_prompt}"
+            content = f"{content}\n\n{saver_prompt}"
             view = HourlyComboSaverView(self, ctx, result)
 
-        kwargs = {"allowed_mentions": mentions}
-        if view is not None:
-            kwargs["view"] = view
-
-        if getattr(ctx, "interaction", None):
-            await ctx.respond(content, **kwargs)
-        else:
-            await ctx.send(content, **kwargs)
+        state = VisualState.ATTENTION if combo_lost else VisualState.SUCCESS
+        embed = RootEmbed(ctx, "hourly", content=content, state=state)
+        await embed.send(ctx, view=view)
 
         # Journalisation Discord asynchrone
         try:

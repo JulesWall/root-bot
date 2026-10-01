@@ -16,6 +16,10 @@ from utils import text
 
 
 
+from utils.root_embed import RootEmbed
+from utils.root_theme import COLOR_TURQUOISE
+
+
 class BotInfo(commands.Cog):
     """Cog d'affichage des statistiques techniques et globales du bot.
 
@@ -36,10 +40,10 @@ class BotInfo(commands.Cog):
         - Le total des membres est calculé avec `sum(guild.member_count or 0)` pour
           éviter tout plantage sur les guilds dont le cache n'a pas encore résolu le décompte.
         """
-        # Création de l'Embed Discord violet aux couleurs du bot
-        embed = discord.Embed(
+        # Création de l'Embed Root OS turquoise
+        embed = RootEmbed(
             title=text.get(ctx, "botinfo_title", bot_name=BOT_NAME),
-            color=discord.Color.purple(),
+            color=COLOR_TURQUOISE,
         )
 
         # Affichage de l'avatar du bot en miniature

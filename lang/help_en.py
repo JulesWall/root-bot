@@ -54,7 +54,7 @@ CATEGORIES = [
         "id": "network",
         "emoji": "⛏️",
         "label": "Develop Network",
-        "description": "Hardware, mining and firewall",
+        "description": "Hardware, mining and infrastructure",
     },
     {
         "id": "combat",
@@ -103,10 +103,10 @@ PAGES = {
             "**4. Fund your expansion — `/convert` and `/event`**\n"
             "Convert some Rootium into dollars and take part in events.\n\n"
             "**5. Upgrade your network — `/upgrade`**\n"
-            "Firewall increases defense and unlocks advanced modules (note: tier 1 enters PvP!).\n\n"
+            "Infrastructure increases defense and unlocks advanced modules (note: tier 1 enters PvP!).\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "**Core Resources:**\n"
-            "• **USD ($)**: Currency for mining, defense, and firewall upgrades.\n"
+            "• **USD ($)**: Currency for mining, defense, and infrastructure upgrades.\n"
             "• **RTM**: Mined Rootium, required for attacks, compilation, and scans.\n"
             "• **ATK**: Attack points produced with `/compile`.\n\n"
             "💬 **Community & Support:** [Join the official server](https://discord.gg/FtfGuyb6mv)\n\n"
@@ -124,10 +124,10 @@ PAGES = {
             "**4. Fund your expansion — `{prefix}convert` and `{prefix}event`**\n"
             "Convert some Rootium into dollars and take part in events.\n\n"
             "**5. Upgrade your network — `{prefix}upgrade`**\n"
-            "Firewall increases defense and unlocks advanced modules (note: tier 1 enters PvP!).\n\n"
+            "Infrastructure increases defense and unlocks advanced modules (note: tier 1 enters PvP!).\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "**Core Resources:**\n"
-            "• **USD ($)**: Currency for mining, defense, and firewall upgrades.\n"
+            "• **USD ($)**: Currency for mining, defense, and infrastructure upgrades.\n"
             "• **RTM**: Mined Rootium, required for attacks, compilation, and scans.\n"
             "• **ATK**: Attack points produced with `{prefix}compile`.\n\n"
             "💬 **Community & Support:** [Join the official server](https://discord.gg/FtfGuyb6mv)\n\n"
@@ -145,7 +145,7 @@ PAGES = {
             "• **/hourly** — Claim hourly USD reward and build combo streak\n"
             "• **/contract** — View and accept guaranteed Root CyberSec missions\n"
             "• **/convert** — Sell Rootium for USD at current rate\n"
-            "• **/upgrade** — Upgrade firewall tier\n\n"
+            "• **/upgrade** — Upgrade infrastructure tier\n\n"
             "**⚔️ Attack & Defend**\n"
             "• **/compile** — Craft attack points (ATK) from Rootium\n"
             "• **/scan** — Scan an opponent to discover their Secret ID\n"
@@ -182,7 +182,7 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) — Claim hourly USD reward\n"
             "• **{prefix}contract** — Accept guaranteed paid missions\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Sell RTM for USD\n"
-            "• **{prefix}upgrade** — Upgrade firewall tier\n\n"
+            "• **{prefix}upgrade** — Upgrade infrastructure tier\n\n"
             "**⚔️ Attack & Defend**\n"
             "• **{prefix}compile** (alias `{prefix}cp`) — Craft ATK points\n"
             "• **{prefix}scan** — Scan an opponent for Secret ID\n"
@@ -221,7 +221,7 @@ PAGES = {
             "• **/hourly**: Claim your hourly cash reward and stack up your combo for massive USD payouts.\n"
             "• **/contract**: Work for Root CyberSec and complete guaranteed missions for steady income.\n"
             "• **/convert**: Convert RTM to USD at the current market rate.\n"
-            "• **/upgrade**: Start upgrading your firewall tier.\n\n"
+            "• **/upgrade**: Start upgrading your infrastructure tier.\n\n"
             "👉 *Select a command in the dropdown menu below for complete details.*"
         ),
         "body_text": (
@@ -244,7 +244,7 @@ PAGES = {
             "• **/compile**: Produce attack points (ATK) with your chosen method.\n"
             "• **/scan**: Scan an opponent to discover their Secret ID.\n"
             "• **/hack**: Commit ATK points to strike an opponent's network.\n\n"
-            "🛡️ *To protect yourself, purchase defense modules with `/buy kind:defense` and upgrade your firewall with `/upgrade`.*"
+            "🛡️ *To protect yourself, purchase defense modules with `/buy kind:defense` and upgrade your infrastructure with `/upgrade`.*"
         ),
         "body_text": (
             "Offensive modules provide throughput. Use `{prefix}compile` to craft ATK points, "
@@ -252,7 +252,7 @@ PAGES = {
             "• **{prefix}compile** (alias `{prefix}cp`): Craft ATK points using your RTM.\n"
             "• **{prefix}scan**: Attempt to extract a target's Secret ID.\n"
             "• **{prefix}hack** (alias `{prefix}hk`): Launch a targeted cyberattack.\n\n"
-            "🛡️ *To protect yourself, purchase defense modules with `{prefix}buy defense` and upgrade your firewall with `{prefix}upgrade`.*"
+            "🛡️ *To protect yourself, purchase defense modules with `{prefix}buy defense` and upgrade your infrastructure with `{prefix}upgrade`.*"
         ),
     },
     "events": {
@@ -397,7 +397,7 @@ COMMANDS = {
         ),
         "slash_example": "/buy kind:defense tier:3 count:20",
         "text_example": "{prefix}buy defense 3 20 confirm",
-        "prerequisites": "An active network, required funds (USD or RTM), and sufficient firewall level.",
+        "prerequisites": "An active network, required funds (USD or RTM), and sufficient infrastructure level.",
         "advice": "Run `/buy` without parameters to browse the interactive shop catalog.",
         "aliases": ["Text synonym: `{prefix}buy bay_defense` for defense modules"],
         "linked_commands": ["claim", "compile", "upgrade"],
@@ -476,15 +476,15 @@ COMMANDS = {
     "upgrade": {
         "name": "upgrade",
         "category": "network",
-        "title": "🛡️ `/upgrade` — Upgrade Firewall",
-        "description": "Increases your firewall level to boost total defense, unlock advanced hardware tiers, and multiply your rewards (hourly, contracts, and events x(level + 1)).",
+        "title": "🛡️ `/upgrade` — Upgrade Infrastructure",
+        "description": "Increases your infrastructure level to boost total defense, unlock advanced hardware tiers, and multiply your rewards (hourly, contracts, and events x(level + 1)).",
         "slash_syntax": "/upgrade [confirm:confirm]",
         "text_syntax": "{prefix}upgrade [confirm]",
         "parameters": "• `confirm`: Instantly starts the upgrade without interactive confirmation.",
         "slash_example": "/upgrade",
         "text_example": "{prefix}upgrade",
-        "prerequisites": "An active network, sufficient USD, and no firewall upgrade already in progress.",
-        "advice": "Each firewall level multiplies your gains (/hourly, /contract, and events) by (Level + 1)! Warning: At tier 0, you enjoy special novice PvP protection. Upgrading to tier 1 exposes you to attacks!",
+        "prerequisites": "An active network, sufficient USD, and no infrastructure upgrade already in progress.",
+        "advice": "Each infrastructure level multiplies your gains (/hourly, /contract, and events) by (Level + 1)! Warning: At tier 0, you enjoy special novice PvP protection. Upgrading to tier 1 exposes you to attacks!",
         "aliases": [],
         "linked_commands": ["buy", "network"],
     },
@@ -514,13 +514,13 @@ COMMANDS = {
         "name": "scan",
         "category": "combat",
         "title": "🔍 `/scan` — Scan a Player",
-        "description": "Scans an opponent's network to breach their firewall and uncover their Secret ID.",
+        "description": "Scans an opponent's network to breach their infrastructure and uncover their Secret ID.",
         "slash_syntax": "/scan target:<@player>",
         "text_syntax": "{prefix}scan <@player>",
         "parameters": "• `target`: Mention or selection of the target player.",
         "slash_example": "/scan target:@Alex",
         "text_example": "{prefix}scan @Alex",
-        "prerequisites": "An active network, required RTM funds, and an eligible target (firewall ≥ 1).",
+        "prerequisites": "An active network, required RTM funds, and an eligible target (infrastructure ≥ 1).",
         "advice": "Scan odds depend on stats. If successful, note down the Secret ID: it expires after a short period!",
         "aliases": [],
         "linked_commands": ["hack", "compile"],
@@ -552,14 +552,14 @@ COMMANDS = {
         "name": "event",
         "category": "events",
         "title": "🎯 `/event` — Community Events",
-        "description": "Displays the community event dashboard, active mini-games, prizes (multiplied by your firewall level + 1), and current challenge statuses.",
+        "description": "Displays the community event dashboard, active mini-games, prizes (multiplied by your infrastructure level + 1), and current challenge statuses.",
         "slash_syntax": "/event",
         "text_syntax": "{prefix}event",
         "parameters": "None.",
         "slash_example": "/event",
         "text_example": "{prefix}event",
         "prerequisites": "No special prerequisites to inspect the dashboard.",
-        "advice": "Pick an active challenge, then invoke its command with no arguments to view the puzzle. Your event rewards are multiplied by (Firewall Level + 1)!",
+        "advice": "Pick an active challenge, then invoke its command with no arguments to view the puzzle. Your event rewards are multiplied by (Infrastructure Level + 1)!",
         "aliases": ["{prefix}events", "{prefix}e"],
         "linked_commands": ["hash", "pin", "decode"],
     },

@@ -33,6 +33,7 @@ from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
+from utils.root_theme import VisualState
 
 
 logger = logging.getLogger(__name__)
@@ -287,14 +288,15 @@ class ScanBoostView(discord.ui.View):
             self.done = True
             self.stop()
             cancelled_text = text.get(self.ctx, 'g_cancelled')
+            embed = RootEmbed(self.ctx, 'scan', cancelled_text, state=VisualState.CANCELLED)
             if getattr(self.ctx, 'interaction', None):
                 try:
-                    await self.ctx.interaction.edit_original_response(content=cancelled_text, embed=None, view=None)
+                    await self.ctx.interaction.edit_original_response(embed=embed, view=None)
                 except Exception:
                     pass
             elif self.message:
                 try:
-                    await self.message.edit(content=cancelled_text, embed=None, view=None)
+                    await self.message.edit(embed=embed, view=None)
                 except Exception:
                     pass
 
@@ -419,7 +421,9 @@ class Scan(BaseGameCog):
                     alert_msg = text.get_for_lang(target_lang, 'g_scan_alert_identified', scanner=scanner_id)
                 else:
                     alert_msg = text.get_for_lang(target_lang, 'g_scan_alert_anon', level=target_fw)
-                await target_user.send(alert_msg)
+                alert_title = "Alerte de scan" if target_lang == 'fr' else "Scan Alert"
+                embed_alert = RootEmbed.notification(target_lang, alert_title, alert_msg, state=VisualState.ATTENTION)
+                await embed_alert.send_to(target_user)
             except Exception:
                 logger.warning("Impossible d'envoyer l'alerte de scan à la cible %s", target_id)
 
@@ -448,6 +452,8 @@ class Scan(BaseGameCog):
                         rotation_ts=rot_ts,
                     )
                     target_name = getattr(target_user, 'name', str(target_id)) if target_user else str(target_id)
+                    dm_title = "Scan réussi" if scanner_lang == 'fr' else "Scan Succeeded"
+                    embed_success = RootEmbed.notification(scanner_lang, dm_title, msg, state=VisualState.SUCCESS)
 
                     view = ExposeView(
                         bot=self.bot,
@@ -457,11 +463,13 @@ class Scan(BaseGameCog):
                         secret_id=target_secret,
                         lang=scanner_lang,
                     )
-                    dm_msg = await scanner_user.send(msg, view=view)
+                    dm_msg = await scanner_user.send(embed=embed_success, view=view)
                     view.message = dm_msg
                 else:
                     msg = text.get_for_lang(scanner_lang, 'g_scan_failure_dm', target=target_id)
-                    await scanner_user.send(msg)
+                    dm_title = "Scan sans résultat" if scanner_lang == 'fr' else "Scan Failed"
+                    embed_failure = RootEmbed.notification(scanner_lang, dm_title, msg, state=VisualState.ATTENTION)
+                    await embed_failure.send_to(scanner_user)
         except Exception:
             logger.exception("Erreur lors de la notification DM au scanner %s", scanner_id)
 
@@ -529,11 +537,8 @@ class Scan(BaseGameCog):
                 rtm=text.format_rtm(result.get('rtm_total')),
                 timestamp=result.get('timestamp', 0),
             )
-            kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-            if getattr(ctx, 'interaction', None):
-                await ctx.respond(**kwargs)
-            else:
-                await ctx.send(**kwargs)
+            embed = RootEmbed.action_launched(ctx, text.get(ctx, 'act_scan', fallback='Scan'), content)
+            await embed.send(ctx)
 
             # Log blockchain
             bot_logger = getattr(self.bot, 'discord_logger', None) or Logger(self.bot)

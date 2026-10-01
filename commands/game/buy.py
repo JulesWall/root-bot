@@ -96,7 +96,7 @@ def _get_purchasable_options(ctx, kind: str, player_data: dict) -> list[discord.
             bonus = f"+{pw} DEF"
 
         is_fr = text.get_locale(ctx) == 'fr'
-        desc_text = f"Coût : {price_str} │ {bonus} (FW {required_firewall}+)" if is_fr else f"Cost: {price_str} │ {bonus} (FW {required_firewall}+)"
+        desc_text = f"Coût : {price_str} │ {bonus} (Infrastructure {required_firewall} min)" if is_fr else f"Cost: {price_str} │ {bonus} (Infrastructure {required_firewall} min)"
         options.append(
             discord.SelectOption(
                 label=f"{kind_label} T{tier} — {price_str}",
@@ -137,7 +137,7 @@ def _get_shop_options(ctx) -> list[discord.SelectOption]:
 
             req_fw = max(int(settings.get('beta', {}).get('required_firewall', {}).get(kind_key if kind_key != 'defense' else 'bay_defense', 0)), tier - 1)
             is_fr = text.get_locale(ctx) == 'fr'
-            desc_text = f"Coût : {price_str} │ {bonus} (FW {req_fw}+)" if is_fr else f"Cost: {price_str} │ {bonus} (FW {req_fw}+)"
+            desc_text = f"Coût : {price_str} │ {bonus} (Infrastructure {req_fw} min)" if is_fr else f"Cost: {price_str} │ {bonus} (Infrastructure {req_fw} min)"
 
             options.append(
                 discord.SelectOption(
@@ -633,11 +633,7 @@ class Buy(BaseGameCog):
                     stat_current_formatted=stat_cur_fmt,
                     stat_new_formatted=stat_new_fmt,
                 )
-            kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-            if getattr(ctx, 'interaction', None):
-                await ctx.respond(**kwargs)
-            else:
-                await ctx.send(**kwargs)
+            await self._send_embed(ctx, 'buy', content)
 
             # Log blockchain lore-friendly pour l'achat de module d'attaque (RTM)
             if kind == 'attack' and rtm_val > 0:

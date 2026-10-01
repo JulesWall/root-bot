@@ -437,7 +437,9 @@ class Contract(BaseGameCog):
                     title=title,
                     reward_usd=reward_usd,
                 )
-                await user.send(msg)
+                dm_title = "Contrat terminé" if lang == "fr" else "Contract Completed"
+                embed = RootEmbed.notification(lang, dm_title, msg)
+                await embed.send_to(user)
         except discord.Forbidden:
             logger.debug("Impossible d'envoyer le MP de fin de contrat à %s (MP bloqués)", discord_id)
         except Exception:

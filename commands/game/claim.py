@@ -94,7 +94,9 @@ class Claim(BaseGameCog):
                     remaining_active=item.get('autoclaim_active_remaining', 0),
                     remaining_credits=item.get('autoclaim_credits_remaining', 0),
                 )
-                await user.send(content)
+                from utils.root_embed import RootEmbed
+                embed = RootEmbed.notification(lang, "Autoclaim", content)
+                await user.send(embed=embed)
                 logger.info("Notification MP d'autoclaim envoyée à %s", actor_id)
         except (discord.Forbidden, discord.HTTPException) as exc:
             logger.warning("Impossible d'envoyer le MP d'autoclaim à %s (MP bloqués/fermés) : %s", actor_id, exc)
@@ -269,12 +271,10 @@ class Claim(BaseGameCog):
         await self._reply(ctx, content)
 
     async def _reply(self, ctx, content: str):
-        """Envoie une réponse en texte brut (hors Embed) selon le contexte Slash ou préfixe."""
-        kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-        if getattr(ctx, 'interaction', None):
-            await ctx.respond(**kwargs)
-        else:
-            await ctx.send(**kwargs)
+        """Envoie une réponse sous forme d'Embed Root OS harmonisé."""
+        from utils.root_embed import RootEmbed
+        embed = RootEmbed(ctx, 'claim', content)
+        await embed.send(ctx)
 
     async def _log_blockchain(self, ctx, amount: Decimal):
         """Publie la récolte de minage dans le salon #blockchain (best-effort, sans casser la commande)."""

@@ -22,6 +22,7 @@ from lang.game_fr import descriptions as FR
 from utils import text
 from utils.confirmation import Confirmation
 from utils.logger import Logger
+from utils.root_embed import RootEmbed
 
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,9 @@ class Compile(BaseGameCog):
                     readonly=True,
                 ) or 'fr'
                 content = text.get_for_lang(lang, 'g_compile_delivered_dm', atk=atk)
-                await user.send(content)
+                dm_title = "Compilation terminée" if lang == 'fr' else "Compilation Complete"
+                embed = RootEmbed.notification(lang, dm_title, content)
+                await embed.send_to(user)
                 return
             except discord.Forbidden as exc:
                 # MP fermés / bot bloqué : inutile de réessayer.
@@ -244,11 +247,7 @@ class Compile(BaseGameCog):
             rtm=rtm,
             timestamp=result.get('timestamp', 0),
         )
-        kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-        if getattr(ctx, 'interaction', None):
-            await ctx.respond(**kwargs)
-        else:
-            await ctx.send(**kwargs)
+        await self._send_embed(ctx, 'compile', content)
         await self._log_blockchain(ctx, method_key, result.get('rtm_paid'))
 
     async def _log_blockchain(self, ctx, method_key: str, rtm_paid):

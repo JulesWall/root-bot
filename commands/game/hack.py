@@ -38,6 +38,7 @@ from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
+from utils.root_theme import VisualState
 
 
 logger = logging.getLogger(__name__)
@@ -158,14 +159,15 @@ class HackConfirmView(discord.ui.View):
             self.done = True
             self.stop()
             cancelled_text = text.get(self.ctx, 'g_cancelled')
+            embed = RootEmbed(self.ctx, 'hack', cancelled_text, state=VisualState.CANCELLED)
             if getattr(self.ctx, 'interaction', None):
                 try:
-                    await self.ctx.interaction.edit_original_response(content=cancelled_text, embed=None, view=None)
+                    await self.ctx.interaction.edit_original_response(embed=embed, view=None)
                 except Exception:
                     pass
             elif self.message:
                 try:
-                    await self.message.edit(content=cancelled_text, embed=None, view=None)
+                    await self.message.edit(embed=embed, view=None)
                 except Exception:
                     pass
 
@@ -307,7 +309,9 @@ class Hack(BaseGameCog):
                                 total_defense=total_defense,
                                 destroyed_defense=destroyed_defense,
                             )
-                await attacker_user.send(attacker_msg)
+                title_atk = "Rapport d'opération" if attacker_lang == 'fr' else "Operation Report"
+                embed_atk = RootEmbed.report(attacker_lang, title_atk, attacker_msg, is_loss=False)
+                await embed_atk.send_to(attacker_user)
 
                 # ── Debug : détail du calcul overrun (visible uniquement par l'attaquant) ──
                 try:
@@ -401,7 +405,9 @@ class Hack(BaseGameCog):
                                 destroyed_defense=destroyed_defense,
                                 new_secret_id=new_victim_secret,
                             )
-                await victim_user.send(victim_msg)
+                title_vic = "Rapport d'intrusion" if victim_lang == 'fr' else "Intrusion Report"
+                embed_vic = RootEmbed.report(victim_lang, title_vic, victim_msg, is_loss=intrusion_success)
+                await embed_vic.send_to(victim_user)
         except Exception:
             logger.warning("Impossible d'envoyer l'alerte PvP à la victime %s", victim_id)
 
@@ -511,11 +517,8 @@ class Hack(BaseGameCog):
                 zone_display=zone_display,
                 timestamp=result.get('timestamp'),
             )
-            kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-            if getattr(ctx, 'interaction', None):
-                await ctx.respond(**kwargs)
-            else:
-                await ctx.send(**kwargs)
+            embed = RootEmbed.action_launched(ctx, text.get(ctx, 'act_hack', fallback='Attaque'), content)
+            await embed.send(ctx)
 
             # Log public (points ATK engagés et attaquant publiés immédiatement au lancement)
             bot_logger = getattr(self.bot, 'discord_logger', None) or Logger(self.bot)

@@ -24,6 +24,7 @@ from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
 from utils.check import Check
+from utils.root_embed import RootEmbed
 
 
 class TopView(discord.ui.View):
@@ -205,17 +206,15 @@ class Top(BaseGameCog):
             lines.append(f"> {rank_badge} · <@{discord_id}> ➔ **{score_str}**")
 
         description = '\n'.join(lines) if lines else text.get(ctx, 'g_top_empty')
-        embed = discord.Embed(
-            title=title,
-            description=description,
-            color=colors.get(category, discord.Color.dark_teal()),
-            timestamp=discord.utils.utcnow(),
-        )
-
-        bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
-        bot_avatar = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
         footer_text = text.get(ctx, 'g_top_footer_user', rank=user_rank) if user_rank else text.get(ctx, 'g_top_footer')
-        embed.set_footer(text=footer_text, icon_url=bot_avatar)
+        embed = RootEmbed(
+            ctx,
+            'top',
+            content=description,
+            title=title,
+            footer=footer_text,
+            color=colors.get(category, discord.Color.dark_teal()),
+        )
         return embed
 
     async def _send(self, ctx, method, result):

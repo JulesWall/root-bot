@@ -83,10 +83,11 @@ class BaseGameCog(commands.Cog):
         - Les mentions sont désactivées (`AllowedMentions.none()`) par mesure de sécurité.
         """
         msg = text.get(ctx, 'g_error_' + error.key, **error.values)
+        embed = RootEmbed.error(ctx, msg)
         if getattr(ctx, 'interaction', None):
-            await ctx.respond(msg, allowed_mentions=discord.AllowedMentions.none())
+            await ctx.respond(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         else:
-            await ctx.send(msg, allowed_mentions=discord.AllowedMentions.none())
+            await ctx.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
     async def _send_embed(self, ctx, action, content, view=None):
         """Construit et envoie un Embed stylisé via le composant `RootEmbed`.

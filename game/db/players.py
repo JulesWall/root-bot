@@ -199,6 +199,8 @@ class Player:
         retaliations = ConsequenceDB.get_for_victim(tx, actor)
         if retaliations:
             row['retaliations'] = retaliations
+        outgoing_attacks = PvpDB.get_active_for_attacker(tx, actor)
+        row['outgoing_pvp_attacks'] = outgoing_attacks if outgoing_attacks else []
 
         stats = MathConfig.calculate_player_stats(row)
         if int(row.get('network_defense') or 0) != stats['network_defense']:

@@ -23,6 +23,7 @@ from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
+from utils.root_theme import VisualState
 from utils.ui_components import create_trade_buttons
 
 
@@ -191,7 +192,7 @@ class TradeView(discord.ui.View):
             self.stop()
 
             cancel_msg = text.get(self.ctx, 'g_trade_cancelled')
-            embed = RootEmbed(self.ctx, 'trade', cancel_msg)
+            embed = RootEmbed(self.ctx, 'trade', cancel_msg, state=VisualState.CANCELLED)
             await self._edit_message(embed=embed, view=None)
 
     async def on_timeout(self):
@@ -203,7 +204,7 @@ class TradeView(discord.ui.View):
             self.stop()
 
             timeout_msg = text.get(self.ctx, 'g_trade_timeout')
-            embed = RootEmbed(self.ctx, 'trade', timeout_msg)
+            embed = RootEmbed(self.ctx, 'trade', timeout_msg, state=VisualState.ATTENTION)
             await self._edit_message(embed=embed, view=None)
 
     async def _edit_message(self, embed: discord.Embed, view: discord.ui.View | None):
@@ -308,20 +309,24 @@ class TradeView(discord.ui.View):
             )
 
             try:
-                await self.initiator.send(init_dm_text)
+                dm_title = "Échange" if init_lang == "fr" else "Trade"
+                embed_init = RootEmbed.notification(init_lang, dm_title, init_dm_text)
+                await embed_init.send_to(self.initiator)
             except Exception:
                 pass
 
             try:
-                await self.target.send(target_dm_text)
+                dm_title = "Échange" if target_lang == "fr" else "Trade"
+                embed_target = RootEmbed.notification(target_lang, dm_title, target_dm_text)
+                await embed_target.send_to(self.target)
             except Exception:
                 pass
 
         except GameError as err:
             err_text = text.get(self.ctx, 'g_error_' + err.key, **err.values)
-            err_embed = RootEmbed(self.ctx, 'trade', err_text)
+            err_embed = RootEmbed.error(self.ctx, err_text, rubrique='trade')
             await self._edit_message(embed=err_embed, view=None)
         except Exception:
             err_text = text.get(self.ctx, 'command_error')
-            err_embed = RootEmbed(self.ctx, 'trade', err_text)
+            err_embed = RootEmbed.error(self.ctx, err_text, rubrique='trade')
             await self._edit_message(embed=err_embed, view=None)
