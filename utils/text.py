@@ -76,37 +76,48 @@ def get_locale(ctx) -> str:
     return "en"
 
 
+EXCLUDED_FROM_EMOJI_REPLACE = {
+    'g_buy_mining_cat',
+    'g_buy_attack_cat',
+    'g_buy_defense_cat',
+    'g_buy_title',
+}
+
+
 def get(ctx, key: str, **kwargs) -> str:
     """
     Résout et formate une chaîne de texte dans la langue de l'utilisateur.
-    
-    Args:
-        ctx: Contexte de la commande ou de l'interaction.
-        key: Identifiant de la chaîne de texte (ex: 'ping_response', 'g_buy_success').
-        **kwargs: Variables dynamiques injectées dans le template.
+    Remplace les emojis vanilla par les emojis personnalisés Root OS.
     """
     user_locale = get_locale(ctx)
-    # Sélection du dictionnaire localisé avec repli systématique sur l'anglais
     selected_lang = LANGUAGES.get(user_locale, LANGUAGES.get("en", {}))
     text_content = selected_lang.get(key, f"MISSING_KEY: {key}")
     try:
-        return text_content.format(**kwargs)
+        res = text_content.format(**kwargs)
     except Exception:
-        # En cas d'erreur de formatage, retourne le template brut sans lever d'exception fatale
-        return text_content
+        res = text_content
+    if key not in EXCLUDED_FROM_EMOJI_REPLACE and not key.startswith(('g_buy_', 'g_shop_', 'g_event_')):
+        from utils.root_emojis import replace_vanilla_emojis
+        res = replace_vanilla_emojis(res)
+    return res
 
 
 def get_for_lang(lang: str | None, key: str, **kwargs) -> str:
     """
-    Résout et formate une chaîne de texte directement selon le code de langue spécifié ('fr', 'en'...).
-    Idéal pour les notifications d'arrière-plan sans contexte Discord d'origine (ex: DM automatique).
+    Résout et formate une chaîne de texte directement selon le code de langue spécifié.
+    Remplace les emojis vanilla par les emojis personnalisés Root OS.
     """
     code = (lang or 'en')[:2].lower()
     selected_lang = LANGUAGES.get(code, LANGUAGES.get("en", {}))
     text_content = selected_lang.get(key, f"MISSING_KEY: {key}")
     try:
-        return text_content.format(**kwargs)
+        res = text_content.format(**kwargs)
     except Exception:
-        return text_content
+        res = text_content
+    if key not in EXCLUDED_FROM_EMOJI_REPLACE and not key.startswith(('g_buy_', 'g_shop_', 'g_event_')):
+        from utils.root_emojis import replace_vanilla_emojis
+        res = replace_vanilla_emojis(res)
+    return res
+
 
 

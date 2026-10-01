@@ -119,7 +119,7 @@ def build_overview_embed(
         f"{get_emoji('root_production', True)}**{'Production' if is_fr else 'Production'}** : `{text.format_rtm(hourly_rtm)} RTM/h`",
     ]
     if rep_val > 0:
-        farm_lines.append(f"⭐ **{'Bonus de réputation' if is_fr else 'Reputation bonus'}** : `+{rep_pct:.1f}%`")
+        farm_lines.append(f"{get_emoji('root_production', True)}**{'Bonus de réputation' if is_fr else 'Reputation bonus'}** : `+{rep_pct:.1f}%`")
     embed.add_field(
         name=f"{get_emoji('root_ferme', True)}{'Ferme' if is_fr else 'Farm'}",
         value='\n'.join(farm_lines),
@@ -134,7 +134,7 @@ def build_overview_embed(
 
     claim_lines = [
         f"{get_emoji('root_memoire', True)}**{'À récolter' if is_fr else 'To claim'}** : **{text.format_rtm(buffer_rtm)} RTM**",
-        f"🧠 **{'Mémoire' if is_fr else 'Memory'}** : {ram_gauge} **{mem_pct:.1f}%** (`{used_ram} / {total_ram}`)",
+        f"{get_emoji('root_memoire', True)}**{'Mémoire' if is_fr else 'Memory'}** : {ram_gauge} **{mem_pct:.1f}%** (`{used_ram} / {total_ram}`)",
     ]
     if total_miners > 0 and not is_mem_full and fill_seconds > 0:
         claim_lines.append(f"{get_emoji('root_temps', True)}**{'Plein dans' if is_fr else 'Full in'}** : `{format_duration(fill_seconds)}`")
@@ -149,7 +149,7 @@ def build_overview_embed(
     rtm_wallet = Decimal(str(result.get('rootium') or 0))
     embed.add_field(
         name=f"{get_emoji('root_bilan', True)}{'Ressources' if is_fr else 'Resources'}",
-        value=f"💵 **Solde USD** : `{usd_str}`\n🪙 **Portefeuille RTM** : `{text.format_rtm(rtm_wallet)} RTM`",
+        value=f"{get_emoji('root_bilan', True)}**Solde USD** : `{usd_str}`\n{get_emoji('root_memoire', True)}**Portefeuille RTM** : `{text.format_rtm(rtm_wallet)} RTM`",
         inline=False,
     )
 
@@ -165,10 +165,10 @@ def build_overview_embed(
     detect_pct = int(round(base_detect * 100))
 
     protect_lines = [
-        f"🛡️ **{'Défense' if is_fr else 'Defense'}** : `{ndef} DEF` *({infra_name})* + `{bdef} DEF` *({'Modules' if is_fr else 'Modules'})* = **{tdef} DEF**",
-        f"🔓 **{'Accès modules' if is_fr else 'Module access'}** : `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}`",
-        f"🎁 **{'Multiplicateurs' if is_fr else 'Multipliers'}** : `x{hourly_mult}` {'horaire/contrats' if is_fr else 'hourly/contracts'} · `x{event_mult}` {'events' if is_fr else 'events'}",
-        f"📡 **{'Détection des scans' if is_fr else 'Scan detection'}** : `{detect_pct}%`",
+        f"{get_emoji('root_firewall', True)}**{'Défense' if is_fr else 'Defense'}** : `{ndef} DEF` *({infra_name})* + `{bdef} DEF` *({'Modules' if is_fr else 'Modules'})* = **{tdef} DEF**",
+        f"{get_emoji('root_materiel', True)}**{'Accès modules' if is_fr else 'Module access'}** : `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}`",
+        f"{get_emoji('root_connexions', True)}**{'Multiplicateurs' if is_fr else 'Multipliers'}** : `x{hourly_mult}` {'horaire/contrats' if is_fr else 'hourly/contracts'} · `x{event_mult}` {'events' if is_fr else 'events'}",
+        f"{get_emoji('root_scan', True)}**{'Détection des scans' if is_fr else 'Scan detection'}** : `{detect_pct}%`",
     ]
     embed.add_field(
         name=f"{get_emoji('root_connexions', True)}{'Infrastructure et protection' if is_fr else 'Infrastructure and protection'}",
@@ -182,7 +182,7 @@ def build_overview_embed(
     next_rot_str = f"<t:{secret_next_ts}:R>" if secret_next_ts else ("Inconnue" if is_fr else "Unknown")
     embed.add_field(
         name=f"{get_emoji('root_terminal', True)}{'Identifiant réseau' if is_fr else 'Network identifier'}",
-        value=f"🔑 **Secret ID** : ||`{secret_id}`||\n⏱️ **{'Prochaine rotation' if is_fr else 'Next rotation'}** : {next_rot_str}",
+        value=f"{get_emoji('root_terminal', True)}**Secret ID** : ||`{secret_id}`||\n{get_emoji('root_temps', True)}**{'Prochaine rotation' if is_fr else 'Next rotation'}** : {next_rot_str}",
         inline=False,
     )
 
@@ -192,16 +192,16 @@ def build_overview_embed(
         target_lvl = sanitize_level(pending_up.get('target_level', level + 1))
         target_name = get_infrastructure_name(target_lvl, locale=locale)
         target_ts = _format_time_relative(pending_up.get('resolves_at'))
-        prog_text = f"🔄 **{'Amélioration en cours' if is_fr else 'Upgrade in progress'}** : {target_name} *(Niveau {target_lvl})*\n⏱️ **{'Prêt' if is_fr else 'Ready'}** : {target_ts}"
+        prog_text = f"{get_emoji('root_connexions', True)}**{'Amélioration en cours' if is_fr else 'Upgrade in progress'}** : {target_name} *(Niveau {target_lvl})*\n{get_emoji('root_temps', True)}**{'Prêt' if is_fr else 'Ready'}** : {target_ts}"
     elif level < 5:
         next_lvl = level + 1
         next_name = get_infrastructure_name(next_lvl, locale=locale)
-        prog_text = f"⏩ **{'Prochain niveau' if is_fr else 'Next level'}** : {next_name} *(Niveau {next_lvl}/5)*\n*Ouvre le devis via le bouton Améliorer ci-dessous.*" if is_fr else f"⏩ **Next level** : {next_name} *(Level {next_lvl}/5)*\n*Open quote via the Upgrade button below.*"
+        prog_text = f"{get_emoji('root_connexions', True)}**{'Prochain niveau' if is_fr else 'Next level'}** : {next_name} *(Niveau {next_lvl}/5)*\n*Ouvre le devis via le bouton Améliorer ci-dessous.*" if is_fr else f"{get_emoji('root_connexions', True)}**Next level** : {next_name} *(Level {next_lvl}/5)*\n*Open quote via the Upgrade button below.*"
     else:
-        prog_text = "✨ **Infrastructure maximale atteinte (Niveau 5/5)**" if is_fr else "✨ **Maximum infrastructure level reached (Level 5/5)**"
+        prog_text = f"{get_emoji('root_connexions', True)}**Infrastructure maximale atteinte (Niveau 5/5)**" if is_fr else f"{get_emoji('root_connexions', True)}**Maximum infrastructure level reached (Level 5/5)**"
 
     embed.add_field(
-        name=f"🚀 {'Progression' if is_fr else 'Progression'}",
+        name=f"{get_emoji('root_connexions', True)}{'Progression' if is_fr else 'Progression'}",
         value=prog_text,
         inline=False,
     )
@@ -212,23 +212,23 @@ def build_overview_embed(
     if pending_compile:
         comp_atk = pending_compile.get('attack_points', 0)
         comp_rel = _format_time_relative(pending_compile.get('resolves_at'))
-        active_tasks.append(f"🔨 **{'Compilation' if is_fr else 'Compilation'}** : `{comp_atk} ATK` · {comp_rel}")
+        active_tasks.append(f"{get_emoji('root_materiel', True)}**{'Compilation' if is_fr else 'Compilation'}** : `{comp_atk} ATK` · {comp_rel}")
 
     pending_scan = result.get('pending_scan')
     if pending_scan:
         scan_rel = _format_time_relative(pending_scan.get('resolves_at') or pending_scan.get('expires_at'))
         tgt_id = pending_scan.get('target_id')
         tgt_str = f" contre <@{tgt_id}>" if tgt_id else ""
-        active_tasks.append(f"📡 **{'Scan PvP' if is_fr else 'PvP Scan'}**{tgt_str} : {scan_rel}")
+        active_tasks.append(f"{get_emoji('root_scan', True)}**{'Scan PvP' if is_fr else 'PvP Scan'}**{tgt_str} : {scan_rel}")
 
     outgoing_attacks = result.get('outgoing_pvp_attacks') or []
     if outgoing_attacks:
-        active_tasks.append(f"⚔️ **{'Attaques lancées' if is_fr else 'Outgoing attacks'}** : `{len(outgoing_attacks)}` {'en cours' if is_fr else 'active'}")
+        active_tasks.append(f"{get_emoji('root_operations', True)}**{'Attaques lancées' if is_fr else 'Outgoing attacks'}** : `{len(outgoing_attacks)}` {'en cours' if is_fr else 'active'}")
 
     retaliations = result.get('retaliations') or []
     if retaliations:
         retal_tgt = retaliations[0].get('attacker_id')
-        active_tasks.append(f"⚠️ **{'Riposte autorisée' if is_fr else 'Retaliation ready'}** : <@{retal_tgt}>")
+        active_tasks.append(f"{get_emoji('root_alerte', True)}**{'Riposte autorisée' if is_fr else 'Retaliation ready'}** : <@{retal_tgt}>")
 
     if active_tasks:
         embed.add_field(
@@ -634,3 +634,232 @@ def build_operations_embed(
 
     file = get_infrastructure_file(level)
     return embed, file, total_pages
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTAINERS DISCORD V2 (COMPONENTS V2) — RENDU IDENTIQUE AU MOCKUP
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_overview_container(
+    result: dict,
+    locale: str = 'fr',
+    display_name: str = 'Opérateur',
+    file_attachment_name: str | None = None,
+) -> tuple[discord.ui.Container, discord.File | None]:
+    """Construit le Container Discord V2 pour la vue Accueil correspondant au mockup utilisateur."""
+    is_fr = (locale == 'fr')
+    level = sanitize_level(result.get('firewall_level', 0))
+    infra_name = get_infrastructure_name(level, locale=locale)
+    file = get_infrastructure_file(level)
+    img_name = file_attachment_name or (file.filename if file else f"niveau-{level}.png")
+
+    stats = result.get('stats') or MathConfig.calculate_player_stats(result)
+    mining_state = result.get('mining_state') or {}
+    buffer_rtm = Decimal(str(mining_state.get('buffer', 0)))
+    mem_pct = float(mining_state.get('memory_pct', 0))
+    is_mem_full = bool(mining_state.get('is_full') or mem_pct >= 100.0)
+
+    color = COLOR_AMBER if is_mem_full else COLOR_TURQUOISE
+    c = discord.ui.Container(colour=color)
+
+    # 1. Illustration panoramique au sommet
+    if img_name:
+        c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
+
+    # 2. En-tête : >_ ROOT OS / USERNAME
+    clean_name = display_name.upper()
+    term_icon = get_emoji('root_terminal', True)
+    subtitle = f"{infra_name} · {'Réseau personnel · Session active' if is_fr else 'Personal network · Active session'}"
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{subtitle}")
+    c.add_separator(divider=True)
+
+    # 3. Lignes de statistiques avec emojis stylisés
+    total_miners = sum(stats.get('bay_details', {}).get(t, {}).get('mining_count', 0) for t in range(1, 6))
+    hashrate_str = stats.get('total_hashrate_formatted') or MathConfig.format_hashrate(stats.get('total_hashrate_hs', 0))
+    tot_bits = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(stats.get('total_bits_per_s', 0))
+    ndef = int(stats.get('network_defense', 0))
+    bdef = int(stats.get('total_bay_defense', 0))
+    rate_per_min = Decimal(str(mining_state.get('rate_per_min', 0)))
+    hourly_rtm = rate_per_min * Decimal('60')
+    ram_gauge = _build_ram_gauge(mem_pct)
+    used_ram = mining_state.get('memory_used_formatted', '0 o')
+    total_ram = mining_state.get('total_ram_formatted', '0 o')
+    usd_str = text.format_usd(result.get('dollars') or 0)
+    rtm_wallet = Decimal(str(result.get('rootium') or 0))
+    rep_val = int(result.get('reputation') or 0)
+
+    stats_lines = [
+        f"{get_emoji('root_materiel', True)}**{infra_name} · {'Niveau' if is_fr else 'Level'} {level}**",
+        f"{get_emoji('root_ferme', True)}**{'Ferme de minage' if is_fr else 'Mining farm'}** · {total_miners} {'mineurs' if is_fr else 'miners'} ({hashrate_str})",
+        f"{get_emoji('root_puissance', True)}**{'Puissance de calcul' if is_fr else 'Computing power'}** · {tot_bits}",
+        f"{get_emoji('root_firewall', True)}**{'Défense' if is_fr else 'Defense'}** · {bdef} DEF ({'Baies' if is_fr else 'Bays'}) · {ndef} DEF ({'Réseau' if is_fr else 'Network'})",
+        f"{get_emoji('root_production', True)}**{'Production' if is_fr else 'Production'}** · {text.format_rtm(hourly_rtm)} RTM/h",
+        f"{get_emoji('root_memoire', True)}**{'Mémoire vive' if is_fr else 'RAM memory'}** · {ram_gauge} {mem_pct:.1f}% ({used_ram} / {total_ram})",
+        f"{get_emoji('root_recolter', True)}**{'À récolter' if is_fr else 'To claim'}** · {text.format_rtm(buffer_rtm)} RTM",
+        f"{get_emoji('root_bilan', True)}**{'Portefeuille' if is_fr else 'Wallet'}** · {usd_str} · {text.format_rtm(rtm_wallet)} RTM · {rep_val} {'pts réputation' if is_fr else 'reputation pts'}",
+    ]
+    c.add_text('\n'.join(stats_lines))
+    c.add_separator(divider=True)
+
+    # 4. Statut opérationnel
+    status_text = f"{get_emoji('root_firewall', True)}**{'Système opérationnel' if is_fr else 'Operational system'}** · {'Surveillance active' if is_fr else 'Active monitoring'}"
+    c.add_text(status_text)
+
+    return c, file
+
+
+def build_hardware_container(
+    result: dict,
+    locale: str = 'fr',
+    display_name: str = 'Opérateur',
+    file_attachment_name: str | None = None,
+) -> tuple[discord.ui.Container, discord.File | None]:
+    """Construit le Container Discord V2 pour la vue Matériel."""
+    is_fr = (locale == 'fr')
+    level = sanitize_level(result.get('firewall_level', 0))
+    file = get_infrastructure_file(level)
+    img_name = file_attachment_name or (file.filename if file else f"niveau-{level}.png")
+
+    stats = result.get('stats') or MathConfig.calculate_player_stats(result)
+    bay_details = stats.get('bay_details', {})
+    max_tier_unlocked = max(1, min(5, level + 1))
+
+    c = discord.ui.Container(colour=COLOR_TURQUOISE)
+
+    if img_name:
+        c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
+
+    clean_name = display_name.upper()
+    term_icon = get_emoji('root_terminal', True)
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Matériel & Équipements · Inventaire système' if is_fr else 'Hardware & Equipment · System inventory'}")
+    c.add_separator(divider=True)
+
+    lines = []
+    # Minage
+    lines.append(f"{get_emoji('root_ferme', True)}**{'Modules de Minage' if is_fr else 'Mining Modules'}**")
+    mining_any = False
+    for t in range(1, 6):
+        b = bay_details.get(t, {})
+        cnt = b.get('mining_count', 0)
+        if cnt > 0:
+            mining_any = True
+            hs = MathConfig.format_hashrate(b.get('mining_hashrate', 0))
+            ram = b.get('mining_ram_formatted', '0 o')
+            lines.append(f"• **T{t}** · `×{cnt}` · `{hs}` · `+{ram}`")
+    if not mining_any:
+        lines.append(f"*{'Aucun module installé' if is_fr else 'No modules installed'}*")
+
+    # Attaque
+    lines.append(f"\n{get_emoji('root_operations', True)}**{'Modules d’Attaque' if is_fr else 'Attack Modules'}**")
+    atk_any = False
+    for t in range(1, 6):
+        b = bay_details.get(t, {})
+        cnt = b.get('attack_count', 0)
+        if cnt > 0:
+            atk_any = True
+            pow_str = MathConfig.format_bits_per_s(b.get('attack_bits_per_s', 0))
+            lines.append(f"• **T{t}** · `×{cnt}` · `{pow_str}`")
+    if not atk_any:
+        lines.append(f"*{'Aucun module installé' if is_fr else 'No modules installed'}*")
+
+    # Défense
+    lines.append(f"\n{get_emoji('root_firewall', True)}**{'Modules de Défense' if is_fr else 'Defense Modules'}**")
+    def_any = False
+    for t in range(1, 6):
+        b = bay_details.get(t, {})
+        cnt = b.get('bay_defense_count', 0)
+        if cnt > 0:
+            def_any = True
+            lines.append(f"• **T{t}** · `×{cnt}` · `{b.get('bay_defense_power', 0)} DEF`")
+    if not def_any:
+        lines.append(f"*{'Aucun module installé' if is_fr else 'No modules installed'}*")
+
+    lines.append(f"\n{get_emoji('root_materiel', True)}**{'Accès boutique' if is_fr else 'Shop access'}** · `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}` *(Infrastructure {level})*")
+    c.add_text('\n'.join(lines))
+    c.add_separator(divider=True)
+    c.add_text(f"{get_emoji('root_materiel', True)}**{'Boutique accessible via' if is_fr else 'Shop accessible via'}** `/buy`")
+
+    return c, file
+
+
+def build_operations_container(
+    result: dict,
+    locale: str = 'fr',
+    display_name: str = 'Opérateur',
+    file_attachment_name: str | None = None,
+) -> tuple[discord.ui.Container, discord.File | None]:
+    """Construit le Container Discord V2 pour la vue Opérations."""
+    is_fr = (locale == 'fr')
+    level = sanitize_level(result.get('firewall_level', 0))
+    file = get_infrastructure_file(level)
+    img_name = file_attachment_name or (file.filename if file else f"niveau-{level}.png")
+
+    stats = result.get('stats') or MathConfig.calculate_player_stats(result)
+    atk_stock = int(result.get('attack_points', 0) or 0)
+    tot_bits = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(stats.get('total_bits_per_s', 0))
+    ndef = int(stats.get('network_defense', 0))
+    bdef = int(stats.get('total_bay_defense', 0))
+    tdef = int(stats.get('total_defense', ndef + bdef))
+
+    c = discord.ui.Container(colour=COLOR_TURQUOISE)
+
+    if img_name:
+        c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
+
+    clean_name = display_name.upper()
+    term_icon = get_emoji('root_terminal', True)
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Opérations & Sécurité · Surveillance active' if is_fr else 'Operations & Security · Active monitoring'}")
+    c.add_separator(divider=True)
+
+    lines = [
+        f"{get_emoji('root_operations', True)}**{'Capacité offensive' if is_fr else 'Offensive capacity'}** · `{atk_stock} ATK` · `{tot_bits}`",
+        f"{get_emoji('root_firewall', True)}**{'Défense globale' if is_fr else 'Total defense'}** · `{tdef} DEF` *({ndef} DEF infra + {bdef} DEF modules)*",
+    ]
+
+    # Préparations
+    prep_lines = []
+    pending_compile = result.get('pending_hack')
+    if pending_compile:
+        comp_method = pending_compile.get('mode', 'standard')
+        comp_atk = pending_compile.get('attack_points', 0)
+        comp_ts = _format_time_relative(pending_compile.get('resolves_at'))
+        prep_lines.append(f"• {get_emoji('root_materiel', True)}**Compilation** (`{comp_method}`) : `+{comp_atk} ATK` · {comp_ts}")
+
+    pending_scan = result.get('pending_scan')
+    if pending_scan:
+        scan_ts = _format_time_relative(pending_scan.get('resolves_at') or pending_scan.get('expires_at'))
+        tgt_id = pending_scan.get('target_id')
+        tgt_str = f" · Cible <@{tgt_id}>" if tgt_id else ""
+        prep_lines.append(f"• {get_emoji('root_scan', True)}**Scan PvP**{tgt_str} : {scan_ts}")
+
+    if prep_lines:
+        lines.append(f"\n{get_emoji('root_temps', True)}**{'Préparations en cours' if is_fr else 'Active preparations'}** :\n" + '\n'.join(prep_lines))
+
+    # Attaques lancées
+    outgoing_attacks = result.get('outgoing_pvp_attacks') or []
+    if outgoing_attacks:
+        atk_lines = []
+        for atk in outgoing_attacks[:5]:
+            op_id = atk.get('id', '?')
+            pts = atk.get('attack_points', 0)
+            res_rel = _format_time_relative(atk.get('resolves_at'))
+            atk_lines.append(f"• **Op #{op_id}** · `{pts} ATK` · {res_rel}")
+        lines.append(f"\n{get_emoji('root_operations', True)}**{'Attaques lancées' if is_fr else 'Outgoing attacks'}** :\n" + '\n'.join(atk_lines))
+
+    # Représailles
+    retaliations = result.get('retaliations') or []
+    if retaliations:
+        retal_lines = []
+        for ret in retaliations[:5]:
+            tgt = ret.get('attacker_id')
+            exp_val = ret.get('expires_at') or ret.get('delete_at')
+            expires_rel = _format_time_relative(exp_val)
+            retal_lines.append(f"• Riposte autorisée contre <@{tgt}> · Expire {expires_rel}")
+        lines.append(f"\n{get_emoji('root_alerte', True)}**{'Droits de représailles' if is_fr else 'Retaliation rights'}** :\n" + '\n'.join(retal_lines))
+
+    c.add_text('\n'.join(lines))
+    c.add_separator(divider=True)
+    c.add_text(f"{get_emoji('root_firewall', True)}**{'Système opérationnel' if is_fr else 'Operational system'}** · {'Surveillance active' if is_fr else 'Active monitoring'}")
+
+    return c, file
+

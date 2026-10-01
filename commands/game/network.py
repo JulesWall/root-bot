@@ -39,8 +39,11 @@ from utils.language_manager import set_user_language
 from utils.logger import Logger
 from utils.network_display import (
     build_farm_embed,
+    build_hardware_container,
     build_hardware_embed,
+    build_operations_container,
     build_operations_embed,
+    build_overview_container,
     build_overview_embed,
 )
 from utils.root_emojis import get_button_emoji
@@ -154,8 +157,18 @@ class WelcomeLanguageView(discord.ui.View):
                 pass
 
 
-class NetworkActionView(discord.ui.View):
-    """Poste de commande interactif : navigation en 4 vues, récolte, actualisation et actions contextuelles."""
+class NetworkActionView(discord.ui.DesignerView):
+    """Poste de commande interactif Root OS basé sur Discord Components V2.
+    
+    Structure visuelle (identique au mockup) :
+    - Image panoramique au sommet (MediaGallery)
+    - Titre >_ ROOT OS / USERNAME et séparateur
+    - Statistiques avec emojis stylisés et barre latérale turquoise/ambrée
+    - Rangée de boutons intégrée dans le conteneur :
+      * [ 📥 Récolter ({montant} RTM) ] (Vert si buffer > 0, Gris désactivé si 0)
+      * [ ⚙️ Matériel ] (Gris / Secondaire, bascule vers la vue matériel)
+      * [ 🔄 Actualiser ] (Bleu / Primaire, actualise les données)
+    """
 
     def __init__(self, cog, ctx, result):
         timeout = 180
@@ -172,202 +185,141 @@ class NetworkActionView(discord.ui.View):
         self.avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
 
         self.last_result = result
-        self.current_view = 'overview'  # 'overview', 'farm', 'hardware', 'operations'
-        self.current_page = 1
-        self.total_pages = 1
-        self.current_level = sanitize_level(result.get('firewall_level', 0))
+        self.current_view = 'overview'  # 'overview', 'hardware', 'operations'
+        self.current_file = None
         self.current_embed = None
+        self._top_items = []
+        self._container = None
         self.lock = asyncio.Lock()
         self.message = None
 
         self._rebuild_components()
 
+    def add_item(self, item):
+        self._top_items.append(item)
+        return super().add_item(item)
+
+    def clear_items(self):
+        self._top_items.clear()
+        super().clear_items()
+
+    def to_components(self):
+        return [item.to_component_dict() for item in self._top_items]
+
+    def is_components_v2(self) -> bool:
+        return True
+
+    def walk_children(self):
+        for item in self._top_items:
+            if hasattr(item, 'walk_items'):
+                yield from item.walk_items()
+            else:
+                yield item
+
+    @property
+    def children(self):
+        return list(self.walk_children())
+
+    @children.setter
+    def children(self, val):
+        pass
+
     def _rebuild_components(self):
-        """Reconstruit dynamiquement le menu de navigation et les boutons selon la vue active."""
+        """Reconstruit le conteneur Discord V2 et ses boutons intégrés selon la vue active."""
         self.clear_items()
         is_fr = (text.get_locale(self.ctx) == 'fr')
 
-        # ── Row 0 : Sélecteur des 4 vues ─────────────────────────────────────
-        view_select = discord.ui.Select(
-            placeholder="Naviguer dans le poste de commande" if is_fr else "Navigate command center",
-            min_values=1,
-            max_values=1,
-            row=0,
-            options=[
-                discord.SelectOption(
-                    label="Accueil" if is_fr else "Overview",
-                    value="overview",
-                    description="Tableau de bord et infrastructure" if is_fr else "Dashboard and infrastructure",
-                    emoji=get_button_emoji("root_terminal") or "🖥️",
-                    default=(self.current_view == 'overview'),
-                ),
-                discord.SelectOption(
-                    label="Ferme" if is_fr else "Farm",
-                    value="farm",
-                    description="Minage, mémoire et automatisation" if is_fr else "Mining, memory and automation",
-                    emoji=get_button_emoji("root_ferme") or "⛏️",
-                    default=(self.current_view == 'farm'),
-                ),
-                discord.SelectOption(
-                    label="Matériel" if is_fr else "Hardware",
-                    value="hardware",
-                    description="Équipements et accès boutique" if is_fr else "Hardware and shop access",
-                    emoji=get_button_emoji("root_materiel") or "⚙️",
-                    default=(self.current_view == 'hardware'),
-                ),
-                discord.SelectOption(
-                    label="Opérations" if is_fr else "Operations",
-                    value="operations",
-                    description="ATK, PvP, préparatifs et attaques" if is_fr else "ATK, PvP, preparations and attacks",
-                    emoji=get_button_emoji("root_operations") or "⚔️",
-                    default=(self.current_view == 'operations'),
-                ),
-            ],
-        )
-        view_select.callback = self._on_select_view
-        self.add_item(view_select)
-
-        # ── Row 1 : Actions rapides permanentes (Récolter & Actualiser) ───────
         mining_state = self.last_result.get('mining_state') or {}
         buffer_val = Decimal(str(mining_state.get('buffer', 0)))
         has_buffer = (buffer_val > 0)
 
+        # Label dynamique du bouton Récolter
         if has_buffer:
-            from utils.text import format_rtm
             base_label = "Récolter" if is_fr else "Claim"
-            claim_label = f"{base_label} ({format_rtm(buffer_val)} RTM)"
+            claim_label = f"{base_label} ({text.format_rtm(buffer_val)} RTM)"
         else:
             claim_label = "Récolter" if is_fr else "Claim"
 
         claim_btn = discord.ui.Button(
             label=claim_label,
-            emoji=get_button_emoji("root_recolter") or "🪙",
+            emoji=get_button_emoji("root_recolter") or "📥",
             style=discord.ButtonStyle.success if has_buffer else discord.ButtonStyle.secondary,
             disabled=not has_buffer,
-            row=1,
         )
         claim_btn.callback = self._on_claim
-        self.add_item(claim_btn)
 
         refresh_btn = discord.ui.Button(
             label="Actualiser" if is_fr else "Refresh",
-            emoji="🔄",
+            emoji=get_button_emoji("root_temps") or "🔄",
             style=discord.ButtonStyle.primary,
-            row=1,
         )
         refresh_btn.callback = self._on_refresh
-        self.add_item(refresh_btn)
 
-        # ── Row 2 : Actions contextuelles selon la vue ────────────────────────
-        if self.current_view == 'overview':
-            pending_up = self.last_result.get('pending_upgrade')
-            can_upgrade = (pending_up is None and self.current_level < 5)
-            upgrade_btn = discord.ui.Button(
-                label="Améliorer" if is_fr else "Upgrade",
-                emoji=get_button_emoji("root_connexions") or "🚀",
-                style=discord.ButtonStyle.primary if can_upgrade else discord.ButtonStyle.secondary,
-                disabled=not can_upgrade,
-                row=2,
-            )
-            upgrade_btn.callback = self._on_upgrade_click
-            self.add_item(upgrade_btn)
-
-        elif self.current_view == 'hardware':
-            shop_btn = discord.ui.Button(
-                label="Ouvrir la boutique" if is_fr else "Open Shop",
-                emoji="🛒",
-                style=discord.ButtonStyle.secondary,
-                row=2,
-            )
-            shop_btn.callback = self._on_shop_click
-            self.add_item(shop_btn)
-
-        elif self.current_view == 'operations':
-            compile_btn = discord.ui.Button(
-                label="Compiler" if is_fr else "Compile",
-                emoji="🔨",
-                style=discord.ButtonStyle.secondary,
-                row=2,
-            )
-            compile_btn.callback = self._on_compile_click
-            self.add_item(compile_btn)
-
-            scan_btn = discord.ui.Button(
-                label="Scanner" if is_fr else "Scan",
-                emoji=get_button_emoji("root_scan") or "📡",
-                style=discord.ButtonStyle.secondary,
-                row=2,
-            )
-            scan_btn.callback = self._on_scan_click
-            self.add_item(scan_btn)
-
-            hack_btn = discord.ui.Button(
-                label="Attaquer" if is_fr else "Attack",
-                emoji="⚔️",
-                style=discord.ButtonStyle.danger,
-                row=2,
-            )
-            hack_btn.callback = self._on_hack_click
-            self.add_item(hack_btn)
-
-            # Pagination pour Opérations si nécessaire
-            if self.total_pages > 1:
-                prev_btn = discord.ui.Button(
-                    label="◀",
-                    style=discord.ButtonStyle.secondary,
-                    disabled=(self.current_page <= 1),
-                    row=2,
-                )
-                prev_btn.callback = self._on_prev_page
-                self.add_item(prev_btn)
-
-                next_btn = discord.ui.Button(
-                    label="▶",
-                    style=discord.ButtonStyle.secondary,
-                    disabled=(self.current_page >= self.total_pages),
-                    row=2,
-                )
-                next_btn.callback = self._on_next_page
-                self.add_item(next_btn)
-
-    def _render_current_view(self) -> tuple[discord.Embed, discord.File | None]:
-        """Construit l'embed et l'éventuel fichier d'illustration correspondant à la vue active."""
         locale = text.get_locale(self.ctx)
-        lvl = sanitize_level(self.last_result.get('firewall_level', 0))
 
-        if self.current_view == 'farm':
-            embed, file = build_farm_embed(
+        if self.current_view == 'hardware':
+            container, file = build_hardware_container(
                 self.last_result,
                 locale=locale,
                 display_name=self.display_name,
-                avatar_url=self.avatar_url,
             )
-        elif self.current_view == 'hardware':
-            embed, file = build_hardware_embed(
-                self.last_result,
-                locale=locale,
-                display_name=self.display_name,
-                avatar_url=self.avatar_url,
+            back_btn = discord.ui.Button(
+                label="Accueil" if is_fr else "Home",
+                emoji=get_button_emoji("root_retour") or "↩️",
+                style=discord.ButtonStyle.secondary,
             )
+            back_btn.callback = self._on_switch_overview
+
+            ops_btn = discord.ui.Button(
+                label="Opérations" if is_fr else "Operations",
+                emoji=get_button_emoji("root_operations") or "⚔️",
+                style=discord.ButtonStyle.secondary,
+            )
+            ops_btn.callback = self._on_switch_operations
+
+            container.add_row(back_btn, ops_btn, refresh_btn)
+
         elif self.current_view == 'operations':
-            embed, file, tot_pages = build_operations_embed(
+            container, file = build_operations_container(
                 self.last_result,
                 locale=locale,
                 display_name=self.display_name,
-                page=self.current_page,
-                avatar_url=self.avatar_url,
             )
-            self.total_pages = tot_pages
-        else:
-            embed, file = build_overview_embed(
-                self.last_result,
-                locale=locale,
-                display_name=self.display_name,
-                avatar_url=self.avatar_url,
+            back_btn = discord.ui.Button(
+                label="Accueil" if is_fr else "Home",
+                emoji=get_button_emoji("root_retour") or "↩️",
+                style=discord.ButtonStyle.secondary,
             )
+            back_btn.callback = self._on_switch_overview
 
-        self.current_embed = embed
-        return embed, file
+            mat_btn = discord.ui.Button(
+                label="Matériel" if is_fr else "Hardware",
+                emoji=get_button_emoji("root_materiel") or "⚙️",
+                style=discord.ButtonStyle.secondary,
+            )
+            mat_btn.callback = self._on_switch_hardware
+
+            container.add_row(back_btn, mat_btn, refresh_btn)
+
+        else:
+            # Vue standard : Accueil (Overview)
+            container, file = build_overview_container(
+                self.last_result,
+                locale=locale,
+                display_name=self.display_name,
+            )
+            mat_btn = discord.ui.Button(
+                label="Matériel" if is_fr else "Hardware",
+                emoji=get_button_emoji("root_materiel") or "⚙️",
+                style=discord.ButtonStyle.secondary,
+            )
+            mat_btn.callback = self._on_switch_hardware
+
+            container.add_row(claim_btn, mat_btn, refresh_btn)
+
+        self._container = container
+        self.current_file = file
+        self.add_item(container)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -375,28 +327,38 @@ class NetworkActionView(discord.ui.View):
             return False
         return True
 
-    async def _on_select_view(self, interaction: discord.Interaction):
-        """Bascule entre les 4 vues dans le même message."""
+    async def _on_switch_overview(self, interaction: discord.Interaction):
+        """Bascule vers la vue Accueil."""
         async with self.lock:
             await interaction.response.defer()
-            selected = interaction.data['values'][0]
-            self.current_view = selected
-            if selected == 'operations':
-                self.current_page = 1
-
-            embed, file = self._render_current_view()
+            self.current_view = 'overview'
             self._rebuild_components()
-
-            new_lvl = sanitize_level(self.last_result.get('firewall_level', 0))
-            edit_kwargs: dict[str, Any] = {'embed': embed, 'view': self}
-            if new_lvl != self.current_level and file:
-                edit_kwargs['file'] = file
-                self.current_level = new_lvl
-
             try:
-                await interaction.message.edit(**edit_kwargs)
+                await interaction.message.edit(view=self)
             except Exception:
-                logger.exception("Erreur lors du changement de vue network")
+                logger.exception("Erreur lors du retour à l'accueil network")
+
+    async def _on_switch_hardware(self, interaction: discord.Interaction):
+        """Bascule vers la vue Matériel."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'hardware'
+            self._rebuild_components()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du passage à la vue matériel network")
+
+    async def _on_switch_operations(self, interaction: discord.Interaction):
+        """Bascule vers la vue Opérations."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'operations'
+            self._rebuild_components()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du passage à la vue opérations network")
 
     async def _on_claim(self, interaction: discord.Interaction):
         """Exécute la récolte du Rootium en mémoire et actualise le panneau."""
@@ -433,17 +395,9 @@ class NetworkActionView(discord.ui.View):
                 interaction.guild.id if interaction.guild else None,
                 'network',
             )
-            embed, file = self._render_current_view()
             self._rebuild_components()
-
-            new_lvl = sanitize_level(self.last_result.get('firewall_level', 0))
-            edit_kwargs: dict[str, Any] = {'embed': embed, 'view': self}
-            if new_lvl != self.current_level and file:
-                edit_kwargs['file'] = file
-                self.current_level = new_lvl
-
             try:
-                await interaction.message.edit(**edit_kwargs)
+                await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors de l'actualisation après claim")
 
@@ -456,135 +410,19 @@ class NetworkActionView(discord.ui.View):
                 interaction.guild.id if interaction.guild else None,
                 'network',
             )
-            embed, file = self._render_current_view()
             self._rebuild_components()
-
-            new_lvl = sanitize_level(self.last_result.get('firewall_level', 0))
-            edit_kwargs: dict[str, Any] = {'embed': embed, 'view': self}
-            if new_lvl != self.current_level and file:
-                edit_kwargs['file'] = file
-                self.current_level = new_lvl
-
             try:
-                await interaction.message.edit(**edit_kwargs)
+                await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du rafraîchissement network")
 
-    async def _on_upgrade_click(self, interaction: discord.Interaction):
-        """Ouvre le devis d'amélioration d'infrastructure dans une confirmation séparée."""
-        await interaction.response.defer(ephemeral=True)
-        try:
-            upgrade_cog = self.cog.bot.get_cog('Upgrade')
-            if upgrade_cog:
-                quote_res = await self.cog.service.execute(
-                    self.author_id,
-                    interaction.guild.id if interaction.guild else None,
-                    'upgrade',
-                    confirm=False,
-                )
-                await upgrade_cog._send(interaction, 'upgrade', quote_res)
-            else:
-                await interaction.followup.send(
-                    "Utilise `/upgrade` pour consulter le devis d'amélioration.",
-                    ephemeral=True,
-                )
-        except GameError as err:
-            err_msg = text.get(self.ctx, 'g_error_' + err.key, **err.values)
-            await interaction.followup.send(err_msg, ephemeral=True)
-        except Exception:
-            logger.exception("Erreur lors de l'accès au devis upgrade")
-            await interaction.followup.send("Impossible d'ouvrir le devis.", ephemeral=True)
-
-    async def _on_shop_click(self, interaction: discord.Interaction):
-        """Ouvre le catalogue de la boutique dans un panneau séparé."""
-        await interaction.response.defer(ephemeral=True)
-        try:
-            buy_cog = self.cog.bot.get_cog('Buy')
-            if buy_cog:
-                player_data = await self.cog.service.execute(
-                    self.author_id,
-                    interaction.guild.id if interaction.guild else None,
-                    'network',
-                )
-                from commands.game.buy import ShopCatalogView
-                view = ShopCatalogView(buy_cog, self.ctx, player_data=player_data, current_category='mining')
-                embed = buy_cog._build_category_shop_embed(self.ctx, 'mining', player_data)
-                msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-                view.message = getattr(msg, 'message', None) or msg
-            else:
-                await interaction.followup.send("Utilise `/buy` pour consulter la boutique.", ephemeral=True)
-        except Exception:
-            logger.exception("Erreur lors de l'ouverture de la boutique")
-            await interaction.followup.send("Impossible d'ouvrir la boutique.", ephemeral=True)
-
-    async def _on_compile_click(self, interaction: discord.Interaction):
-        """Aide ou lanceur rapide pour la compilation ATK."""
-        is_fr = (text.get_locale(self.ctx) == 'fr')
-        hint = (
-            "⚙️ **Compilation ATK**\n"
-            "Pour lancer une compilation, utilise :\n"
-            "• `/compile method:unskilled atk:<nombre|all>`\n"
-            "• `/compile method:skilled atk:<nombre|all>`\n"
-            "• `/compile method:ai atk:<nombre|all>`"
-        ) if is_fr else (
-            "⚙️ **ATK Compilation**\n"
-            "To start compilation, use:\n"
-            "• `/compile method:unskilled atk:<amount|all>`\n"
-            "• `/compile method:skilled atk:<amount|all>`\n"
-            "• `/compile method:ai atk:<amount|all>`"
-        )
-        await interaction.response.send_message(hint, ephemeral=True)
-
-    async def _on_scan_click(self, interaction: discord.Interaction):
-        """Aide ou lanceur rapide pour le scan PvP."""
-        is_fr = (text.get_locale(self.ctx) == 'fr')
-        hint = (
-            "📡 **Scan Réseau PvP**\n"
-            "Pour scanner un joueur adverse et tenter d'obtenir son Secret ID :\n"
-            "• `/scan target:<@joueur>`"
-        ) if is_fr else (
-            "📡 **PvP Network Scan**\n"
-            "To scan an opponent and attempt to breach their Secret ID:\n"
-            "• `/scan target:<@player>`"
-        )
-        await interaction.response.send_message(hint, ephemeral=True)
-
-    async def _on_hack_click(self, interaction: discord.Interaction):
-        """Aide ou lanceur rapide pour l'attaque PvP."""
-        is_fr = (text.get_locale(self.ctx) == 'fr')
-        hint = (
-            "⚔️ **Attaque PvP (/hack)**\n"
-            "Pour déployer une attaque contre un système adverse :\n"
-            "• `/hack secret_id:<code_secret> attack_points:<points> target:<mining|attack>`"
-        ) if is_fr else (
-            "⚔️ **PvP Attack (/hack)**\n"
-            "To deploy an offensive intrusion against an opponent:\n"
-            "• `/hack secret_id:<secret_code> attack_points:<points> target:<mining|attack>`"
-        )
-        await interaction.response.send_message(hint, ephemeral=True)
-
-    async def _on_prev_page(self, interaction: discord.Interaction):
-        """Page précédente dans Opérations."""
-        if self.current_page > 1:
-            self.current_page -= 1
-            await self._on_select_view(interaction)
-
-    async def _on_next_page(self, interaction: discord.Interaction):
-        """Page suivante dans Opérations."""
-        if self.current_page < self.total_pages:
-            self.current_page += 1
-            await self._on_select_view(interaction)
-
     async def on_timeout(self):
-        """Désactive les contrôles et affiche la mention d'expiration propre."""
-        for item in self.children:
-            item.disabled = True
-        if self.message and self.current_embed:
-            is_fr = (text.get_locale(self.ctx) == 'fr')
-            expired_footer = "Session expirée · Rouvre /network" if is_fr else "Session expired · Reopen /network"
-            self.current_embed.set_footer(text=build_footer_text(expired_footer))
+        """Désactive les contrôles lors de l'expiration du timeout."""
+        if self._container:
+            self._container.disable_all_items()
+        if self.message:
             try:
-                await self.message.edit(embed=self.current_embed, view=self)
+                await self.message.edit(view=self)
             except Exception:
                 pass
 
@@ -665,29 +503,42 @@ class Network(BaseGameCog):
         return embed
 
     async def _send(self, ctx, method, result):
-        """Envoie l'Accueil initial avec l'illustration du niveau et la vue de navigation."""
+        """Envoie l'Accueil initial avec le conteneur Discord V2 et ses boutons intégrés."""
         author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
         author_name = getattr(author, 'display_name', str(result.get('discord_id', '')))
         avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
         locale = text.get_locale(ctx)
 
-        embed, file = build_overview_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
         view = NetworkActionView(self, ctx, result)
-        view.current_embed = embed
-
         kwargs: dict[str, Any] = {
-            'embed': embed,
             'view': view,
             'allowed_mentions': discord.AllowedMentions.none(),
         }
-        if file:
-            kwargs['file'] = file
+        if view.current_file:
+            kwargs['file'] = view.current_file
 
-        if getattr(ctx, 'interaction', None):
-            msg = await ctx.respond(**kwargs)
-        else:
-            msg = await ctx.send(**kwargs)
-        view.message = getattr(msg, 'message', None) or msg
+        try:
+            if getattr(ctx, 'interaction', None):
+                msg = await ctx.respond(**kwargs)
+            else:
+                msg = await ctx.send(**kwargs)
+            view.message = getattr(msg, 'message', None) or msg
+        except Exception as e:
+            logger.exception("Échec envoi V2 components network, repli sur embed V1: %s", e)
+            embed, file = build_overview_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
+            fb_view = discord.ui.View()
+            fb_kwargs: dict[str, Any] = {
+                'embed': embed,
+                'view': fb_view,
+                'allowed_mentions': discord.AllowedMentions.none(),
+            }
+            if file:
+                fb_kwargs['file'] = file
+            if getattr(ctx, 'interaction', None):
+                msg = await ctx.respond(**fb_kwargs)
+            else:
+                msg = await ctx.send(**fb_kwargs)
+            view.message = getattr(msg, 'message', None) or msg
 
         if result.get('is_new'):
             await Logger(self.bot).log_new_player(ctx, result)

@@ -128,29 +128,26 @@ class Confirmation(discord.ui.View):
         await self.acknowledge(interaction)
         async with self.lock:
             if self.done:
-                await interaction.followup.send(text.get(self.ctx, 'g_already_handled'))
+                await interaction.followup.send(text.get(self.ctx, 'g_already_handled'), ephemeral=True)
                 return
             self.done = True
             self.stop()
-            from utils.root_embed import RootEmbed
-            from utils.root_theme import VisualState
             cancelled_text = text.get(self.ctx, 'g_cancelled')
-            cancel_embed = RootEmbed.result(self.ctx, self.method.title(), cancelled_text, state=VisualState.CANCELLED)
             edited = False
             if getattr(self.ctx, 'interaction', None):
                 try:
-                    await self.ctx.interaction.edit_original_response(content=None, embed=cancel_embed, view=None)
+                    await self.ctx.interaction.edit_original_response(content=cancelled_text, embed=None, view=None)
                     edited = True
                 except Exception:
                     pass
             elif self.message:
                 try:
-                    await self.message.edit(content=None, embed=cancel_embed, view=None)
+                    await self.message.edit(content=cancelled_text, embed=None, view=None)
                     edited = True
                 except Exception:
                     pass
             if not edited:
-                await interaction.followup.send(embed=cancel_embed)
+                await interaction.followup.send(cancelled_text, ephemeral=True)
 
     def _clear_original(self):
         try:
@@ -167,14 +164,10 @@ class Confirmation(discord.ui.View):
         for item in self.children:
             item.disabled = True
         try:
-            from utils.root_embed import RootEmbed
-            from utils.root_theme import VisualState
-            is_fr = text.get_locale(self.ctx) == 'fr'
-            expired_text = "Devis expiré · Commande non exécutée" if is_fr else "Quote expired · Command not executed"
-            expired_embed = RootEmbed.result(self.ctx, self.method.title(), expired_text, state=VisualState.EXPIRED)
             if getattr(self.ctx, 'interaction', None):
-                await self.ctx.interaction.edit_original_response(embed=expired_embed, view=self)
+                await self.ctx.interaction.edit_original_response(view=self)
             elif self.message:
-                await self.message.edit(embed=expired_embed, view=self)
+                await self.message.edit(view=self)
         except Exception:
             pass
+
