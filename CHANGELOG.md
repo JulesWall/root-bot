@@ -22,11 +22,28 @@
 ## [Cohérence & Esthétique des Messages]
 
 - **Suppression des embeds superflus** :
-  - Les actions simples comme la récolte (`/claim`) s'affichent sous forme de messages directs et aérés plutôt que d'embeds encombrants.
+  - Les actions instantanées comme la récolte (`/claim`) et la prime horaire (`/hourly`) s'affichent sous forme de messages directs et aérés avec boutons intégrés plutôt que d'embeds encombrants.
   - Les erreurs de jeu, annulations de confirmation et expirations restent en messages textuels épurés.
 - **Harmonisation stricte des messages de délai** :
-  - Structure symétrique et identique pour tous les messages de cooldown et d'attente (prime horaire `/hourly`, récolte `/claim`, réputation `/rep`) :
-    `> {root_temps} **Délai insuffisant** · [Raison concise]. Reviens dans / Prochaine récolte dans **[durée]**.`
-- **Remplacement exhaustif des emojis vanilla** :
-  - Toutes les commandes utilisent désormais exclusivement les 17 emojis personnalisés de Root OS.
-  - Couverture étendue incluant les indicateurs de statut, progression, alertes, débits et mémoires.
+  - Structure symétrique et identique pour tous les messages de cooldown et d'attente (prime horaire `/hourly`, récolte `/claim`, réputation `/rep`, contrats `/contract`, mini-jeux) :
+    `> {root_temps} **Délai insuffisant** · [Raison concise]. Reviens dans **[durée]**.`
+  - Alignement des styles, de la ponctuation et du tutoiement sur l'ensemble des commandes.
+- **Remplacement exhaustif des emojis vanilla & gestion des sélecteurs de variante** :
+  - Prise en charge universelle des variations Unicode (avec et sans variation selector `\ufe0f`), éradiquant les emojis standards résiduels.
+  - Toutes les commandes et panneaux de secours (`/network`, `/top`) utilisent désormais exclusivement les 17 emojis personnalisés de Root OS.
+  - Boutons interactifs du classement `/top` équipés des icônes Root OS dédiées.
+
+## [Refonte des Embeds — Style Cyber Terminal]
+
+- **En-tête Auteur Unifié** : Chaque embed affiche désormais en en-tête `ROOT OS // <PSEUDO>` accompagné de l'avatar du joueur (ou de l'icône système), conférant à toutes les commandes la signature visuelle du poste de commande `/network`.
+- **Titres Stylisés avec Emojis Root OS** : Les titres d'embeds sont dynamiquement préfixés par l'icône animée ou statique dédiée à l'action (`root_materiel`, `root_firewall`, `root_operations`, `root_scan`, `root_bilan`, `root_puissance`, `root_terminal`).
+- **Harmonisation Chromatique Cyberpunk** : Remplacement des couleurs génériques par la palette officielle de Root OS : Turquoise cyber (`#54E2D1`), Ambre d'alerte/devis (`#FFC15A`) et Rouge d'intrusion/perte (`#F06A6A`).
+- **Nettoyage et Filtrage Intégrés** : Le corps des embeds et les devis interactifs filtrent et convertissent automatiquement tout emoji résiduel vers les emojis Root OS.
+
+## [Système de Rappels & Temporisateurs] — `/rmd` & Notifications
+
+- **Correction de la double délivrance** : Suppression de l'envoi simultané du texte brut et de l'embed redondant lors de la réception des rappels en message privé (MP) ou sur le salon de repli.
+- **Icônes Thématiques Root OS** : Les rappels et temporisateurs utilisent désormais l'icône de temporisation dédiée `root_temps` (`⏱️`) plutôt que des icônes d'alerte rouge (`🔔`) ou de minage (`✅`).
+- **Correction du mappage de validation** : Les coches de confirmation (`✅`, `✓`, `🟢`) sont désormais associées au curseur de terminal Root OS (`root_terminal`) au lieu du sac de récolte de minage.
+- **Harmonisation des Libellés** : Alignement des messages de confirmation et de consultation (`/rmd auto`, `/rmd timer`, `/rmd list`, `/rmd cancel`) sur la charte visuelle épurée de Root OS.
+

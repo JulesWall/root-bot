@@ -25,6 +25,7 @@ from lang.game_fr import descriptions as FR
 from utils import text
 from utils.check import Check
 from utils.root_embed import RootEmbed
+from utils.root_emojis import get_button_emoji
 
 
 class TopView(discord.ui.View):
@@ -51,17 +52,18 @@ class TopView(discord.ui.View):
 
         # Configuration des 4 catégories publiques avec leurs icônes respectives
         categories = [
-            ('reputation', '🌟 ' + text.get(ctx, 'g_top_btn_rep')),
-            ('usd',        '💵 ' + text.get(ctx, 'g_top_btn_usd')),
-            ('events',     '🏆 ' + text.get(ctx, 'g_top_btn_events')),
-            ('hashrate',   '⛏️ ' + text.get(ctx, 'g_top_btn_hs')),
+            ('reputation', text.get(ctx, 'g_top_btn_rep'), get_button_emoji('root_puissance') or '🌟'),
+            ('usd',        text.get(ctx, 'g_top_btn_usd'), get_button_emoji('root_bilan') or '💵'),
+            ('events',     text.get(ctx, 'g_top_btn_events'), get_button_emoji('root_puissance') or '🏆'),
+            ('hashrate',   text.get(ctx, 'g_top_btn_hs'), get_button_emoji('root_ferme') or '⛏️'),
         ]
 
         # Génération dynamique des boutons d'onglets
-        for cat_id, label in categories:
+        for cat_id, label, btn_emoji in categories:
             is_active = (cat_id == current_category)
             btn = discord.ui.Button(
                 label=label,
+                emoji=btn_emoji,
                 style=discord.ButtonStyle.primary if is_active else discord.ButtonStyle.secondary,
                 custom_id=f'top_cat_{cat_id}',
                 disabled=is_active,  # Le bouton actif est grisé/désactivé
@@ -169,13 +171,11 @@ class Top(BaseGameCog):
         cat_name = text.get(ctx, f'g_top_cat_{category}')
         title = text.get(ctx, 'g_top_title', category_name=cat_name)
 
-        colors = {
-            'reputation': discord.Color.gold(),
-            'usd':        discord.Color.from_rgb(46, 204, 113),
-            'events':     discord.Color.from_rgb(0, 180, 240),
-            'hashrate':   discord.Color.from_rgb(255, 170, 0),
-        }
-        medals = {1: '🥇 **1er**', 2: '🥈 **2e** ', 3: '🥉 **3e** '}
+        from utils.root_emojis import get_emoji
+        from utils.root_theme import COLOR_TURQUOISE
+
+        pow_icon = get_emoji('root_puissance')
+        medals = {1: f"{pow_icon} **`01`**", 2: f"{pow_icon} **`02`**", 3: f"{pow_icon} **`03`**"}
 
         lines = []
         user_rank = None
@@ -202,8 +202,8 @@ class Top(BaseGameCog):
             else:
                 score_str = f"`{score}`"
 
-            rank_badge = medals.get(i, f"▫️ **`{i:02d}`**")
-            lines.append(f"> {rank_badge} · <@{discord_id}> ➔ **{score_str}**")
+            rank_badge = medals.get(i, f"• **`{i:02d}`**")
+            lines.append(f"> {rank_badge} · <@{discord_id}> · **{score_str}**")
 
         description = '\n'.join(lines) if lines else text.get(ctx, 'g_top_empty')
         footer_text = text.get(ctx, 'g_top_footer_user', rank=user_rank) if user_rank else text.get(ctx, 'g_top_footer')
@@ -213,7 +213,7 @@ class Top(BaseGameCog):
             content=description,
             title=title,
             footer=footer_text,
-            color=colors.get(category, discord.Color.dark_teal()),
+            color=COLOR_TURQUOISE,
         )
         return embed
 

@@ -48,18 +48,20 @@ class HourlyComboSaverView(discord.ui.View):
         self._setup_button()
 
     def _setup_button(self):
+        from utils.root_emojis import get_button_emoji
         credits = int(self.result.get("combo_saver_credits", 0) or 0)
+        btn_emoji = get_button_emoji("root_firewall") or "🛡️"
         if credits > 0:
             btn = discord.ui.Button(
                 label=text_get(self.ctx, "g_hourly_btn_save")[:80],
-                emoji="🛡️",
+                emoji=btn_emoji,
                 style=discord.ButtonStyle.success,
             )
             btn.callback = self._on_save
         else:
             btn = discord.ui.Button(
                 label=text_get(self.ctx, "g_hourly_btn_no_credits")[:80],
-                emoji="🛡️",
+                emoji=btn_emoji,
                 style=discord.ButtonStyle.secondary,
                 disabled=True,
             )
@@ -164,8 +166,7 @@ class Hourly(BaseGameCog):
                 bonus=_pct(result["restored_bonus"]),
                 credits=result["remaining_credits"],
             )
-            embed = RootEmbed.result(ctx, text_get(ctx, "act_hourly"), success_msg, state=VisualState.SUCCESS)
-            await embed.send(ctx)
+            await self._reply(ctx, success_msg)
             return
 
         base_usd = result["base_usd"]
@@ -206,9 +207,7 @@ class Hourly(BaseGameCog):
             content = f"{content}\n\n{saver_prompt}"
             view = HourlyComboSaverView(self, ctx, result)
 
-        state = VisualState.ATTENTION if combo_lost else VisualState.SUCCESS
-        embed = RootEmbed(ctx, "hourly", content=content, state=state)
-        await embed.send(ctx, view=view)
+        await self._reply(ctx, content, view=view)
 
         # Journalisation Discord asynchrone
         try:
@@ -229,6 +228,21 @@ class Hourly(BaseGameCog):
                 )
         except Exception:
             pass
+
+    async def _reply(self, ctx, content: str, view: discord.ui.View | None = None):
+        """Envoie une réponse directe aérée sans embed superflu, avec gestion des interactions."""
+        kwargs: dict[str, Any] = {"allowed_mentions": discord.AllowedMentions.none()}
+        if view is not None:
+            kwargs["view"] = view
+        interaction = getattr(ctx, "interaction", None)
+        if interaction:
+            if interaction.response.is_done():
+                await interaction.followup.send(content, **kwargs)
+            else:
+                await interaction.response.send_message(content, **kwargs)
+        else:
+            await ctx.send(content, **kwargs)
+
 
 
 def setup(bot):

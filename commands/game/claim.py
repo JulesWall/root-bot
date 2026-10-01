@@ -278,10 +278,9 @@ class Claim(BaseGameCog):
                 await interaction.followup.send(content, allowed_mentions=discord.AllowedMentions.none())
             else:
                 await interaction.response.send_message(content, allowed_mentions=discord.AllowedMentions.none())
-        elif hasattr(ctx, 'respond'):
-            await ctx.respond(content, allowed_mentions=discord.AllowedMentions.none())
         else:
             await ctx.send(content, allowed_mentions=discord.AllowedMentions.none())
+
 
     async def _log_blockchain(self, ctx, amount: Decimal):
         """Publie la récolte de minage dans le salon #blockchain (best-effort, sans casser la commande)."""

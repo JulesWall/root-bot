@@ -100,9 +100,7 @@ class Reminder(BaseGameCog):
             if not user:
                 user = await self.bot.fetch_user(discord_id)
             if user:
-                dm_title = "Rappel" if lang == "fr" else "Reminder"
-                embed = RootEmbed.notification(lang, dm_title, dm_content)
-                await user.send(dm_content, embed=embed)
+                await user.send(dm_content)
                 sent = True
         except discord.Forbidden:
             logger.debug("MP bloqués pour l'utilisateur %s lors de la livraison du rappel", discord_id)
@@ -115,9 +113,7 @@ class Reminder(BaseGameCog):
                 if not channel:
                     channel = await self.bot.fetch_channel(channel_id)
                 if channel:
-                    dm_title = "Rappel" if lang == "fr" else "Reminder"
-                    embed = RootEmbed.notification(lang, dm_title, fallback_content)
-                    await channel.send(fallback_content, embed=embed)
+                    await channel.send(fallback_content)
             except Exception:
                 logger.exception(
                     "Échec de l'envoi du rappel sur le salon de repli %s pour l'utilisateur %s",
@@ -442,7 +438,17 @@ class Reminder(BaseGameCog):
             else:
                 target = result.get("target", "")
                 target_event = result.get("target_event")
-                target_label = f"Événement {target_event}" if target_event else target.capitalize()
+                is_fr = text.get_locale(ctx) == "fr"
+                smart_name_map = {
+                    "hourly": "Hourly",
+                    "claim": "Claim RAM",
+                    "events": "Événements" if is_fr else "Events",
+                }
+                if target_event:
+                    prefix_ev = "Événement" if is_fr else "Event"
+                    target_label = f"{prefix_ev} {target_event}"
+                else:
+                    target_label = smart_name_map.get(target, target.capitalize() if target else "Rappel")
                 content = text.get(
                     ctx,
                     "g_rmd_created_smart",

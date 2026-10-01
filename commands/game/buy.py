@@ -32,6 +32,7 @@ from utils import text
 from utils.check import Check
 from utils.confirmation import Confirmation
 from utils.root_embed import RootEmbed
+from utils.root_emojis import get_button_emoji
 
 
 def _is_confirm(val):
@@ -341,11 +342,21 @@ class Buy(BaseGameCog):
     def _build_main_shop_embed(self, ctx, player_data: dict) -> discord.Embed:
         """Construit l'Embed d'accueil du catalogue détaillant les 3 filières."""
         prefix = '/' if getattr(ctx, 'interaction', None) else (getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!'))
+        from utils.root_theme import COLOR_TURQUOISE, build_footer_text
         embed = discord.Embed(
             title=text.get(ctx, 'g_shop_title'),
             description=text.get(ctx, 'g_shop_description'),
-            color=discord.Color.from_rgb(0, 220, 200),
+            color=COLOR_TURQUOISE,
+            timestamp=discord.utils.utcnow(),
         )
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        if author and hasattr(author, 'display_name'):
+            avatar_url = author.display_avatar.url if hasattr(author, 'display_avatar') and author.display_avatar else None
+            embed.set_author(name=f"ROOT OS // {author.display_name.upper()}", icon_url=avatar_url)
+        bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
+        bot_icon = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
+        embed.set_footer(text=build_footer_text('Boutique' if text.get_locale(ctx) == 'fr' else 'Shop'), icon_url=bot_icon)
+
         embed.add_field(
             name=text.get(ctx, 'g_shop_field_mining'),
             value=text.get(ctx, 'g_shop_field_mining_desc', prefix=prefix),
@@ -370,11 +381,21 @@ class Buy(BaseGameCog):
         desc = text.get(ctx, f'g_shop_cat_{kind}_desc')
         syntax = text.get(ctx, f'g_shop_syntax_{kind}', prefix=prefix)
 
+        from utils.root_theme import COLOR_TURQUOISE, build_footer_text
         embed = discord.Embed(
             title=title,
             description=desc,
-            color=discord.Color.from_rgb(0, 220, 200),
+            color=COLOR_TURQUOISE,
+            timestamp=discord.utils.utcnow(),
         )
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        if author and hasattr(author, 'display_name'):
+            avatar_url = author.display_avatar.url if hasattr(author, 'display_avatar') and author.display_avatar else None
+            embed.set_author(name=f"ROOT OS // {author.display_name.upper()}", icon_url=avatar_url)
+        bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
+        bot_icon = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
+        embed.set_footer(text=build_footer_text(title), icon_url=bot_icon)
+
         embed.add_field(
             name=text.get(ctx, 'g_shop_syntax_field'),
             value=syntax,
@@ -397,7 +418,7 @@ class Buy(BaseGameCog):
         options = _get_purchasable_options(ctx, kind, player_data)
         if not options:
             embed.add_field(
-                name="ℹ️",
+                name=f"{get_emoji('root_terminal', True)}Info",
                 value=text.get(ctx, 'g_shop_no_affordable_hint'),
                 inline=False,
             )

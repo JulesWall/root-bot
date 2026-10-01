@@ -58,10 +58,13 @@ def render_help_embed(
     lang = _get_help_module(locale)
     ui = lang.UI
 
+    from utils.root_theme import COLOR_TURQUOISE
     embed = discord.Embed(
-        color=discord.Color.from_rgb(0, 220, 200),
+        color=COLOR_TURQUOISE,
         timestamp=discord.utils.utcnow(),
     )
+    author_title = "ROOT OS // MANUEL DU SYSTÈME" if locale == 'fr' else "ROOT OS // SYSTEM MANUAL"
+    embed.set_author(name=author_title)
 
     if unknown_query is not None:
         embed.title = f"❓ {ui['unknown_command_title']}"

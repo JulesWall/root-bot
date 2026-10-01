@@ -14,12 +14,37 @@ import discord
 
 from lang import game_en, game_fr
 from utils import text
+from utils.root_emojis import get_emoji, replace_vanilla_emojis
 from utils.root_theme import (
     COLOR_TURQUOISE,
     VisualState,
     build_footer_text,
     get_color_for_state,
 )
+
+ACTION_EMOJIS = {
+    'buy': 'root_materiel',
+    'upgrade': 'root_firewall',
+    'claim': 'root_recolter',
+    'hourly': 'root_bilan',
+    'reputation': 'root_puissance',
+    'top': 'root_puissance',
+    'hash': 'root_terminal',
+    'pin': 'root_terminal',
+    'event': 'root_connexions',
+    'decode': 'root_logiciels',
+    'anomaly': 'root_alerte',
+    'buffer': 'root_memoire',
+    'signal': 'root_connexions',
+    'packet': 'root_connexions',
+    'trade': 'root_bilan',
+    'convert': 'root_bilan',
+    'compile': 'root_materiel',
+    'scan': 'root_scan',
+    'hack': 'root_operations',
+    'contract': 'root_operations',
+    'rmd': 'root_temps',
+}
 
 
 class RootEmbed(discord.Embed):
@@ -74,12 +99,25 @@ class RootEmbed(discord.Embed):
         action_key = 'act_' + action
         action_title = lang_module.labels.get(action_key, action.replace('_', ' ').title())
 
-        # Titre
+        # Nettoyage des emojis vanilla résiduels dans le libellé de l'action
+        clean_action_title = action_title
+        for vanilla in ('🌐', '🛒', '🧱', '🪙', '⏱️', '⭐', '🏆', '🧩', '🔐', '🔍', '⚠️', '📦', '📡', '🛰️', '🤝', '💱', '⚔️', '💼', '🔔'):
+            clean_action_title = clean_action_title.replace(vanilla, '').strip()
+
+        # Titre dynamique avec emoji personnalisé Root OS
+        emoji_name = ACTION_EMOJIS.get(action, 'root_terminal')
+        action_icon = get_emoji(emoji_name, True)
+
         if title is None:
             if ctx is not None:
-                title = text.get(ctx, 'g_title', action=action_title)
+                raw_title = text.get(ctx, 'g_title', action=clean_action_title)
+                for vanilla in ('🌐', '🛒', '🧱', '🪙', '⏱️', '⭐', '🏆', '🧩', '🔐', '🔍', '⚠️', '📦', '📡', '🛰️', '🤝', '💱', '⚔️', '💼', '🔔'):
+                    raw_title = raw_title.replace(vanilla, '').strip()
+                title = f"{action_icon}{raw_title}"
             else:
-                title = f"ROOT OS · {action_title}"
+                title = f"{action_icon}{clean_action_title}"
+        elif not (title.startswith('<:') or title.startswith('<a:') or title.startswith('>')):
+            title = f"{action_icon}{title}"
 
         # Couleur : priorité explicite > state > action historique > turquoise par défaut
         if color is not None:
@@ -91,18 +129,31 @@ class RootEmbed(discord.Embed):
         else:
             embed_color = COLOR_TURQUOISE
 
+        clean_content = replace_vanilla_emojis(content) if content else ''
+
         super().__init__(
             title=title,
-            description=content,
+            description=clean_content,
             color=embed_color,
             timestamp=discord.utils.utcnow(),
         )
+
+        # En-tête d'auteur stylisé à l'image de /network (ROOT OS // USERNAME)
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        if author and hasattr(author, 'display_name'):
+            author_header = f"ROOT OS // {author.display_name.upper()}"
+            avatar_url = author.display_avatar.url if hasattr(author, 'display_avatar') and author.display_avatar else None
+            self.set_author(name=author_header, icon_url=avatar_url)
+        else:
+            bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
+            bot_avatar = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
+            self.set_author(name=f"ROOT OS // {clean_action_title.upper()}", icon_url=bot_avatar)
 
         # Footer
         bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
         icon_url = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
 
-        footer_text = footer if footer is not None else build_footer_text(action_title)
+        footer_text = footer if footer is not None else build_footer_text(clean_action_title)
         self.set_footer(text=footer_text, icon_url=icon_url)
 
     @classmethod
@@ -114,14 +165,14 @@ class RootEmbed(discord.Embed):
         state: VisualState | str = VisualState.CONSULTATION,
         bot_user: Any = None,
     ) -> 'RootEmbed':
-        """Gabarit : Panneau de consultation ROOT OS · {rubrique}."""
+        """Gabarit : Panneau de consultation."""
         locale = ctx_or_locale if isinstance(ctx_or_locale, str) else None
         ctx = ctx_or_locale if not isinstance(ctx_or_locale, str) else None
         embed = cls(
             ctx=ctx,
             locale=locale,
             state=state,
-            title=f"ROOT OS · {rubrique}",
+            title=rubrique,
             content=description,
             footer=build_footer_text(rubrique),
         )
@@ -137,7 +188,7 @@ class RootEmbed(discord.Embed):
         intro_sentence: str = "",
         bot_user: Any = None,
     ) -> 'RootEmbed':
-        """Gabarit : Devis ROOT OS · {action}."""
+        """Gabarit : Devis interactif."""
         locale = ctx_or_locale if isinstance(ctx_or_locale, str) else None
         ctx = ctx_or_locale if not isinstance(ctx_or_locale, str) else None
         intro = intro_sentence or ("Vérifie le coût et l'effet avant de confirmer" if (locale == 'fr' or (ctx and text.get_locale(ctx) == 'fr')) else "Verify cost and effect before confirming")
@@ -145,7 +196,7 @@ class RootEmbed(discord.Embed):
             ctx=ctx,
             locale=locale,
             state=VisualState.QUOTE,
-            title=f"ROOT OS · {action_title}",
+            title=action_title,
             content=intro,
             footer=build_footer_text(action_title),
         )
@@ -168,7 +219,7 @@ class RootEmbed(discord.Embed):
             ctx=ctx,
             locale=locale,
             state=VisualState.IN_PROGRESS,
-            title=f"ROOT OS · {action_title}",
+            title=action_title,
             content=phrase,
             footer=build_footer_text(action_title),
         )
@@ -192,7 +243,7 @@ class RootEmbed(discord.Embed):
             ctx=ctx,
             locale=locale,
             state=state,
-            title=f"ROOT OS · {rubrique}",
+            title=rubrique,
             content=result_phrase,
             footer=build_footer_text(rubrique),
         )
@@ -212,7 +263,7 @@ class RootEmbed(discord.Embed):
         locale = ctx_or_locale if isinstance(ctx_or_locale, str) else None
         ctx = ctx_or_locale if not isinstance(ctx_or_locale, str) else None
         is_fr = (locale == 'fr' or (ctx and text.get_locale(ctx) == 'fr'))
-        title = f"ROOT OS · {'Action indisponible' if is_fr else 'Action unavailable'}"
+        title = 'Action indisponible' if is_fr else 'Action unavailable'
         footer_sub = rubrique or ('Erreur' if is_fr else 'Error')
         embed = cls(
             ctx=ctx,
@@ -242,7 +293,7 @@ class RootEmbed(discord.Embed):
             ctx=ctx,
             locale=locale,
             state=state,
-            title=f"ROOT OS · {event_title}",
+            title=event_title,
             content=content,
             footer=build_footer_text(event_title),
         )
@@ -267,7 +318,7 @@ class RootEmbed(discord.Embed):
             ctx=ctx,
             locale=locale,
             state=state,
-            title=f"ROOT OS · {title}",
+            title=title,
             content=summary,
             footer=build_footer_text(title),
         )

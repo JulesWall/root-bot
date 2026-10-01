@@ -308,11 +308,11 @@ def build_farm_embed(
         f"{get_emoji('root_memoire', True)}**{'Mémoire vive' if is_fr else 'RAM Memory'}** : {ram_gauge} **{mem_pct:.1f}%** (`{used_ram} / {total_ram}`)",
     ]
     if is_mem_full:
-        claim_lines.append("🔴 **Mémoire saturée · La récolte libère le stockage.**" if is_fr else "🔴 **Memory full · Claiming frees storage.**")
+        claim_lines.append(f"{get_emoji('root_alerte', True)}**{'Mémoire saturée · La récolte libère le stockage.' if is_fr else 'Memory full · Claiming frees storage.'}**")
     elif fill_seconds > 0:
         claim_lines.append(f"{get_emoji('root_temps', True)}**{'Temps avant saturation' if is_fr else 'Time until full'}** : `{format_duration(fill_seconds)}`")
     embed.add_field(
-        name=f"📦 {'Stockage et mémoire' if is_fr else 'Storage and memory'}",
+        name=f"{get_emoji('root_memoire', True)}{'Stockage et mémoire' if is_fr else 'Storage and memory'}",
         value='\n'.join(claim_lines),
         inline=False,
     )
@@ -332,7 +332,7 @@ def build_farm_embed(
         miner_lines.append("Aucun mineur installé. Ouvre Matériel pour consulter la boutique." if is_fr else "No miners installed. Open Hardware to view the shop.")
 
     embed.add_field(
-        name=f"⛏️ {'Mineurs installés' if is_fr else 'Installed miners'}",
+        name=f"{get_emoji('root_ferme', True)}{'Mineurs installés' if is_fr else 'Installed miners'}",
         value='\n'.join(miner_lines),
         inline=False,
     )
@@ -343,11 +343,11 @@ def build_farm_embed(
     combo_saver_credits = int(result.get('combo_saver_credits', 0) or 0)
 
     auto_lines = [
-        f"🎫 **Autoclaim** : `{autoclaim_credits}` {'en réserve' if is_fr else 'in reserve'} · `{autoclaim_active}` {'programmé(s)' if is_fr else 'active'}",
-        f"🛡️ **Combo Saver** : `{combo_saver_credits}` {'crédit(s) en réserve' if is_fr else 'credit(s) in reserve'}",
+        f"{get_emoji('root_journal', True)}**Autoclaim** : `{autoclaim_credits}` {'en réserve' if is_fr else 'in reserve'} · `{autoclaim_active}` {'programmé(s)' if is_fr else 'active'}",
+        f"{get_emoji('root_firewall', True)}**Combo Saver** : `{combo_saver_credits}` {'crédit(s) en réserve' if is_fr else 'credit(s) in reserve'}",
     ]
     embed.add_field(
-        name=f"⚙️ {'Automatisation' if is_fr else 'Automation'}",
+        name=f"{get_emoji('root_materiel', True)}{'Automatisation' if is_fr else 'Automation'}",
         value='\n'.join(auto_lines),
         inline=False,
     )
@@ -442,10 +442,10 @@ def build_hardware_embed(
     max_tier_unlocked = max(1, min(5, level + 1))
 
     total_lines = [
-        f"⚡ **{'Hashrate global' if is_fr else 'Global hashrate'}** : `{tot_hs}`",
-        f"⚔️ **{'Puissance de compilation' if is_fr else 'Compilation power'}** : `{tot_bits}`",
-        f"🛡️ **{'Défense des modules' if is_fr else 'Modules defense'}** : `{tot_bdef} DEF`",
-        f"🛒 **{'Accès boutique' if is_fr else 'Shop access'}** : `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}` *(Infrastructure {level})*",
+        f"{get_emoji('root_puissance', True)}**{'Hashrate global' if is_fr else 'Global hashrate'}** : `{tot_hs}`",
+        f"{get_emoji('root_operations', True)}**{'Puissance de compilation' if is_fr else 'Compilation power'}** : `{tot_bits}`",
+        f"{get_emoji('root_firewall', True)}**{'Défense des modules' if is_fr else 'Modules defense'}** : `{tot_bdef} DEF`",
+        f"{get_emoji('root_materiel', True)}**{'Accès boutique' if is_fr else 'Shop access'}** : `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}` *(Infrastructure {level})*",
     ]
     embed.add_field(
         name=f"{get_emoji('root_bilan', True)}{'Totaux matériel' if is_fr else 'Hardware totals'}",
@@ -496,7 +496,7 @@ def build_operations_embed(
     tot_bits = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(stats.get('total_bits_per_s', 0))
     embed.add_field(
         name=f"{get_emoji('root_puissance', True)}{'Capacité offensive' if is_fr else 'Offensive capacity'}",
-        value=f"🎯 **{'Stock ATK consommable' if is_fr else 'Consumable ATK stock'}** : `{atk_stock} ATK`\n⚡ **{'Puissance de compilation' if is_fr else 'Compilation power'}** : `{tot_bits}`",
+        value=f"{get_emoji('root_operations', True)}**{'Stock ATK consommable' if is_fr else 'Consumable ATK stock'}** : `{atk_stock} ATK`\n{get_emoji('root_puissance', True)}**{'Puissance de compilation' if is_fr else 'Compilation power'}** : `{tot_bits}`",
         inline=False,
     )
 
@@ -517,7 +517,7 @@ def build_operations_embed(
         atk_module_lines.append(f"**Total** : `{tot_atk_count}` {'modules' if is_fr else 'modules'} · `{tot_bits}`")
 
     embed.add_field(
-        name=f"⚔️ {'Modules d’attaque' if is_fr else 'Attack modules'}",
+        name=f"{get_emoji('root_operations', True)}{'Modules d’attaque' if is_fr else 'Attack modules'}",
         value='\n'.join(atk_module_lines),
         inline=False,
     )
@@ -542,10 +542,10 @@ def build_operations_embed(
     else:
         def_module_lines.append(f"**Total modules** : `{tot_def_count}` · `{tot_bdef} DEF`")
 
-    def_module_lines.append(f"🛡️ **{'Infrastructure' if is_fr else 'Infrastructure'}** : `{ndef} DEF` · **{'Total général' if is_fr else 'Total defense'}** : `{tdef} DEF`")
+    def_module_lines.append(f"{get_emoji('root_firewall', True)}**{'Infrastructure' if is_fr else 'Infrastructure'}** : `{ndef} DEF` · **{'Total général' if is_fr else 'Total defense'}** : `{tdef} DEF`")
 
     embed.add_field(
-        name=f"🛡️ {'Modules de défense' if is_fr else 'Defense modules'}",
+        name=f"{get_emoji('root_firewall', True)}{'Modules de défense' if is_fr else 'Defense modules'}",
         value='\n'.join(def_module_lines),
         inline=False,
     )
@@ -557,20 +557,20 @@ def build_operations_embed(
         comp_method = pending_compile.get('mode', 'standard')
         comp_atk = pending_compile.get('attack_points', 0)
         comp_ts = _format_time_relative(pending_compile.get('resolves_at'))
-        prep_lines.append(f"🔨 **{'Compilation' if is_fr else 'Compilation'}** (`{comp_method}`) : `+{comp_atk} ATK` · {comp_ts}")
+        prep_lines.append(f"{get_emoji('root_materiel', True)}**{'Compilation' if is_fr else 'Compilation'}** (`{comp_method}`) : `+{comp_atk} ATK` · {comp_ts}")
 
     pending_scan = result.get('pending_scan')
     if pending_scan:
         scan_ts = _format_time_relative(pending_scan.get('resolves_at') or pending_scan.get('expires_at'))
         tgt_id = pending_scan.get('target_id')
         tgt_str = f" · Cible <@{tgt_id}>" if tgt_id else ""
-        prep_lines.append(f"📡 **{'Scan PvP' if is_fr else 'PvP Scan'}**{tgt_str} : {scan_ts}")
+        prep_lines.append(f"{get_emoji('root_scan', True)}**{'Scan PvP' if is_fr else 'PvP Scan'}**{tgt_str} : {scan_ts}")
 
     if not prep_lines:
         prep_lines.append("Aucune préparation en cours" if is_fr else "No preparations in progress")
 
     embed.add_field(
-        name=f"⏱️ {'Préparations en cours' if is_fr else 'Active preparations'}",
+        name=f"{get_emoji('root_temps', True)}{'Préparations en cours' if is_fr else 'Active preparations'}",
         value='\n'.join(prep_lines),
         inline=False,
     )
@@ -601,7 +601,7 @@ def build_operations_embed(
         attack_lines.append(f"*Total : {len(outgoing_attacks)} opération(s)*" if is_fr else f"*Total: {len(outgoing_attacks)} operation(s)*")
 
     embed.add_field(
-        name=f"🚀 {'Attaques lancées' if is_fr else 'Outgoing attacks'}",
+        name=f"{get_emoji('root_connexions', True)}{'Attaques lancées' if is_fr else 'Outgoing attacks'}",
         value='\n'.join(attack_lines),
         inline=False,
     )
@@ -646,7 +646,7 @@ def build_overview_container(
     display_name: str = 'Opérateur',
     file_attachment_name: str | None = None,
 ) -> tuple[discord.ui.Container, discord.File | None]:
-    """Construit le Container Discord V2 pour la vue Accueil correspondant au mockup utilisateur."""
+    """Construit le Container Discord V2 pour la vue Accueil."""
     is_fr = (locale == 'fr')
     level = sanitize_level(result.get('firewall_level', 0))
     infra_name = get_infrastructure_name(level, locale=locale)
@@ -662,23 +662,21 @@ def build_overview_container(
     color = COLOR_AMBER if is_mem_full else COLOR_TURQUOISE
     c = discord.ui.Container(colour=color)
 
-    # 1. Illustration panoramique au sommet
     if img_name:
         c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
 
-    # 2. En-tête : >_ ROOT OS / USERNAME
     clean_name = display_name.upper()
     term_icon = get_emoji('root_terminal', True)
-    subtitle = f"{infra_name} · {'Réseau personnel · Session active' if is_fr else 'Personal network · Active session'}"
+    subtitle = f"{infra_name} ({'Niveau' if is_fr else 'Level'} {level}/5) · {'Session active' if is_fr else 'Active session'}"
     c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{subtitle}")
     c.add_separator(divider=True)
 
-    # 3. Lignes de statistiques avec emojis stylisés
     total_miners = sum(stats.get('bay_details', {}).get(t, {}).get('mining_count', 0) for t in range(1, 6))
     hashrate_str = stats.get('total_hashrate_formatted') or MathConfig.format_hashrate(stats.get('total_hashrate_hs', 0))
     tot_bits = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(stats.get('total_bits_per_s', 0))
     ndef = int(stats.get('network_defense', 0))
     bdef = int(stats.get('total_bay_defense', 0))
+    tdef = int(stats.get('total_defense', ndef + bdef))
     rate_per_min = Decimal(str(mining_state.get('rate_per_min', 0)))
     hourly_rtm = rate_per_min * Decimal('60')
     ram_gauge = _build_ram_gauge(mem_pct)
@@ -689,20 +687,17 @@ def build_overview_container(
     rep_val = int(result.get('reputation') or 0)
 
     stats_lines = [
-        f"{get_emoji('root_materiel', True)}**{infra_name} · {'Niveau' if is_fr else 'Level'} {level}**",
-        f"{get_emoji('root_ferme', True)}**{'Ferme de minage' if is_fr else 'Mining farm'}** · {total_miners} {'mineurs' if is_fr else 'miners'} ({hashrate_str})",
-        f"{get_emoji('root_puissance', True)}**{'Puissance de calcul' if is_fr else 'Computing power'}** · {tot_bits}",
-        f"{get_emoji('root_firewall', True)}**{'Défense' if is_fr else 'Defense'}** · {bdef} DEF ({'Baies' if is_fr else 'Bays'}) · {ndef} DEF ({'Réseau' if is_fr else 'Network'})",
-        f"{get_emoji('root_production', True)}**{'Production' if is_fr else 'Production'}** · {text.format_rtm(hourly_rtm)} RTM/h",
+        f"{get_emoji('root_ferme', True)}**{'Ferme de minage' if is_fr else 'Mining farm'}** · {total_miners} {'mineurs' if is_fr else 'miners'} ({hashrate_str}) · {text.format_rtm(hourly_rtm)} RTM/h",
         f"{get_emoji('root_memoire', True)}**{'Mémoire vive' if is_fr else 'RAM memory'}** · {ram_gauge} {mem_pct:.1f}% ({used_ram} / {total_ram})",
-        f"{get_emoji('root_recolter', True)}**{'À récolter' if is_fr else 'To claim'}** · {text.format_rtm(buffer_rtm)} RTM",
+        f"{get_emoji('root_recolter', True)}**{'À récolter' if is_fr else 'To claim'}** · **{text.format_rtm(buffer_rtm)} RTM**",
+        f"{get_emoji('root_puissance', True)}**{'Puissance de calcul' if is_fr else 'Computing power'}** · {tot_bits}",
+        f"{get_emoji('root_firewall', True)}**{'Défense globale' if is_fr else 'Total defense'}** · {tdef} DEF *({bdef} baies + {ndef} infra)*",
         f"{get_emoji('root_bilan', True)}**{'Portefeuille' if is_fr else 'Wallet'}** · {usd_str} · {text.format_rtm(rtm_wallet)} RTM · {rep_val} {'pts réputation' if is_fr else 'reputation pts'}",
     ]
     c.add_text('\n'.join(stats_lines))
     c.add_separator(divider=True)
 
-    # 4. Statut opérationnel
-    status_text = f"{get_emoji('root_firewall', True)}**{'Système opérationnel' if is_fr else 'Operational system'}** · {'Surveillance active' if is_fr else 'Active monitoring'}"
+    status_text = f"{get_emoji('root_terminal', True)}**{'Poste de commande' if is_fr else 'Command post'}** · {'Surveillance réseau active' if is_fr else 'Active network monitoring'}"
     c.add_text(status_text)
 
     return c, file
@@ -734,7 +729,7 @@ def build_farm_container(
 
     clean_name = display_name.upper()
     term_icon = get_emoji('root_terminal', True)
-    subtitle = "Ferme de minage & Débits · Production & Stockage" if is_fr else "Mining Farm & Rates · Production & Storage"
+    subtitle = "Débits de hachage & Stockage mémoire" if is_fr else "Hashrate rates & Memory storage"
     c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{subtitle}")
     c.add_separator(divider=True)
 
@@ -750,7 +745,7 @@ def build_farm_container(
     fill_seconds = int(mining_state.get('seconds_to_full', 0) or 0)
 
     lines = [
-        f"{get_emoji('root_ferme', True)}**{'Production de minage' if is_fr else 'Mining production'}**",
+        f"{get_emoji('root_ferme', True)}**{'Production' if is_fr else 'Production'}**",
         f"• {get_emoji('root_puissance', True)}**Hashrate global** : `{hashrate_str}`",
         f"• {get_emoji('root_production', True)}**Débit réel** : `{text.format_rtm(hourly_rtm)} RTM/h` *({text.format_rtm(rate_per_min)} RTM/min)*",
     ]
@@ -791,7 +786,7 @@ def build_farm_container(
 
     c.add_text('\n'.join(lines))
     c.add_separator(divider=True)
-    status_text = f"{get_emoji('root_ferme', True)}**{'Minage actif' if not is_mem_full else 'Minage suspendu (mémoire pleine)'}** · {'Production en temps réel' if is_fr else 'Real-time production'}"
+    status_text = f"{get_emoji('root_ferme', True)}**{'Minage actif' if not is_mem_full else 'Minage suspendu (mémoire saturée)'}** · {'Données synchronisées' if is_fr else 'Synchronized data'}"
     c.add_text(status_text)
 
     return c, file
@@ -820,7 +815,7 @@ def build_hardware_container(
 
     clean_name = display_name.upper()
     term_icon = get_emoji('root_terminal', True)
-    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Matériel & Équipements · Inventaire système' if is_fr else 'Hardware & Equipment · System inventory'}")
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Inventaire des baies & Matériel' if is_fr else 'Rack inventory & Hardware'}")
     c.add_separator(divider=True)
 
     lines = []
@@ -863,10 +858,9 @@ def build_hardware_container(
     if not def_any:
         lines.append(f"*{'Aucun module installé' if is_fr else 'No modules installed'}*")
 
-    lines.append(f"\n{get_emoji('root_materiel', True)}**{'Accès boutique' if is_fr else 'Shop access'}** · `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}` *(Infrastructure {level})*")
     c.add_text('\n'.join(lines))
     c.add_separator(divider=True)
-    c.add_text(f"{get_emoji('root_materiel', True)}**{'Boutique accessible via' if is_fr else 'Shop accessible via'}** `/buy`")
+    c.add_text(f"{get_emoji('root_materiel', True)}**{'Boutique accessible via' if is_fr else 'Shop accessible via'}** `/buy` · `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}` *(Infrastructure {level})*")
 
     return c, file
 
@@ -877,13 +871,14 @@ def build_operations_container(
     display_name: str = 'Opérateur',
     file_attachment_name: str | None = None,
 ) -> tuple[discord.ui.Container, discord.File | None]:
-    """Construit le Container Discord V2 pour la vue Opérations."""
+    """Construit le Container Discord V2 pour la vue Opérations avec détail exhaustif ATK/DEF."""
     is_fr = (locale == 'fr')
     level = sanitize_level(result.get('firewall_level', 0))
     file = get_infrastructure_file(level)
     img_name = file_attachment_name or (file.filename if file else f"niveau-{level}.png")
 
     stats = result.get('stats') or MathConfig.calculate_player_stats(result)
+    bay_details = stats.get('bay_details', {})
     atk_stock = int(result.get('attack_points', 0) or 0)
     tot_bits = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(stats.get('total_bits_per_s', 0))
     ndef = int(stats.get('network_defense', 0))
@@ -897,15 +892,48 @@ def build_operations_container(
 
     clean_name = display_name.upper()
     term_icon = get_emoji('root_terminal', True)
-    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Opérations & Sécurité · Surveillance active' if is_fr else 'Operations & Security · Active monitoring'}")
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Opérations & Sécurité · Poste de combat' if is_fr else 'Operations & Security · Combat station'}")
     c.add_separator(divider=True)
 
     lines = [
-        f"{get_emoji('root_operations', True)}**{'Capacité offensive' if is_fr else 'Offensive capacity'}** · `{atk_stock} ATK` · `{tot_bits}`",
-        f"{get_emoji('root_firewall', True)}**{'Défense globale' if is_fr else 'Total defense'}** · `{tdef} DEF` *({ndef} DEF infra + {bdef} DEF modules)*",
+        f"{get_emoji('root_operations', True)}**{'Stock offensif' if is_fr else 'Offensive stock'}** · `{atk_stock} ATK` consommables · `{tot_bits}` débit",
+        f"{get_emoji('root_firewall', True)}**{'Défense globale' if is_fr else 'Total defense'}** · `{tdef} DEF` *({bdef} baies + {ndef} infrastructure)*",
     ]
 
-    # Préparations
+    # Détail Modules d'Attaque par tier
+    lines.append(f"\n{get_emoji('root_operations', True)}**{'Modules d’Attaque installés' if is_fr else 'Installed Attack Modules'}**")
+    atk_any = False
+    tot_atk_count = 0
+    for t in range(1, 6):
+        b = bay_details.get(t, {})
+        cnt = b.get('attack_count', 0)
+        tot_atk_count += cnt
+        if cnt > 0:
+            atk_any = True
+            pow_str = MathConfig.format_bits_per_s(b.get('attack_bits_per_s', 0))
+            lines.append(f"• **T{t}** · `×{cnt}` · `{pow_str}`")
+    if not atk_any:
+        lines.append(f"*{'Aucun module d’attaque installé' if is_fr else 'No attack modules installed'}*")
+    else:
+        lines.append(f"**Total** : `{tot_atk_count}` {'modules' if is_fr else 'modules'} · `{tot_bits}`")
+
+    # Détail Modules de Défense par tier
+    lines.append(f"\n{get_emoji('root_firewall', True)}**{'Modules de Défense installés' if is_fr else 'Installed Defense Modules'}**")
+    def_any = False
+    tot_def_count = 0
+    for t in range(1, 6):
+        b = bay_details.get(t, {})
+        cnt = b.get('bay_defense_count', 0)
+        tot_def_count += cnt
+        if cnt > 0:
+            def_any = True
+            lines.append(f"• **T{t}** · `×{cnt}` · `{b.get('bay_defense_power', 0)} DEF`")
+    if not def_any:
+        lines.append(f"*{'Aucun module de défense installé' if is_fr else 'No defense modules installed'}*")
+    else:
+        lines.append(f"**Total modules** : `{tot_def_count}` · `{bdef} DEF` (+ `{ndef} DEF` infra = **`{tdef} DEF`**)")
+
+    # Préparations en cours (compilation et scans)
     prep_lines = []
     pending_compile = result.get('pending_hack')
     if pending_compile:
@@ -948,7 +976,7 @@ def build_operations_container(
 
     c.add_text('\n'.join(lines))
     c.add_separator(divider=True)
-    c.add_text(f"{get_emoji('root_firewall', True)}**{'Système opérationnel' if is_fr else 'Operational system'}** · {'Surveillance active' if is_fr else 'Active monitoring'}")
+    c.add_text(f"{get_emoji('root_terminal', True)}**{'Poste de combat opérationnel' if is_fr else 'Combat station operational'}** · {'Prêt pour engagement et riposte' if is_fr else 'Ready for engagement and retaliation'}")
 
     return c, file
 
