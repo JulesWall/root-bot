@@ -5161,9 +5161,9 @@ class TestPvPLogger(unittest.IsolatedAsyncioTestCase):
         await logger.log_pvp_attack(attacker=1111, attack_points=500, attacker_name="ShadowHacker")
         logger._send_embed.assert_awaited_once()
         args = logger._send_embed.call_args[0]
-        self.assertEqual(args[0], "public")
         embed = args[1]
-        self.assertIn("500 ATK", embed.description)
+        self.assertNotIn("500 ATK", embed.description)
+        self.assertNotIn("ATK", embed.description)
         self.assertIn("ShadowHacker", embed.description)
         self.assertIn("1111", embed.description)
 

@@ -1012,8 +1012,8 @@ class Logger:
         )
         await self._send_embed("public", embed)
 
-    async def log_pvp_attack(self, attacker: discord.User | discord.Member | int | str, attack_points: int, attacker_name: str | None = None):
-        """Consigne une attaque PvP dans le salon de logs publics avec le nom de l'attaquant et les points d'attaque engagés."""
+    async def log_pvp_attack(self, attacker: discord.User | discord.Member | int | str, attack_points: int | None = None, attacker_name: str | None = None):
+        """Consigne une attaque PvP dans le salon de logs publics avec le nom de l'attaquant (sans divulguer les points d'attaque)."""
         if isinstance(attacker, (discord.User, discord.Member)):
             attacker_str = _format_user_compact(attacker)
         elif attacker_name:
@@ -1023,7 +1023,7 @@ class Logger:
 
         embed = discord.Embed(
             title="⚔️ ATTAQUE RÉSEAU DÉTECTÉE",
-            description=f"Une cyberattaque d'une puissance de **{int(attack_points):,} ATK** a été lancée par {attacker_str}.",
+            description=f"Une cyberattaque a été lancée par {attacker_str}.",
             color=discord.Color.from_rgb(231, 76, 60),
             timestamp=discord.utils.utcnow(),
         )
