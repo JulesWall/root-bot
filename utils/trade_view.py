@@ -23,7 +23,7 @@ from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
-from utils.root_theme import VisualState
+from utils.root_theme import COLOR_AMBER, VisualState
 from utils.ui_components import create_trade_buttons
 
 
@@ -119,7 +119,7 @@ class TradeView(discord.ui.View):
             receive_lines=receive_lines,
             validation_status=status_line,
         )
-        return RootEmbed(self.ctx, 'trade', desc_content)
+        return RootEmbed(self.ctx, 'trade', desc_content, color=COLOR_AMBER)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Seuls l'initiateur et la cible peuvent interagir avec les boutons."""
@@ -218,8 +218,14 @@ class TradeView(discord.ui.View):
         if self.message:
             try:
                 await self.message.edit(embed=embed, view=view)
+                return
             except Exception:
                 pass
+        try:
+            if hasattr(self.ctx, 'send'):
+                await self.ctx.send(embed=embed)
+        except Exception:
+            pass
 
     async def _delete_message(self):
         """Supprime le message d'échange du salon de manière sûre."""
@@ -250,8 +256,15 @@ class TradeView(discord.ui.View):
                 receive_rtm=self.receive_rtm,
             )
 
-            # 2. Suppression de l'affichage dans le salon (la validation n'a pas lieu d'être publique)
-            await self._delete_message()
+            # 2. Affichage de la confirmation dans le salon
+            success_msg = text.get(
+                self.ctx,
+                'g_trade_success_summary',
+                initiator=self.initiator.id,
+                target=self.target.id,
+            )
+            embed = RootEmbed(self.ctx, 'trade', success_msg, state=VisualState.SUCCESS)
+            await self._edit_message(embed=embed, view=None)
 
             # 3. Blockchain log si Rootium transféré
             logger = Logger(self.bot)

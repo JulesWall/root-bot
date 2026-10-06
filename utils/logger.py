@@ -19,6 +19,7 @@ from typing import Any
 import discord
 
 from lang.fr import text
+from utils.root_theme import COLOR_LOG_ATTACK, COLOR_LOG_EVENT, COLOR_LOG_SCAN
 from utils.time_format import to_utc_timestamp
 
 # Mapping entre les clés logicielles et les noms des variables d'environnement
@@ -77,7 +78,7 @@ def _style_public_embed(
     bot: Any,
     title: str,
     description: str,
-    color: discord.Color,
+    color: discord.Color = COLOR_LOG_EVENT,
     author_category: str = "ÉVÉNEMENT RÉSEAU",
     user_avatar_url: str | None = None,
 ) -> discord.Embed:
@@ -588,8 +589,8 @@ class Logger:
         ctx,
         winner: discord.User,
         title: str,
-        color: discord.Color,
-        details: list[str],
+        color: discord.Color = COLOR_LOG_EVENT,
+        details: list[str] | None = None,
         server_name: str = "Serveur inconnu",
     ):
         """Consigne la résolution réussie d'un mini-jeu dans le salon de logs publics."""
@@ -597,9 +598,10 @@ class Logger:
         guild_str = f"{guild.name} (`{guild.id}`)" if guild else server_name
 
         lines = [f"> 👤 **Opérateur :** {_format_user_compact(winner)}"]
-        for detail in details:
-            clean_d = detail if detail.startswith(">") else f"> {detail}"
-            lines.append(clean_d)
+        if details:
+            for detail in details:
+                clean_d = detail if detail.startswith(">") else f"> {detail}"
+                lines.append(clean_d)
         lines.append(f"> 🌐 **Serveur :** {guild_str}")
 
         winner_avatar = getattr(winner, "display_avatar", None)
@@ -609,7 +611,7 @@ class Logger:
             self.bot,
             title=title,
             description="\n".join(lines),
-            color=color,
+            color=color or COLOR_LOG_EVENT,
             author_category="ÉVÉNEMENT RÉSEAU",
             user_avatar_url=avatar_url,
         )
@@ -618,37 +620,37 @@ class Logger:
     async def log_hash_won(self, ctx, winner: discord.User, target: int, players_count: int, server_name: str):
         """Consigne la résolution réussie d'un Hash Challenge dans le salon de logs publics."""
         details = [f"**Hash décodé :** `{target}`", f"**Joueurs en compétition :** `{players_count}`"]
-        await self.log_challenge_won(ctx, winner, "🧩 Hash Challenge résolu !", discord.Color.from_rgb(0, 200, 255), details, server_name)
+        await self.log_challenge_won(ctx, winner, "🧩 Hash Challenge résolu !", COLOR_LOG_EVENT, details, server_name)
 
     async def log_pin_won(self, ctx, winner: discord.User, target: int, players_count: int, server_name: str):
         """Consigne la résolution réussie d'un Code PIN dans le salon de logs publics."""
         details = [f"**Code PIN validé :** `{target}`", f"**Joueurs en compétition :** `{players_count}`"]
-        await self.log_challenge_won(ctx, winner, "🔐 Code PIN déchiffré !", discord.Color.gold(), details, server_name)
+        await self.log_challenge_won(ctx, winner, "🔐 Code PIN déchiffré !", COLOR_LOG_EVENT, details, server_name)
 
     async def log_decode_won(self, ctx, winner: discord.User, sequence: str, target: str, server_name: str):
         """Consigne la résolution réussie d'un Décryptage dans le salon de logs publics."""
         details = [f"**Séquence :** `{sequence}`", f"**Code validé :** `{target}`"]
-        await self.log_challenge_won(ctx, winner, "🔍 Décryptage résolu !", discord.Color.from_rgb(155, 89, 182), details, server_name)
+        await self.log_challenge_won(ctx, winner, "🔍 Décryptage résolu !", COLOR_LOG_EVENT, details, server_name)
 
     async def log_anomaly_won(self, ctx, winner: discord.User, line: int, digit: str, server_name: str):
         """Consigne la neutralisation réussie d'une Anomalie dans le salon de logs publics."""
         details = [f"**Ligne de l'anomalie :** `Ligne {line}`", f"**Chiffre parasite :** `{digit}`"]
-        await self.log_challenge_won(ctx, winner, "⚠️ Anomalie neutralisée !", discord.Color.from_rgb(231, 76, 60), details, server_name)
+        await self.log_challenge_won(ctx, winner, "⚠️ Anomalie neutralisée !", COLOR_LOG_EVENT, details, server_name)
 
     async def log_buffer_won(self, ctx, winner: discord.User, target: str, server_name: str):
         """Consigne la réorganisation réussie d'un Buffer dans le salon de logs publics."""
         details = [f"**Code reconstitué :** `{target}`"]
-        await self.log_challenge_won(ctx, winner, "📦 Buffer réaligné !", discord.Color.from_rgb(41, 128, 185), details, server_name)
+        await self.log_challenge_won(ctx, winner, "📦 Buffer réaligné !", COLOR_LOG_EVENT, details, server_name)
 
     async def log_signal_won(self, ctx, winner: discord.User, winning_letter: str, server_name: str):
         """Consigne l'interception réussie d'un Signal dans le salon de logs publics."""
         details = [f"**Fréquence dominante :** `{winning_letter}`"]
-        await self.log_challenge_won(ctx, winner, "📡 Signal intercepté !", discord.Color.from_rgb(26, 188, 156), details, server_name)
+        await self.log_challenge_won(ctx, winner, "📡 Signal intercepté !", COLOR_LOG_EVENT, details, server_name)
 
     async def log_packet_won(self, ctx, winner: discord.User, missing_packet: int, server_name: str):
         """Consigne l'identification réussie du paquet manquant dans le salon de logs publics."""
         details = [f"**Paquet manquant :** `Paquet #{missing_packet}`"]
-        await self.log_challenge_won(ctx, winner, "🛰️ Paquet manquant identifié !", discord.Color.from_rgb(230, 126, 34), details, server_name)
+        await self.log_challenge_won(ctx, winner, "🛰️ Paquet manquant identifié !", COLOR_LOG_EVENT, details, server_name)
 
     async def log_daily_event_report(self, summary: list[dict], resolution_map: dict[int, list[dict]] | None = None):
         """
@@ -1109,7 +1111,7 @@ class Logger:
             self.bot,
             title="🔓 Fuite de Données // Renseignement Réseau",
             description="\n".join(lines),
-            color=discord.Color.from_rgb(220, 50, 50),
+            color=COLOR_LOG_SCAN,
             author_category="CYBER-RENSEIGNEMENT",
             user_avatar_url=avatar_url,
         )
@@ -1152,7 +1154,7 @@ class Logger:
             self.bot,
             title="⚔️ Attaque Réseau Détectée",
             description="\n".join(lines),
-            color=discord.Color.from_rgb(231, 76, 60),
+            color=COLOR_LOG_ATTACK,
             author_category="ALERTE OFFENSIVE",
             user_avatar_url=avatar_url,
         )

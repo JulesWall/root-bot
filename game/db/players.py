@@ -446,7 +446,7 @@ class Player:
                 elapsed = (now_ref - ref).total_seconds()
                 if elapsed < cooldown:
                     remaining = format_duration(cooldown - elapsed)
-                    ts = int((ref + timedelta(seconds=cooldown)).timestamp())
+                    ts = to_utc_timestamp(ref + timedelta(seconds=cooldown))
                     raise GameError('claim_cooldown', remaining=remaining, time=remaining, ts=ts, timestamp=ts, next_ts=ts)
 
         stats = MathConfig.calculate_player_stats(p)
@@ -633,11 +633,8 @@ class Player:
         active = HackDB.get_active(tx, actor)
         if active:
             exp = active.get('expires_at')
-            ts = 0
-            if exp is not None and hasattr(exp, 'timestamp'):
-                aware = exp.replace(tzinfo=timezone.utc) if exp.tzinfo is None else exp
-                ts = int(aware.timestamp())
-            now_ts = int(tx.now.timestamp())
+            ts = to_utc_timestamp(exp)
+            now_ts = to_utc_timestamp(tx.now)
             rem_sec = max(0, ts - now_ts)
             remaining = format_duration(rem_sec)
             raise GameError(
@@ -778,11 +775,8 @@ class Player:
         active_scan = HackDB.get_active(tx, actor, type='scan')
         if active_scan:
             exp = active_scan.get('expires_at')
-            ts = 0
-            if exp is not None and hasattr(exp, 'timestamp'):
-                aware = exp.replace(tzinfo=timezone.utc) if exp.tzinfo is None else exp
-                ts = int(aware.timestamp())
-            now_ts = int(tx.now.timestamp())
+            ts = to_utc_timestamp(exp)
+            now_ts = to_utc_timestamp(tx.now)
             rem_sec = max(0, ts - now_ts)
             remaining = format_duration(rem_sec)
             raise GameError('scan_in_progress', timestamp=ts, ts=ts, remaining=remaining, duration=remaining)
@@ -1339,7 +1333,7 @@ class Player:
             if interval_seconds < cooldown_sec:
                 remaining_sec = cooldown_sec - interval_seconds
                 remaining_str = format_duration(remaining_sec)
-                ts = int((ref + timedelta(seconds=cooldown_sec)).timestamp())
+                ts = to_utc_timestamp(ref + timedelta(seconds=cooldown_sec))
                 raise GameError('hourly_cooldown', remaining=remaining_str, time=remaining_str, remaining_seconds=remaining_sec, ts=ts, timestamp=ts, next_ts=ts)
 
             # 2. Vérification de la fenêtre de combo (60m à 80m)
@@ -1369,9 +1363,9 @@ class Player:
             lost_streak = 0
             lost_bonus = Decimal('0.00')
 
-        # Multiplicateur lié au niveau de pare-feu : (firewall_level + 1)
+        # Multiplicateur lié au niveau de l'infrastructure
         fw_level = int(p.get('firewall_level', 0) or 0)
-        fw_mult = Decimal(str(max(0, fw_level) + 1))
+        fw_mult = Decimal(str(MathConfig.get_event_firewall_multiplier(fw_level)))
 
         # Tirage aléatoire uniforme du gain de base
         base_gain = (Decimal(str(random.randint(reward_min, reward_max))) * fw_mult).quantize(Decimal('0.01'))
@@ -1408,8 +1402,8 @@ class Player:
 
         next_avail_dt = tx.now + timedelta(seconds=cooldown_sec)
         combo_dead_dt = tx.now + timedelta(seconds=max_combo_sec)
-        next_ts = int(next_avail_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(next_avail_dt, 'tzinfo', None) is None else int(next_avail_dt.timestamp())
-        combo_ts = int(combo_dead_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(combo_dead_dt, 'tzinfo', None) is None else int(combo_dead_dt.timestamp())
+        next_ts = to_utc_timestamp(next_avail_dt)
+        combo_ts = to_utc_timestamp(combo_dead_dt)
 
         can_save = (lost_streak > 1 or lost_bonus > Decimal('0.00'))
         combo_saver_credits = int(p.get('combo_saver_credits', 0) or 0)
@@ -1429,7 +1423,7 @@ class Player:
             'next_available_ts': next_ts,
             'combo_deadline_ts': combo_ts,
             'firewall_level': fw_level,
-            'firewall_multiplier': int(fw_mult),
+            'firewall_multiplier': float(fw_mult) if float(fw_mult) % 1 != 0 else int(fw_mult),
             'can_save_combo': can_save,
             'lost_streak': lost_streak,
             'lost_bonus': lost_bonus,

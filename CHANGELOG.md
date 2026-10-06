@@ -1,49 +1,87 @@
-# Changelog — Mises à jour Root OS
+# 🚀 Changelog — Root OS : Mise à Jour Majeure 3.0
 
-## [Graphismes & Interface] — Cohérence visuelle & Emojis personnalisés Root OS
+Bienvenue dans l'**Update 3 de Root OS** ! 🎉
 
-- **Suppression des embeds superflus** : Les messages qui n'étaient pas des embeds (erreurs de jeu, annulations de devis, messages d'information simples) sont désormais envoyés sous forme de texte clair et élégant, évitant l'encombrement visuel des embeds répétitifs.
-- **Remplacement complet des emojis vanilla** : Fin des emojis standards génériques. Toutes les commandes et notifications affichent désormais les 17 emojis personnalisés créés pour Root OS (terminal animé, alerte animée, récolte animée, radar de scan animé, retour animé, ainsi que les icônes dédiées de ferme, puissance, production, mémoire, bilan, matériel, etc.).
-- **Cohérence esthétique globale** : Harmonisation de la typographie, de la hiérarchie visuelle et de la ponctuation entre tous les messages et écrans du bot.
+Merci à toutes et à tous pour votre fidélité, votre énergie et vos retours précieux depuis le lancement. Cette mise à jour est un cap majeur pour toute la communauté : elle transforme en profondeur votre expérience de jeu, enrichit l'univers cyberpunk du bot et vous offre un poste de commande plus vivant, plus beau et plus intuitif que jamais. 
 
-## [Poste de Commande V2] — `/network`
+Installez-vous confortablement, préparez vos rigs, voici tout ce qui change pour vous !
 
-- **4 Vues Complètes Disponibles** :
-  - **Accueil** : Vue d'ensemble du réseau, identité, statistiques clés, infrastructure et progression.
-  - **Ferme** : Débits de minage en temps réel, jauge mémoire vive, détail des mineurs par tier et automatisation.
-  - **Matériel** : Inventaire exhaustif des baies (Minage, Attaque, Défense) regroupé par tier et accès boutique.
-  - **Opérations** : Stock offensif, statut de compilation/scans, attaques en cours et droits de représailles.
-- **Interface Discord Components V2** : Rendu visuel soigné dans un conteneur unifié avec bordure d'accentuation (turquoise/ambrée).
-- **Illustration panoramique au sommet** : La scène d'infrastructure du joueur est intégrée en tête de conteneur via MediaGallery.
-- **Barre d'actions à 2 rangées intégrée dans le conteneur** :
-  - **Rangée 1 (Onglets de navigation)** : 3 boutons permettant de basculer instantanément vers les autres vues depuis n'importe quel onglet.
-  - **Rangée 2 (Actions rapides)** : Bouton *Récolter* dynamique (vert avec solde prêt ou grisé si vide) et bouton *Actualiser* opérationnels depuis toutes les vues.
+---
 
-## [Cohérence & Esthétique des Messages]
+## 🏢 Adieu le « Firewall », place aux véritables Infrastructures !
 
-- **Suppression des embeds superflus** :
-  - Les actions instantanées comme la récolte (`/claim`) et la prime horaire (`/hourly`) s'affichent sous forme de messages directs et aérés avec boutons intégrés plutôt que d'embeds encombrants.
-  - Les erreurs de jeu, annulations de confirmation et expirations restent en messages textuels épurés.
-- **Harmonisation stricte des messages de délai** :
-  - Structure symétrique et identique pour tous les messages de cooldown et d'attente (prime horaire `/hourly`, récolte `/claim`, réputation `/rep`, contrats `/contract`, mini-jeux) :
-    `> {root_temps} **Délai insuffisant** · [Raison concise]. Reviens dans **[durée]**.`
-  - Alignement des styles, de la ponctuation et du tutoiement sur l'ensemble des commandes.
-- **Remplacement exhaustif des emojis vanilla & gestion des sélecteurs de variante** :
-  - Prise en charge universelle des variations Unicode (avec et sans variation selector `\ufe0f`), éradiquant les emojis standards résiduels.
-  - Toutes les commandes et panneaux de secours (`/network`, `/top`) utilisent désormais exclusivement les 17 emojis personnalisés de Root OS.
-  - Boutons interactifs du classement `/top` équipés des icônes Root OS dédiées.
+Le terme générique de **« Firewall » tire sa révérence** pour laisser place à un système bien plus immersif et représentatif de votre ascension : les **Infrastructures de contrôle**.
 
-## [Refonte des Embeds — Style Cyber Terminal]
+Désormais, lorsque vous améliorez votre réseau avec `/upgrade`, vous ne faites plus simplement monter un niveau abstrait : vous bâtissez et faites grandir votre propre QG informatique physique, du matériel improvisé jusqu'à la forteresse technologique industrielle !
 
-- **En-tête Auteur Unifié** : Chaque embed affiche désormais en en-tête `ROOT OS // <PSEUDO>` accompagné de l'avatar du joueur (ou de l'icône système), conférant à toutes les commandes la signature visuelle du poste de commande `/network`.
-- **Titres Stylisés avec Emojis Root OS** : Les titres d'embeds sont dynamiquement préfixés par l'icône animée ou statique dédiée à l'action (`root_materiel`, `root_firewall`, `root_operations`, `root_scan`, `root_bilan`, `root_puissance`, `root_terminal`).
-- **Harmonisation Chromatique Cyberpunk** : Remplacement des couleurs génériques par la palette officielle de Root OS : Turquoise cyber (`#54E2D1`), Ambre d'alerte/devis (`#FFC15A`) et Rouge d'intrusion/perte (`#F06A6A`).
-- **Nettoyage et Filtrage Intégrés** : Le corps des embeds et les devis interactifs filtrent et convertissent automatiquement tout emoji résiduel vers les emojis Root OS.
+### 🛠️ Les 6 Paliers d'Infrastructure :
+- **Niveau 0 — Smartphone bricolé** : Vos tout premiers pas dans l'ombre, avec les moyens du bord.
+- **Niveau 1 — PC assemblé** : Votre première véritable tour dédiée au minage et au hacking.
+- **Niveau 2 — Station de travail** : Un poste multitâche musclé pour gérer plusieurs baies de modules.
+- **Niveau 3 — Serveur dédié** : Une machine professionnelle tournant 24h/24 avec une protection réseau renforcée.
+- **Niveau 4 — Salle des serveurs** : Une installation industrielle climatisée capable d'encaisser les assauts lourds.
+- **Niveau 5 — Datacenter** : Le sommet absolu du réseau Root OS, une puissance herculéenne et une forteresse imprenable.
 
-## [Système de Rappels & Temporisateurs] — `/rmd` & Notifications
+### 🛡️ Ce que votre Infrastructure débloque et améliore :
+- **Défense Réseau native** : Votre infrastructure vous confère une réserve de base de points de défense (`DEF`), complétée par vos baies défensives.
+- **Accès aux Tiers de modules** : Plus votre infrastructure évolue, plus vous débloquez l'accès aux modules de rang supérieur dans la boutique (de T1 jusqu'à T5).
+- **Multiplicateurs d'infrastructure renforcés** : Vos primes horaires (`/hourly`), vos contrats réseau et vos gains d'événements profitent de multiplicateurs massifs à chaque niveau : **Niveau 0 = ×1**, **Niveau 1 = ×1.75**, **Niveau 2 = ×3**, **Niveau 3 = ×5.25**, **Niveau 4 = ×9**, **Niveau 5 = ×15** !
+- **Illustration panoramique exclusive** : Chaque palier possède sa propre scène en pixel art générée sur mesure, trônant au sommet de votre poste de commande !
 
-- **Correction de la double délivrance** : Suppression de l'envoi simultané du texte brut et de l'embed redondant lors de la réception des rappels en message privé (MP) ou sur le salon de repli.
-- **Icônes Thématiques Root OS** : Les rappels et temporisateurs utilisent désormais l'icône de temporisation dédiée `root_temps` (`⏱️`) plutôt que des icônes d'alerte rouge (`🔔`) ou de minage (`✅`).
-- **Correction du mappage de validation** : Les coches de confirmation (`✅`, `✓`, `🟢`) sont désormais associées au curseur de terminal Root OS (`root_terminal`) au lieu du sac de récolte de minage.
-- **Harmonisation des Libellés** : Alignement des messages de confirmation et de consultation (`/rmd auto`, `/rmd timer`, `/rmd list`, `/rmd cancel`) sur la charte visuelle épurée de Root OS.
+---
 
+## 🖥️ Le Nouveau Poste de Commande V2 (`/network`)
+
+L'affichage central de votre réseau a été entièrement repensé autour des composants interactifs de Discord pour devenir votre véritable cockpit de jeu :
+
+- **4 Onglets Dédiés et Complets** :
+  - **Accueil** : Vue d'ensemble immédiate, identité secrète, statistiques clés, état de l'infrastructure et progression vers le palier suivant.
+  - **Ferme** : Débits de minage en temps réel, jauge visuelle de mémoire vive, répartition des mineurs par tier et état de l'automatisation.
+  - **Matériel** : Inventaire complet et limpide de vos baies (Minage, Attaque, Défense) réparties par palier, avec raccourcis d'achat.
+  - **Opérations** : Stock d'outils offensifs, état des compilations d'exploits, scans actifs, attaques en cours et droits de représailles.
+- **Illustration Panoramique Intégrée** : La scène pixel-art de votre infrastructure s'affiche en grand au sommet de chaque écran.
+- **Boutons d'Actions Rapides** : Basculez entre les onglets en un clic et déclenchez votre **Récolte** (`Claim`) directement depuis les boutons intégrés sans avoir à retaper de commande !
+
+---
+
+## 🎨 Graphismes, Identité Visuelle & Emojis Officiels Root OS
+
+- **17 Emojis Animés et Statiques Exclusifs** : Remplacement complet des emojis standards de Discord par notre propre collection graphique (terminaux animés, jauges de mémoire, radars de scan, alertes système, icônes matérielles, etc.).
+- **Éradication des Embeds Encombrants** : Les confirmations rapides, les erreurs de saisie et les récoltes s'affichent maintenant en messages directs, aérés et élégants. Moins de pollution visuelle, plus de lisibilité !
+- **Signature Cyberpunk Unifiée** : Tous les panneaux et devis adoptent la charte graphique officielle de Root OS : Turquoise cyber (`#54E2D1`), Ambre d'alerte (`#FFC15A`) et Rouge d'intrusion (`#F06A6A`).
+
+---
+
+## ⏱️ Horodatage Dynamique & Minuteurs Universels
+
+- **Double Affichage Infaillible** : Fini les comptes à rebours figés par les limites Discord ! Tous les minuteurs du jeu combinent désormais le timestamp dynamique et la durée textuelle explicite : `<t:{timestamp}:R> ({durée_restante})`.
+- **Zéro Décalage Horaire** : Tous les calculs temporels (`/hourly`, `/claim`, mini-jeux, compilations et scans) sont calibrés sur l'UTC universel, éliminant les bugs de décalage horaire. Vos délais futurs indiquent toujours avec exactitude le temps qu'il vous reste à patienter.
+
+---
+
+## 🛡️ Modération, Sécurité & Équité de Jeu
+
+- **Purge Glissante en 24h** : Les données d'audit et d'historique de modération sont désormais gérées sur une fenêtre glissante stricte de 24 heures, garantissant une surveillance en temps réel, nette et respectueuse des ressources.
+- **Outils d'Audit OP Modernisés** : Les rapports et commandes de contrôle (`!claimaudit`, `!hourlyaudit`, `!eventaudit`) fournissent aux équipes de modération des analyses ultra-précises sur la cadence des 24 dernières heures.
+
+---
+
+## 🤝 Échanges Réseau & Commerce (`/trade`)
+
+- **Message de Confirmation Public dans le Salon** : La validation d'un échange ne fait plus disparaître le message d'origine dans le salon. Le message est désormais mis à jour avec un embed officiel de succès (`🤝 Échange validé avec succès`) attestant publiquement de la transaction entre les deux joueurs, tandis que le récapitulatif détaillé des montants transférés continue d'être envoyé en MP privé à chacun.
+- **Identité Visuelle de Négociation** : L'embed de proposition initiale d'échange adopte la teinte Ambre (`#FFC15A`) de négociation en attente, avant de basculer sur le Turquoise de succès (`#54E2D1`) une fois conclu !
+
+---
+
+## 🎨 Harmonisation Visuelle & Finitions
+
+- **Logs Publics Harmonisés par Rôle** :
+  - **Événements & Mini-jeux résolus** : Tous les mini-jeux (Hash, PIN, Decode, Anomaly, Buffer, Signal, Packet) partagent désormais la même couleur officielle Turquoise cyber (`#54E2D1`) pour une lisibilité parfaite du flux.
+  - **Alertes d'Attaques PvP** : Les alertes d'offensive s'affichent distinctement en Rouge d'intrusion (`#F06A6A`).
+  - **Cyber-renseignement & Scans** : Les fuites de Secret ID et détections de scan s'affichent en Ambre de surveillance (`#FFC15A`).
+- **Poste de Commande `/network`** : Ajout de l'icône billet `💵` sur la ligne du solde USD dans le portefeuille de l'Accueil pour une identification instantanée de vos devises.
+- **Vocabulaire d'Infrastructure Uniformisé** : Remplacement des derniers intitulés résiduels de « Firewall Upgrade » par « Infrastructure Upgrade » dans toutes les langues du jeu.
+
+---
+
+Merci encore à toute la communauté pour vos retours et vos parties endiablées. Bonne exploration de la version 3.0 et que vos débits de Rootium soient maximaux ! ⚡

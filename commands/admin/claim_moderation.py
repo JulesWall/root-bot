@@ -8,7 +8,7 @@ Fonctionnalités :
 4. Transmet le récapitulatif dans le salon de logs de modération dédié (sans aucun affichage public).
 5. Réinitialise à zéro la table daily_claim_logs pour la journée suivante après envoi réussi.
 6. Commande préfixe réservée aux administrateurs (OP) :
-   - !claimaudit <@joueur|id> : audite en direct le comportement d'un joueur suspect sur les dernières 48h.
+   - !claimaudit <@joueur|id> : audite en direct le comportement d'un joueur suspect sur les dernières 24h (glissantes).
 """
 
 import asyncio
@@ -102,7 +102,7 @@ class ClaimModeration(commands.Cog):
             logger.exception("Erreur lors de la vérification du rattrapage du rapport quotidien de claims")
 
     async def _run_daily_report(self) -> str:
-        """Lit les statistiques des 24h, envoie le rapport, purge les logs > 48h et met à jour la date.
+        """Lit les statistiques des 24h, envoie le rapport, purge les logs > 24h et met à jour la date.
 
         Retourne 'busy' si déjà en cours, 'success' après réussite complète.
         Lève une exception si l'envoi ou la purge échoue (les logs sont alors préservés).
@@ -118,7 +118,7 @@ class ClaimModeration(commands.Cog):
                     tx,
                     limit_users=50,
                     since_dt=tx.now - timedelta(hours=24),
-                    claims_since_dt=tx.now - timedelta(hours=48),
+                    claims_since_dt=tx.now - timedelta(hours=24),
                 ),
                 readonly=True,
             )
@@ -129,26 +129,29 @@ class ClaimModeration(commands.Cog):
             today_str = _get_paris_today_str()
 
             def _purge_and_update_date(tx):
-                cutoff_48h = tx.now - timedelta(hours=48)
-                DailyClaimStatsDB.purge_older_than(tx, cutoff_48h)
+                cutoff_24h = tx.now - timedelta(hours=24)
+                DailyClaimStatsDB.purge_older_than(tx, cutoff_24h)
                 DailyClaimStatsDB.set_last_report_date(tx, today_str, tx.now)
 
             await database.run(_purge_and_update_date)
-            logger.info("Rapport claims 24h envoyé, logs > 48h purgés et date mise à jour (%s).", today_str)
+            logger.info("Rapport claims 24h envoyé, logs > 24h purgés et date mise à jour (%s).", today_str)
             return 'success'
 
     # ── Commandes Préfixes OP ────────────────────────────────────────────────
     @commands.command(name="claimaudit")
     async def audit_player_claims(self, ctx, user: discord.User):
-        """Audite en direct les récoltes d'un joueur suspect (historique 48h, réservé aux OP)."""
+        """Audite en direct les récoltes d'un joueur suspect (historique 24h glissante, réservé aux OP)."""
         if not await self.check.is_op(self.bot, ctx.author.id):
             return
 
         database = self.bot.root_service.database
-        claims = await database.run(lambda tx: DailyClaimStatsDB.get_user_claims(tx, user.id), readonly=True)
+        claims = await database.run(
+            lambda tx: DailyClaimStatsDB.get_user_claims(tx, user.id, since_dt=tx.now - timedelta(hours=24)),
+            readonly=True,
+        )
 
         if not claims:
-            await ctx.send(f"ℹ️ Aucun claim enregistré sur les dernières 48h pour {user.mention} (`{user.id}`).")
+            await ctx.send(f"ℹ️ Aucun claim enregistré sur les dernières 24h pour {user.mention} (`{user.id}`).")
             return
 
         analysis = calculate_player_claim_metrics(claims)
@@ -180,7 +183,7 @@ class ClaimModeration(commands.Cog):
 
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="Joueur", value=f"{user.mention} (`{user.id}`)", inline=True)
-        embed.add_field(name="Récoltes (48h)", value=recoltes_str, inline=True)
+        embed.add_field(name="Récoltes (24h)", value=recoltes_str, inline=True)
         embed.add_field(name="Niveau de Risque", value=f"{badge} **{analysis['risk_level']}**", inline=True)
         embed.add_field(name="Intervalle Moyen", value=f"`{mean_str}`", inline=True)
         embed.add_field(name="Écart-type (Dispersion)", value=f"`{std_str}`", inline=True)

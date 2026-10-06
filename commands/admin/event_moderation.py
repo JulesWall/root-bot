@@ -5,8 +5,8 @@ Fonctionnalités :
 1. Tâche planifiée automatique (tasks.loop) déclenchée chaque jour à 00:00 (heure de Paris).
 2. Récupère les statistiques d'événements sur 24h depuis daily_event_stats et event_availability_logs.
 3. Transmet le récapitulatif dans le salon LOG_MODERATION_EVENT_STATS_CHANNEL_ID sans repli automatique.
-4. Purge les statistiques antérieures à 48 heures pour permettre l'audit post-rapport.
-5. Commande préfixe !eventaudit <@joueur|id> (réservée OP) pour auditer un joueur suspect sur 48h.
+4. Purge les statistiques antérieures à 24 heures (glissantes) pour permettre l'audit post-rapport.
+5. Commande préfixe !eventaudit <@joueur|id> (réservée OP) pour auditer un joueur suspect sur 24h (glissantes).
 """
 
 import asyncio
@@ -99,7 +99,7 @@ class EventModeration(commands.Cog):
             logger.exception("Erreur lors de la vérification du rattrapage du rapport quotidien")
 
     async def _run_daily_report(self) -> str:
-        """Lit les statistiques des dernières 24h, envoie le rapport, purge les données > 48h et met à jour la date.
+        """Lit les statistiques des dernières 24h, envoie le rapport, purge les données > 24h et met à jour la date.
         
         Retourne 'busy' si déjà en cours, 'success' après réussite complète.
         Lève une exception si l'envoi ou la purge échoue (les compteurs sont alors préservés).
@@ -132,35 +132,35 @@ class EventModeration(commands.Cog):
 
             def _purge_and_update_date(tx):
                 try:
-                    cutoff_date = (datetime.now(ZoneInfo("Europe/Paris")) - timedelta(days=2)).strftime("%Y-%m-%d")
+                    cutoff_date = (datetime.now(ZoneInfo("Europe/Paris")) - timedelta(days=1)).strftime("%Y-%m-%d")
                 except Exception:
-                    cutoff_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+                    cutoff_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
                 DailyEventStatsDB.purge_older_than(tx, cutoff_date)
                 DailyEventStatsDB.set_last_report_date(tx, today_str, tx.now)
 
             await database.run(_purge_and_update_date)
-            logger.info("Rapport 24h événements envoyé, données > 48h purgées et date mise à jour (%s).", today_str)
+            logger.info("Rapport 24h événements envoyé, données > 24h purgées et date mise à jour (%s).", today_str)
             return 'success'
 
     # ── Commandes Préfixes OP ────────────────────────────────────────────────
     @commands.command(name="eventaudit")
     async def audit_player_event(self, ctx, user: discord.User):
-        """Audite en direct l'activité sur les mini-jeux d'un joueur (historique 48h, réservé aux OP)."""
+        """Audite en direct l'activité sur les mini-jeux d'un joueur (historique 24h glissante, réservé aux OP)."""
         if not await self.check.is_op(self.bot, ctx.author.id):
             return
 
         database = self.bot.root_service.database
         try:
-            since_date_str = (datetime.now(ZoneInfo("Europe/Paris")) - timedelta(days=2)).strftime("%Y-%m-%d")
+            since_date_str = (datetime.now(ZoneInfo("Europe/Paris")) - timedelta(days=1)).strftime("%Y-%m-%d")
         except Exception:
-            since_date_str = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+            since_date_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
         stats = await database.run(
             lambda tx: DailyEventStatsDB.get_user_event_stats(tx, user.id, since_date_str=since_date_str),
             readonly=True,
         )
         recent_wins = await database.run(
-            lambda tx: EventsDB.get_recent_wins_for_user(tx, user.id, limit=20, since_dt=tx.now - timedelta(hours=48)),
+            lambda tx: EventsDB.get_recent_wins_for_user(tx, user.id, limit=20, since_dt=tx.now - timedelta(hours=24)),
             readonly=True,
         )
 
@@ -168,7 +168,7 @@ class EventModeration(commands.Cog):
         part = stats.get("events_participated", 0)
 
         if won == 0 and part == 0 and not recent_wins:
-            await ctx.send(f"ℹ️ Aucune activité sur les événements sur les dernières 48h pour {user.mention} (`{user.id}`).")
+            await ctx.send(f"ℹ️ Aucune activité sur les événements sur les dernières 24h pour {user.mention} (`{user.id}`).")
             return
 
         analysis = calculate_player_event_metrics(won, part, recent_wins)
@@ -186,7 +186,7 @@ class EventModeration(commands.Cog):
         )
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="Joueur", value=f"{user.mention} (`{user.id}`)", inline=True)
-        embed.add_field(name="Victoires / Participations (48h)", value=f"🏆 `{won}` / 🎯 `{part}`", inline=True)
+        embed.add_field(name="Victoires / Participations (24h)", value=f"🏆 `{won}` / 🎯 `{part}`", inline=True)
         embed.add_field(name="Taux de Réussite", value=f"`{analysis['win_rate_pct']:.1f}%`", inline=True)
         embed.add_field(name="Niveau de Risque", value=f"{badge} **{risk_level}**", inline=True)
 

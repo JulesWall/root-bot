@@ -25,6 +25,11 @@ COLOR_AMBER     = discord.Color.from_rgb(255, 193, 90)   # #FFC15A
 COLOR_RED       = discord.Color.from_rgb(240, 106, 106)  # #F06A6A
 COLOR_WHITE     = discord.Color.from_rgb(238, 241, 245)  # #EEF1F5
 
+# Couleurs thématiques unifiées pour les flux de logs publics
+COLOR_LOG_EVENT  = COLOR_TURQUOISE  # #54E2D1 - Événements réseau & mini-jeux résolus
+COLOR_LOG_ATTACK = COLOR_RED        # #F06A6A - Alertes offensives PvP (/hack)
+COLOR_LOG_SCAN   = COLOR_AMBER      # #FFC15A - Cyber-renseignement & expositions (/scan)
+
 # Association état visuel -> couleur
 STATE_COLORS = {
     VisualState.CONSULTATION: COLOR_TURQUOISE,

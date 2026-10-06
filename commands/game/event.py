@@ -79,7 +79,8 @@ class Event(BaseGameCog):
 
         blocks = []
         if fw_mult is not None:
-            blocks.append(text.get(ctx, "g_event_fw_banner", fw_mult=fw_mult, fw_lvl=fw_lvl))
+            fw_mult_str = f"{fw_mult:g}" if isinstance(fw_mult, (int, float)) else str(fw_mult)
+            blocks.append(text.get(ctx, "g_event_fw_banner", fw_mult=fw_mult_str, fw_lvl=fw_lvl))
         for event_key, event_info in sorted_events:
             lines = []
             lines.append(text.get(ctx, f"g_event_{event_key}_name", prefix=prefix))

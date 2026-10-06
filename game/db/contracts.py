@@ -76,7 +76,7 @@ class ContractsDB:
         mult = Decimal(str(cfg.get('special_bonus_multiplier', 1.4))) if is_special else Decimal('1')
         agency = cfg.get('agency_name', "Agence Root CyberSec")
 
-        fw_mult = Decimal(str(max(0, int(firewall_level or 0)) + 1))
+        fw_mult = Decimal(str(MathConfig.get_event_firewall_multiplier(firewall_level)))
 
         offers = {}
         for tier in ('short', 'medium', 'long'):
@@ -100,7 +100,7 @@ class ContractsDB:
             'is_special': is_special,
             'offers': offers,
             'firewall_level': int(firewall_level or 0),
-            'firewall_multiplier': int(fw_mult),
+            'firewall_multiplier': float(fw_mult) if float(fw_mult) % 1 != 0 else int(fw_mult),
             'grace_ts': grace_ts,
         }
 
@@ -188,7 +188,7 @@ class ContractsDB:
                 grace_until = None
                 UpdatePlayer.set(tx, discord_id, contract_fidelity=0, contract_grace_until=None)
 
-        fw_mult = Decimal(str(max(0, firewall_level) + 1))
+        fw_mult = Decimal(str(MathConfig.get_event_firewall_multiplier(firewall_level)))
         is_special = (fidelity >= threshold)
         mult = Decimal(str(cfg.get('special_bonus_multiplier', 1.4))) if is_special else Decimal('1')
 

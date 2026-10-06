@@ -114,6 +114,10 @@ def to_utc_timestamp(dt) -> int:
     """
     if dt is None:
         return 0
+    if isinstance(dt, (int, float)):
+        return int(dt)
+    if isinstance(dt, str) and (dt.isdigit() or (dt.startswith('-') and dt[1:].isdigit())):
+        return int(dt)
     if not hasattr(dt, "timestamp"):
         try:
             dt = datetime.fromisoformat(str(dt))

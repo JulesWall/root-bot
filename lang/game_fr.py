@@ -19,7 +19,7 @@ text = {
     'g_error_insufficient_funds_usd': '> 💳 **Fonds insuffisants** · Il te manque des fonds. Coût : **{usd} USD**.',
     'g_error_insufficient_funds_rtm': '> 💳 **Fonds insuffisants** · Il te manque des fonds. Coût : **{rtm} RTM**.',
     'g_error_insufficient_funds_both': '> 💳 **Fonds insuffisants** · Il te manque des fonds. Coût : **{usd} USD** · **{rtm} RTM**.',
-    'g_error_upgrade_insufficient_funds': '> 💳 **Fonds insuffisants** · Ton solde est trop bas. Il te faut **{usd} USD** pour améliorer ton pare-feu au **Niveau {level}**.',
+    'g_error_upgrade_insufficient_funds': '> 💳 **Fonds insuffisants** · Ton solde est trop bas. Il te faut **{usd} USD** pour améliorer ton infrastructure au **Niveau {level}**.',
     'g_error_invalid_selection': '> ❓ **Sélection invalide** · Choix invalide ou élément introuvable.',
     'g_error_buy_usage': '> ⚠️ **Syntaxe invalide** · Utilisation de la commande `buy` :\n\n🔹 **Syntaxe** : `{prefix}buy <type> [tier] [quantité|all] [confirm]`\n🔹 **Types disponibles** : `mining`, `attack`, `defense`\n🔹 **Tiers** : `1` à `5` (par défaut : `1`)\n🔹 **Quantité** : Nombre entier positif (par défaut : `1`)\n🔹 **Confirmation** : `confirm` *(optionnel, pour valider immédiatement l’achat)*\n\n💡 **Exemples** :\n• `{prefix}buy mining` ➔ Devis pour 1x minage T1\n• `{prefix}buy attack 2 5` ➔ Devis pour 5x attaque T2\n• `{prefix}buy defense 3 20 confirm` ➔ Achat immédiat de 20x défense T3',
     'g_error_rep_usage': '> ⚠️ **Syntaxe invalide** · Utilisation de la commande `rep` :\n\n🔹 **Syntaxe** : `{prefix}rep <@joueur>`\n🔹 **Description** : Accorde un point d’honneur et de réputation à un autre joueur inscrit.\n⏱️ **Délai** : 1 vote toutes les 24h.\n\n💡 **Exemple** :\n• `{prefix}rep @Joueur`',

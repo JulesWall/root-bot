@@ -151,9 +151,10 @@ class Upgrade(BaseGameCog):
             else:
                 rem_usd = f"**{text.format_usd(rem_usd_val)} USD**"
 
-            income_mult = next_lvl + 1
-            cur_income_mult = cur_lvl + 1
-            cur_multiplier = MathConfig.get_event_firewall_multiplier(cur_lvl)
+            next_mult = MathConfig.get_event_firewall_multiplier(next_lvl)
+            cur_mult = MathConfig.get_event_firewall_multiplier(cur_lvl)
+            next_mult_str = f"{next_mult:g}"
+            cur_mult_str = f"{cur_mult:g}"
 
             unlocked_modules = text.get(ctx, f'g_upgrade_modules_{next_lvl}')
 
@@ -179,12 +180,12 @@ class Upgrade(BaseGameCog):
                 cur_usd=cur_usd,
                 rem_usd=rem_usd,
                 duration=result.get('duration', '5h'),
-                multiplier=event_multiplier,
-                cur_multiplier=cur_multiplier,
+                multiplier=next_mult_str,
+                cur_multiplier=cur_mult_str,
                 defense_gain=def_gain_fmt,
                 defense_next=def_next_fmt,
-                income_mult=income_mult,
-                cur_income_mult=cur_income_mult,
+                income_mult=next_mult_str,
+                cur_income_mult=cur_mult_str,
                 unlocked_modules=unlocked_modules,
                 perks=perks_str,
             )

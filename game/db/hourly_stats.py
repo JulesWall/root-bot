@@ -76,7 +76,7 @@ class HourlyStatsDB:
             tx: Transaction MySQL active.
             limit_users: Nombre maximum d'utilisateurs à renvoyer.
             since_dt: Borne temporelle inférieure facultative pour les totaux (ex: dernières 24h).
-            claims_since_dt: Borne temporelle inférieure facultative pour l'historique d'analyse (ex: dernières 48h).
+            claims_since_dt: Borne temporelle inférieure facultative pour l'historique d'analyse (ex: dernières 24h).
 
         Returns:
             Une liste de dictionnaires ordonnée par claim_count DESC :
@@ -179,7 +179,7 @@ class HourlyStatsDB:
 
     @staticmethod
     def purge_older_than(tx, cutoff_dt: datetime) -> None:
-        """Supprime les logs antérieurs à la date limite (rétention 48h)."""
+        """Supprime les logs antérieurs à la date limite (rétention 24h glissante)."""
         tx.execute("DELETE FROM hourly_logs WHERE claimed_at < %s", (cutoff_dt,))
 
     @staticmethod

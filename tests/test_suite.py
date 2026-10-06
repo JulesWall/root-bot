@@ -936,11 +936,11 @@ class TestMathConfig(unittest.TestCase):
 
     def test_event_firewall_multipliers(self):
         self.assertEqual(MathConfig.get_event_firewall_multiplier(0), 1)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(1), 2)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(1), 1.75)
         self.assertEqual(MathConfig.get_event_firewall_multiplier(2), 3)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(3), 4)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(4), 5)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(5), 6)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(3), 5.25)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(4), 9)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(5), 15)
 
     def test_convert_rtm_to_usd_rate(self):
         """Conversion RTM → USD au taux configuré, arrondi à 2 décimales."""
@@ -2703,14 +2703,16 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         self.assertIn(101, mock_db.daily_stats)
 
     async def test_report_success_resets_stats(self):
-        """Vérifie qu'un envoi réussi purge les statistiques antérieures à 48h mais préserve les récentes."""
+        """Vérifie qu'un envoi réussi purge les statistiques antérieures à 24h mais préserve les récentes."""
         from commands.admin.event_moderation import EventModeration
 
         mock_bot = MagicMock()
         mock_db = MockDatabase()
-        old_date = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%d")
+        old_date_4d = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%d")
+        old_date_2d = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
         recent_date = datetime.now().strftime("%Y-%m-%d")
-        mock_db.daily_stats[(200, old_date)] = {"discord_id": 200, "date_key": old_date, "events_won": 5, "events_participated": 10}
+        mock_db.daily_stats[(200, old_date_4d)] = {"discord_id": 200, "date_key": old_date_4d, "events_won": 5, "events_participated": 10}
+        mock_db.daily_stats[(200, old_date_2d)] = {"discord_id": 200, "date_key": old_date_2d, "events_won": 3, "events_participated": 6}
         mock_db.daily_stats[(201, recent_date)] = {"discord_id": 201, "date_key": recent_date, "events_won": 2, "events_participated": 3}
 
         mock_bot.root_service.database = mock_db
@@ -2720,8 +2722,9 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         status = await cog._run_daily_report()
 
         self.assertEqual(status, 'success')
-        self.assertNotIn((200, old_date), mock_db.daily_stats, "Les données > 48h doivent être purgées.")
-        self.assertIn((201, recent_date), mock_db.daily_stats, "Les données < 48h doivent être conservées.")
+        self.assertNotIn((200, old_date_4d), mock_db.daily_stats, "Les données > 24h doivent être purgées.")
+        self.assertNotIn((200, old_date_2d), mock_db.daily_stats, "Les données > 24h (2 jours) doivent être purgées.")
+        self.assertIn((201, recent_date), mock_db.daily_stats, "Les données < 24h doivent être conservées.")
 
     async def test_concurrent_daily_reports_prevented(self):
         """Vérifie que deux rapports simultanés ne peuvent pas s'exécuter en parallèle."""
@@ -3448,8 +3451,8 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
             self.assertTrue("<@12345> n'a pas au moins **2,000.00 USD**" in args2[0] or "<@12345> does not hold at least **2,000.00 USD**" in args2[0])
             self.assertFalse(kwargs2.get("ephemeral", False))
 
-    async def test_trade_acceptance_deletes_message(self):
-        """Vérifie que l'acceptation de l'échange supprime le message du salon au lieu d'afficher un résumé public."""
+    async def test_trade_acceptance_confirms_in_channel(self):
+        """Vérifie que l'acceptation de l'échange affiche un message de confirmation dans le salon au lieu de supprimer le message."""
         from utils.trade_view import TradeView
         bot = MagicMock()
         bot.root_service = MagicMock()
@@ -3460,6 +3463,7 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
         ctx.guild = MagicMock()
         ctx.guild.id = 999
         ctx.interaction = MagicMock()
+        ctx.interaction.edit_original_response = AsyncMock()
         ctx.interaction.delete_original_response = AsyncMock()
 
         initiator = MagicMock()
@@ -3480,6 +3484,7 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
             receive_rtm=Decimal("10"),
         )
         view.message = MagicMock()
+        view.message.edit = AsyncMock()
         view.message.delete = AsyncMock()
 
         with patch("utils.trade_view.Logger") as mock_logger_cls:
@@ -3491,11 +3496,22 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
             interaction = MagicMock()
             await view._execute_trade(interaction)
 
-            # Doit avoir supprimé le message
-            ctx.interaction.delete_original_response.assert_called_once()
+            # Ne doit PAS avoir supprimé le message
+            ctx.interaction.delete_original_response.assert_not_called()
+            # Doit avoir mis à jour le message avec la confirmation publique
+            ctx.interaction.edit_original_response.assert_called_once()
+            call_kwargs = ctx.interaction.edit_original_response.call_args[1]
+            self.assertIsNone(call_kwargs.get("view"))
+            embed = call_kwargs.get("embed")
+            self.assertIsNotNone(embed)
+            self.assertIn("111", embed.description)
+            self.assertIn("222", embed.description)
             # DMs doivent avoir été envoyés
             initiator.send.assert_called_once()
             target.send.assert_called_once()
+
+    # Rétrocompatibilité avec l'ancien nom de test
+    test_trade_acceptance_deletes_message = test_trade_acceptance_confirms_in_channel
 
 
 class TestMiningClaimAndWelcome(unittest.TestCase):
@@ -6608,16 +6624,22 @@ class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
         self._loop_patch.stop()
 
     async def test_run_report_success_resets_database(self):
-        """Un envoi réussi doit purger les logs de plus de 48h et enregistrer la date."""
+        """Un envoi réussi doit purger les logs de plus de 24h et enregistrer la date."""
         mock_bot = MagicMock()
         mock_db = MockDatabase()
         now = datetime(2026, 9, 22, 12, 0, 0)
         mock_db.now = now
 
-        # Insérer 1 claim ancien (> 48h) et 1 claim récent (< 48h)
+        # Insérer 1 claim très ancien (> 48h), 1 claim intermédiaire (30h > 24h) et 1 claim récent (< 24h)
         mock_db.daily_claim_logs.append({
             "discord_id": 999,
             "claimed_at": now - timedelta(hours=50),
+            "interval_seconds": 900,
+            "amount": Decimal("2"),
+        })
+        mock_db.daily_claim_logs.append({
+            "discord_id": 999,
+            "claimed_at": now - timedelta(hours=30),
             "interval_seconds": 900,
             "amount": Decimal("2"),
         })
@@ -6635,7 +6657,7 @@ class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
         status = await cog._run_daily_report()
         self.assertEqual(status, "success")
         mock_bot.discord_logger.log_daily_claim_report.assert_called_once()
-        self.assertEqual(len(mock_db.daily_claim_logs), 1, "Seuls les logs > 48h doivent être purgés.")
+        self.assertEqual(len(mock_db.daily_claim_logs), 1, "Seuls les logs < 24h doivent être conservés.")
         self.assertEqual(mock_db.daily_claim_logs[0]["claimed_at"], now - timedelta(hours=10))
 
     async def test_run_report_failure_preserves_database(self):
@@ -8902,6 +8924,29 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             await self.service.execute(self.actor, None, 'hourly')
         self.assertEqual(ctx.exception.key, 'hourly_cooldown')
         self.assertEqual(ctx.exception.values.get('remaining_seconds'), 1800)
+        expected_ts = int((self.mock_db.now + timedelta(minutes=30)).replace(tzinfo=timezone.utc).timestamp())
+        self.assertEqual(ctx.exception.values.get('ts'), expected_ts)
+
+    async def test_hourly_send_message_formatting(self):
+        """Vérifie que le message de succès /hourly interpole toutes les variables sans laisser de {variable}."""
+        from commands.game.hourly import Hourly
+        cog = Hourly(MagicMock())
+        mock_ctx = MagicMock()
+        mock_ctx.send = AsyncMock()
+        mock_ctx.interaction = None
+        mock_ctx.author.id = self.actor
+        mock_ctx.author.name = "Tester"
+
+        res = await self.service.execute(self.actor, None, 'hourly')
+        await cog._send(mock_ctx, 'hourly', res)
+        mock_ctx.send.assert_called_once()
+        content = mock_ctx.send.call_args[0][0]
+        self.assertNotIn("{total}", content)
+        self.assertNotIn("{streak}", content)
+        self.assertNotIn("{bonus}", content)
+        self.assertNotIn("{next_ts}", content)
+        self.assertNotIn("{remaining}", content)
+        self.assertIn("1h", content)
 
     async def test_hourly_unlimited_combo(self):
         """Les bonus d'étape s'additionnent sans plafond.
@@ -9216,11 +9261,22 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             "hourly_streak": 4,
             "lang": "fr",
         }
-        # 1 log vieux (> 48h) et 5 logs récents (< 24h)
+        # 1 log très vieux (55h), 1 log intermédiaire (30h > 24h) et 5 logs récents (< 24h)
         self.mock_db.hourly_logs.append({
             "id": 99,
             "discord_id": bot_user,
             "claimed_at": now - timedelta(hours=55),
+            "interval_seconds": 3600,
+            "base_usd": Decimal("40.00"),
+            "bonus_pct": Decimal("0.00"),
+            "total_usd": Decimal("40.00"),
+            "streak": 1,
+            "combo_lost": False,
+        })
+        self.mock_db.hourly_logs.append({
+            "id": 98,
+            "discord_id": bot_user,
+            "claimed_at": now - timedelta(hours=30),
             "interval_seconds": 3600,
             "base_usd": Decimal("40.00"),
             "bonus_pct": Decimal("0.00"),
@@ -9256,7 +9312,7 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(summary), 1)
         self.assertEqual(summary[0]["discord_id"], bot_user)
         self.assertEqual(summary[0]["claim_count"], 5)
-        # Le log vieux (> 48h) a été purgé, les 5 logs récents sont conservés pour audit
+        # Les logs vieux (> 24h) ont été purgés, les 5 logs récents sont conservés pour audit
         self.assertEqual(len(self.mock_db.hourly_logs), 5)
         player = self.mock_db.players[bot_user]
         self.assertEqual(player["hourly_streak"], 4)
@@ -10268,21 +10324,21 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(res0["base_usd"], Decimal("30.00"))
         self.assertLessEqual(res0["base_usd"], Decimal("90.00"))
 
-        # Niveau 1 : multiplicateur x2 (60-180 USD)
+        # Niveau 1 : multiplicateur x1.75 (52.5-157.5 USD)
         self.tx.players[self.actor]["firewall_level"] = 1
         self.tx.players[self.actor]["hourly_last_at"] = None
         res1 = Player.hourly(self.tx, self.actor)
-        self.assertEqual(res1["firewall_multiplier"], 2)
-        self.assertGreaterEqual(res1["base_usd"], Decimal("60.00"))
-        self.assertLessEqual(res1["base_usd"], Decimal("180.00"))
+        self.assertEqual(res1["firewall_multiplier"], 1.75)
+        self.assertGreaterEqual(res1["base_usd"], Decimal("52.50"))
+        self.assertLessEqual(res1["base_usd"], Decimal("157.50"))
 
-        # Niveau 3 : multiplicateur x4 (120-360 USD)
+        # Niveau 3 : multiplicateur x5.25 (157.5-472.5 USD)
         self.tx.players[self.actor]["firewall_level"] = 3
         self.tx.players[self.actor]["hourly_last_at"] = None
         res3 = Player.hourly(self.tx, self.actor)
-        self.assertEqual(res3["firewall_multiplier"], 4)
-        self.assertGreaterEqual(res3["base_usd"], Decimal("120.00"))
-        self.assertLessEqual(res3["base_usd"], Decimal("360.00"))
+        self.assertEqual(res3["firewall_multiplier"], 5.25)
+        self.assertGreaterEqual(res3["base_usd"], Decimal("157.50"))
+        self.assertLessEqual(res3["base_usd"], Decimal("472.50"))
 
     def test_contracts_firewall_scaling(self):
         from game.db.contracts import ContractsDB
@@ -10293,11 +10349,11 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(offers0["offers"]["medium"]["reward_usd"], Decimal("250.00"))
         self.assertEqual(offers0["offers"]["long"]["reward_usd"], Decimal("600.00"))
 
-        # Offres à FW 1 (x2) : 150 USD, 500 USD, 1200 USD
+        # Offres à FW 1 (x1.75) : 131.25 USD, 437.50 USD, 1050 USD
         offers1 = ContractsDB.get_offers(0, firewall_level=1)
-        self.assertEqual(offers1["offers"]["short"]["reward_usd"], Decimal("150.00"))
-        self.assertEqual(offers1["offers"]["medium"]["reward_usd"], Decimal("500.00"))
-        self.assertEqual(offers1["offers"]["long"]["reward_usd"], Decimal("1200.00"))
+        self.assertEqual(offers1["offers"]["short"]["reward_usd"], Decimal("131.25"))
+        self.assertEqual(offers1["offers"]["medium"]["reward_usd"], Decimal("437.50"))
+        self.assertEqual(offers1["offers"]["long"]["reward_usd"], Decimal("1050.00"))
 
         # Démarrage de contrat avec joueur à FW 2 (x3) -> short = 225 USD
         self.tx.players[self.actor]["firewall_level"] = 2
@@ -10364,7 +10420,7 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         self.assertTrue("Défense de l'infrastructure" in content or "Défense Réseau" in content)
         self.assertTrue("+250 DEF" in content or "+100 DEF" in content)
         self.assertIn("Revenus Horaires & Contrats", content)
-        self.assertIn("x2", content)
+        self.assertIn("x1.75", content)
         self.assertIn("Bonus d'événement", content)
         self.assertIn("actuellement x1", content)
         self.assertIn("Attaque T1 & T2, Minage T2, Défense T2", content)
@@ -10381,17 +10437,17 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(settle0["multiplier"], 1)
         self.assertEqual(settle0["final_reward"], Decimal("100.00"))
 
-        # Niveau 1 : multiplicateur x2
+        # Niveau 1 : multiplicateur x1.75
         self.tx.players[self.actor]["firewall_level"] = 1
         settle1 = settle_challenge_win(self.tx, "decode", "decode_challenge", self.actor, 100, self.tx.now, "Guild")
-        self.assertEqual(settle1["multiplier"], 2)
-        self.assertEqual(settle1["final_reward"], Decimal("200.00"))
+        self.assertEqual(settle1["multiplier"], 1.75)
+        self.assertEqual(settle1["final_reward"], Decimal("175.00"))
 
-        # Niveau 5 : multiplicateur x6
+        # Niveau 5 : multiplicateur x15
         self.tx.players[self.actor]["firewall_level"] = 5
         settle5 = settle_challenge_win(self.tx, "decode", "decode_challenge", self.actor, 100, self.tx.now, "Guild")
-        self.assertEqual(settle5["multiplier"], 6)
-        self.assertEqual(settle5["final_reward"], Decimal("600.00"))
+        self.assertEqual(settle5["multiplier"], 15)
+        self.assertEqual(settle5["final_reward"], Decimal("1500.00"))
 
     async def test_contracts_loyalty_grace_ui_embed(self):
         from commands.game.contract import Contract

@@ -154,8 +154,8 @@ class Simulation:
             # Distribution uniforme de récompenses en centimes, approximation explicite.
             cents = self.rng.randint(round(cfg['reward_min_usd'] * 100),
                                      round(cfg['reward_max_usd'] * 100))
-            reward = D(cents) / 100 * MathConfig.get_event_firewall_multiplier(
-                self.player['firewall_level'])
+            reward = D(cents) / 100 * D(str(MathConfig.get_event_firewall_multiplier(
+                self.player['firewall_level'])))
             self.cash += reward
             self.event_income += reward
         self.wins += count

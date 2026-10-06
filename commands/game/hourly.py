@@ -186,6 +186,10 @@ class Hourly(BaseGameCog):
             "bonus": _pct(bonus_pct),
             "streak": streak,
             "next_ts": next_ts,
+            "timestamp": next_ts,
+            "ts": next_ts,
+            "remaining": "1h",
+            "duration": "1h",
         }
         if is_first:
             key = "g_hourly_first"

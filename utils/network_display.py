@@ -155,7 +155,7 @@ def build_overview_embed(
     rtm_wallet = Decimal(str(result.get('rootium') or 0))
     embed.add_field(
         name=f"{get_emoji('root_bilan', True)}{'Ressources' if is_fr else 'Resources'}",
-        value=f"{get_emoji('root_bilan', True)}**Solde USD** : `{usd_str}`\n{get_emoji('root_memoire', True)}**Portefeuille RTM** : `{text.format_rtm(rtm_wallet)} RTM`",
+        value=f"💵 **{'Solde USD' if is_fr else 'USD Balance'}** : `{usd_str} USD`\n{get_emoji('root_memoire', True)}**{'Portefeuille RTM' if is_fr else 'RTM Wallet'}** : `{text.format_rtm(rtm_wallet)} RTM`",
         inline=False,
     )
 
@@ -164,8 +164,8 @@ def build_overview_embed(
     bdef = int(stats.get('total_bay_defense', 0))
     tdef = int(stats.get('total_defense', ndef + bdef))
     max_tier_unlocked = max(1, min(5, level + 1))
-    event_mult = level + 1
-    hourly_mult = level + 1
+    fw_mult = MathConfig.get_event_firewall_multiplier(level)
+    mult_str = f"{fw_mult:g}"
     settings = MathConfig.load()
     base_detect = settings.get('pvp', {}).get('scan', {}).get('base_detection_chance', 0.20)
     detect_pct = int(round(base_detect * 100))
@@ -173,7 +173,7 @@ def build_overview_embed(
     protect_lines = [
         f"{get_emoji('root_firewall', True)}**{'Défense' if is_fr else 'Defense'}** : `{ndef} DEF` *({infra_name})* + `{bdef} DEF` *({'Modules' if is_fr else 'Modules'})* = **{tdef} DEF**",
         f"{get_emoji('root_materiel', True)}**{'Accès modules' if is_fr else 'Module access'}** : `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}`",
-        f"{get_emoji('root_connexions', True)}**{'Multiplicateurs' if is_fr else 'Multipliers'}** : `x{hourly_mult}` {'horaire/contrats' if is_fr else 'hourly/contracts'} · `x{event_mult}` {'events' if is_fr else 'events'}",
+        f"{get_emoji('root_connexions', True)}**{'Multiplicateurs' if is_fr else 'Multipliers'}** : `x{mult_str}` {'horaire/contrats' if is_fr else 'hourly/contracts'} · `x{mult_str}` {'events' if is_fr else 'events'}",
         f"{get_emoji('root_scan', True)}**{'Détection des scans' if is_fr else 'Scan detection'}** : `{detect_pct}%`",
     ]
     embed.add_field(
@@ -698,7 +698,7 @@ def build_overview_container(
         f"{get_emoji('root_recolter', True)}**{'À récolter' if is_fr else 'To claim'}** · **{text.format_rtm(buffer_rtm)} RTM**",
         f"{get_emoji('root_puissance', True)}**{'Puissance de calcul' if is_fr else 'Computing power'}** · {tot_bits}",
         f"{get_emoji('root_firewall', True)}**{'Défense globale' if is_fr else 'Total defense'}** · {tdef} DEF *({bdef} baies + {ndef} infra)*",
-        f"{get_emoji('root_bilan', True)}**{'Portefeuille' if is_fr else 'Wallet'}** · {usd_str} · {text.format_rtm(rtm_wallet)} RTM · {rep_val} {'pts réputation' if is_fr else 'reputation pts'}",
+        f"{get_emoji('root_bilan', True)}**{'Portefeuille' if is_fr else 'Wallet'}** · 💵 `{usd_str} USD` · {text.format_rtm(rtm_wallet)} RTM · {rep_val} {'pts réputation' if is_fr else 'reputation pts'}",
     ]
     c.add_text('\n'.join(stats_lines))
     c.add_separator(divider=True)

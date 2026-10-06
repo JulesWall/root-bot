@@ -98,11 +98,11 @@
   "reputation_gift_points": 1,
   "event_firewall_multipliers": {
     "0": 1,
-    "1": 2,
+    "1": 1.75,
     "2": 3,
-    "3": 4,
-    "4": 5,
-    "5": 6
+    "3": 5.25,
+    "4": 9,
+    "5": 15
   },
   "hash_challenge": {
     "range_size": 1000,
