@@ -240,12 +240,17 @@ class Compile(BaseGameCog):
             await self._send_embed(ctx, 'compile', content, view=view)
             return
 
+        ts = result.get('timestamp', 0)
+        dur = result.get('duration', '')
         content = text.get(
             ctx, 'g_compile_started',
             method=method_label,
             atk=atk,
             rtm=rtm,
-            timestamp=result.get('timestamp', 0),
+            timestamp=ts,
+            ts=ts,
+            duration=dur,
+            remaining=dur,
         )
         await self._send_embed(ctx, 'compile', content)
         await self._log_blockchain(ctx, method_key, result.get('rtm_paid'))
@@ -262,10 +267,13 @@ class Compile(BaseGameCog):
         if not bot_logger:
             bot_logger = Logger(self.bot)
         try:
+            author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+            author_name = (getattr(author, 'display_name', None) or getattr(author, 'name', None)) if author else None
             await bot_logger.log_blockchain_transaction(
                 from_id=ctx.author.id,
                 to_address=to_address,
                 rtm_amount=rtm_val,
+                from_name=author_name,
             )
         except Exception:
             pass

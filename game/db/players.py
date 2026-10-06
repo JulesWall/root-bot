@@ -32,7 +32,7 @@ from game.db.upgrades import UpgradesDB
 from game.game_error import GameError
 from game.math_config import MathConfig
 from utils.text import format_usd
-from utils.time_format import format_duration, format_remaining_time
+from utils.time_format import format_duration, format_remaining_time, to_utc_timestamp
 
 
 def _calculate_module_price(column: str, tier: int = 1) -> tuple[Decimal, Decimal]:
@@ -446,7 +446,8 @@ class Player:
                 elapsed = (now_ref - ref).total_seconds()
                 if elapsed < cooldown:
                     remaining = format_duration(cooldown - elapsed)
-                    raise GameError('claim_cooldown', remaining=remaining, time=remaining)
+                    ts = int((ref + timedelta(seconds=cooldown)).timestamp())
+                    raise GameError('claim_cooldown', remaining=remaining, time=remaining, ts=ts, timestamp=ts, next_ts=ts)
 
         stats = MathConfig.calculate_player_stats(p)
         state = MathConfig.compute_mining_progress(p, stats, tx.now)
@@ -521,7 +522,6 @@ class Player:
         reminder_rescheduled = False
         sec_to_fill = state.get('seconds_to_fill_total', 0)
         if sec_to_fill > 0:
-            from datetime import timedelta
             from game.db.reminders import RemindersDB
             new_remind_at = tx.now + timedelta(seconds=sec_to_fill)
             rescheduled_count = RemindersDB.reschedule_claim_reminder(tx, actor, new_remind_at)
@@ -637,11 +637,17 @@ class Player:
             if exp is not None and hasattr(exp, 'timestamp'):
                 aware = exp.replace(tzinfo=timezone.utc) if exp.tzinfo is None else exp
                 ts = int(aware.timestamp())
+            now_ts = int(tx.now.timestamp())
+            rem_sec = max(0, ts - now_ts)
+            remaining = format_duration(rem_sec)
             raise GameError(
                 'compile_in_progress',
                 method=active.get('method') or method,
                 atk=int(active.get('atk_yield') or 0),
                 timestamp=ts,
+                ts=ts,
+                remaining=remaining,
+                duration=remaining,
             )
 
         stats = MathConfig.calculate_player_stats(p)
@@ -776,7 +782,10 @@ class Player:
             if exp is not None and hasattr(exp, 'timestamp'):
                 aware = exp.replace(tzinfo=timezone.utc) if exp.tzinfo is None else exp
                 ts = int(aware.timestamp())
-            raise GameError('scan_in_progress', timestamp=ts)
+            now_ts = int(tx.now.timestamp())
+            rem_sec = max(0, ts - now_ts)
+            remaining = format_duration(rem_sec)
+            raise GameError('scan_in_progress', timestamp=ts, ts=ts, remaining=remaining, duration=remaining)
 
         # Calcul probabilités estimées pour le devis
         atk = int(scanner.get('attack_points') or 0)
@@ -1047,7 +1056,7 @@ class Player:
         if active:
             remaining = format_remaining_time(active['expires_at'], tx.now)
             ts = int(active['expires_at'].replace(tzinfo=timezone.utc).timestamp())
-            raise GameError('upgrade_in_progress', level=active['target_level'], remaining=remaining, timestamp=ts)
+            raise GameError('upgrade_in_progress', level=active['target_level'], remaining=remaining, duration=remaining, timestamp=ts, ts=ts)
 
         p = PlayerData.get(tx, actor)
         current_level = int(p.get('firewall_level', 0))
@@ -1127,7 +1136,8 @@ class Player:
 
         if not bypass_cooldown and giver.get('next_reputation_at') and giver['next_reputation_at'] > tx.now:
             remaining = format_remaining_time(giver['next_reputation_at'], tx.now)
-            raise GameError('cooldown', time=remaining, remaining=remaining, until=remaining)
+            ts = to_utc_timestamp(giver['next_reputation_at'])
+            raise GameError('cooldown', time=remaining, remaining=remaining, until=remaining, ts=ts, timestamp=ts, next_ts=ts)
 
         UpdatePlayer.set(tx, target, reputation=int(recipient['reputation']) + 1)
         if not bypass_cooldown:
@@ -1329,7 +1339,8 @@ class Player:
             if interval_seconds < cooldown_sec:
                 remaining_sec = cooldown_sec - interval_seconds
                 remaining_str = format_duration(remaining_sec)
-                raise GameError('hourly_cooldown', remaining=remaining_str, time=remaining_str, remaining_seconds=remaining_sec)
+                ts = int((ref + timedelta(seconds=cooldown_sec)).timestamp())
+                raise GameError('hourly_cooldown', remaining=remaining_str, time=remaining_str, remaining_seconds=remaining_sec, ts=ts, timestamp=ts, next_ts=ts)
 
             # 2. Vérification de la fenêtre de combo (60m à 80m)
             if interval_seconds <= max_combo_sec:

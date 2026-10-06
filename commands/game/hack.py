@@ -34,11 +34,13 @@ from game.math_config import MathConfig
 from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+import time
 from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
 from utils.root_theme import VisualState
+from utils.time_format import format_duration
 
 
 logger = logging.getLogger(__name__)
@@ -484,6 +486,8 @@ class Hack(BaseGameCog):
         if result.get('hack_quote'):
             target_zone = result.get('target_zone')
             zone_display = text.get(ctx, 'mining') if target_zone == 'mining' else text.get(ctx, 'attack')
+            ts = result.get('timestamp') or 0
+            dur = format_duration(max(0, ts - int(time.time()))) if ts else "45m"
 
             content = text.get(
                 ctx, 'g_hack_quote',
@@ -491,7 +495,10 @@ class Hack(BaseGameCog):
                 secret_id=result.get('secret_id'),
                 attack_points=result.get('attack_points'),
                 zone_display=zone_display,
-                timestamp=result.get('timestamp'),
+                timestamp=ts,
+                ts=ts,
+                duration=dur,
+                remaining=dur,
                 remaining_atk=result.get('remaining_atk'),
             )
             view = HackConfirmView(
@@ -509,13 +516,18 @@ class Hack(BaseGameCog):
         elif result.get('hack_started'):
             target_zone = result.get('target_zone')
             zone_display = text.get(ctx, 'mining') if target_zone == 'mining' else text.get(ctx, 'attack')
+            ts = result.get('timestamp') or 0
+            dur = format_duration(max(0, ts - int(time.time()))) if ts else "45m"
 
             content = text.get(
                 ctx, 'g_hack_started',
                 target_id=result.get('target_id'),
                 attack_points=result.get('attack_points'),
                 zone_display=zone_display,
-                timestamp=result.get('timestamp'),
+                timestamp=ts,
+                ts=ts,
+                duration=dur,
+                remaining=dur,
             )
             embed = RootEmbed.action_launched(ctx, text.get(ctx, 'act_hack', fallback='Attaque'), content)
             await embed.send(ctx)

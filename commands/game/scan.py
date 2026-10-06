@@ -29,11 +29,13 @@ from game.math_config import MathConfig
 from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+import time
 from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
 from utils.root_theme import VisualState
+from utils.time_format import format_duration, format_remaining_time
 
 
 logger = logging.getLogger(__name__)
@@ -443,13 +445,17 @@ class Scan(BaseGameCog):
 
                     from game.db.secret_ids import next_rotation_at, unix_ts
                     now_utc = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-                    rot_ts = unix_ts(next_rotation_at(now_utc))
+                    next_rot = next_rotation_at(now_utc)
+                    rot_ts = unix_ts(next_rot)
+                    rot_rem = format_remaining_time(next_rot, now_utc)
 
                     msg = text.get_for_lang(
                         scanner_lang, 'g_scan_success_dm',
                         target=target_id,
                         secret_id=target_secret,
                         rotation_ts=rot_ts,
+                        remaining=rot_rem,
+                        duration=rot_rem,
                     )
                     target_name = getattr(target_user, 'name', str(target_id)) if target_user else str(target_id)
                     dm_title = "Scan réussi" if scanner_lang == 'fr' else "Scan Succeeded"
@@ -531,11 +537,17 @@ class Scan(BaseGameCog):
             embed = RootEmbed(ctx, 'scan', content)
             await embed.send(ctx, view=view)
         elif result.get('scan_started'):
+            ts = result.get('timestamp', 0)
+            now_ts = int(time.time())
+            dur = format_duration(max(0, ts - now_ts))
             content = text.get(
                 ctx, 'g_scan_started',
                 target=result.get('target_id'),
                 rtm=text.format_rtm(result.get('rtm_total')),
-                timestamp=result.get('timestamp', 0),
+                timestamp=ts,
+                ts=ts,
+                duration=dur,
+                remaining=dur,
             )
             embed = RootEmbed.action_launched(ctx, text.get(ctx, 'act_scan', fallback='Scan'), content)
             await embed.send(ctx)
@@ -543,11 +555,14 @@ class Scan(BaseGameCog):
             # Log blockchain
             bot_logger = getattr(self.bot, 'discord_logger', None) or Logger(self.bot)
             try:
+                author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+                author_name = (getattr(author, 'display_name', None) or getattr(author, 'name', None)) if author else None
                 await bot_logger.log_blockchain_transaction(
                     from_id=ctx.author.id,
                     to_address="0xROOT_SCAN_NODE",
                     rtm_amount=result.get('rtm_total'),
                     tx_type="SCAN",
+                    from_name=author_name,
                 )
             except Exception:
                 logger.exception("Erreur lors de la journalisation blockchain pour le scan")

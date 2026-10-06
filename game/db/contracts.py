@@ -164,7 +164,9 @@ class ContractsDB:
 
         existing = ContractsDB.get_active(tx, discord_id)
         if existing:
-            raise GameError('contract_in_progress', timestamp=existing['expires_ts'])
+            remaining = format_duration(existing.get('remaining_seconds', 0))
+            expires_ts = existing.get('expires_ts', 0)
+            raise GameError('contract_in_progress', timestamp=expires_ts, ts=expires_ts, remaining=remaining, duration=remaining)
 
         player = tx.one(
             "SELECT * FROM players WHERE discord_id = %s",
@@ -244,7 +246,8 @@ class ContractsDB:
 
         if not active['is_ready']:
             remaining_fmt = format_duration(active['remaining_seconds'])
-            raise GameError('contract_not_ready', remaining=remaining_fmt)
+            expires_ts = active.get('expires_ts', 0)
+            raise GameError('contract_not_ready', remaining=remaining_fmt, duration=remaining_fmt, timestamp=expires_ts, ts=expires_ts)
 
         reward = Decimal(str(active['reward_usd']))
         player = tx.one(

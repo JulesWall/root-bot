@@ -3009,6 +3009,29 @@ class TestBlockchainLogs(unittest.IsolatedAsyncioTestCase):
             self.assertIn("RTM    0.00002", sent_text)
             self.assertIn("USD    0.87", sent_text)
 
+    async def test_log_blockchain_transaction_with_pseudos(self):
+        from utils.logger import Logger
+        bot = MagicMock()
+        mock_channel = AsyncMock()
+        bot.get_channel.return_value = mock_channel
+
+        logger = Logger(bot)
+        fixed_dt = datetime(2026, 9, 16, 8, 42, 17, 446000, tzinfo=timezone.utc)
+        with patch.dict(os.environ, {"LOG_BLOCKCHAIN_CHANNEL_ID": "999888777"}):
+            await logger.log_blockchain_transaction(
+                from_id=123456789,
+                to_address="987654321",
+                rtm_amount=Decimal("0.50000"),
+                dt=fixed_dt,
+                from_name="Neo",
+                to_name="Trinity",
+            )
+            mock_channel.send.assert_called_once()
+            sent_text = mock_channel.send.call_args[0][0]
+            self.assertIn("FROM   123456789 (Neo)", sent_text)
+            self.assertIn("TO     987654321 (Trinity)", sent_text)
+            self.assertIn("RTM    0.50000", sent_text)
+
 
 
 class TestTradeSystem(unittest.IsolatedAsyncioTestCase):
@@ -8743,7 +8766,7 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(hash_pos, -1)
         self.assertLess(pin_pos, hash_pos)
 
-        expected_tag = f"**<t:{future_ts}:T>** (<t:{future_ts}:R>)"
+        expected_tag = f"**<t:{future_ts}:T>** (<t:{future_ts}:R> (10min))"
         self.assertIn(expected_tag, content)
         self.assertNotIn("dans dans", content)
         self.assertNotIn("in in", content)
@@ -8792,7 +8815,7 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent_embeds), 1)
         _, content = sent_embeds[0]
         self.assertIn("Code PIN", content)
-        self.assertIn(f"• Statut : ⏳ Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R>)", content)
+        self.assertIn(f"• Statut : ⏳ Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R> (10min))", content)
         self.assertNotIn("dans dans", content)
 
     async def test_event_send_includes_firewall_multiplier_banner(self):

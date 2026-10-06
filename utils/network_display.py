@@ -12,6 +12,7 @@ Chacune des quatre vues inclut obligatoirement l'illustration du niveau courant 
 
 from decimal import Decimal
 import math
+import time
 from typing import Any
 import discord
 
@@ -40,11 +41,16 @@ def _get_avatar_url(author: Any) -> str | None:
 
 
 def _format_time_relative(dt_or_ts: Any) -> str:
-    """Convertit une datetime ou un timestamp Unix en format Discord relatif <t:...:R>."""
+    """Convertit une datetime ou un timestamp Unix en format Discord relatif <t:...:R> (durée)."""
     if dt_or_ts is None:
         return "N/A"
     ts = to_utc_timestamp(dt_or_ts)
-    return f"<t:{ts}:R>" if ts else "N/A"
+    if not ts:
+        return "N/A"
+    now_ts = int(time.time())
+    rem_sec = max(0, ts - now_ts)
+    rem_str = format_duration(rem_sec)
+    return f"<t:{ts}:R> ({rem_str})"
 
 
 def _format_time_short(dt_or_ts: Any) -> str:
@@ -179,7 +185,7 @@ def build_overview_embed(
     # 5. Identifiant réseau
     secret_id = result.get('secret_id') or "------"
     secret_next_ts = result.get('secret_next_ts')
-    next_rot_str = f"<t:{secret_next_ts}:R>" if secret_next_ts else ("Inconnue" if is_fr else "Unknown")
+    next_rot_str = _format_time_relative(secret_next_ts) if secret_next_ts else ("Inconnue" if is_fr else "Unknown")
     embed.add_field(
         name=f"{get_emoji('root_terminal', True)}{'Identifiant réseau' if is_fr else 'Network identifier'}",
         value=f"{get_emoji('root_terminal', True)}**Secret ID** : ||`{secret_id}`||\n{get_emoji('root_temps', True)}**{'Prochaine rotation' if is_fr else 'Next rotation'}** : {next_rot_str}",

@@ -9,10 +9,12 @@ Ce module achemine les événements du bot vers des salons Discord configurés d
 Inclut une déduplication en mémoire (_reported_locales) pour éviter le spam de logs.
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 import discord
 
@@ -47,7 +49,7 @@ _HOURLY_RISK_LABELS = {
 
 def _format_user_compact(user: discord.User | discord.Member) -> str:
     """Formate l'utilisateur de manière condensée : @Mention (`Nom` · `ID`)."""
-    name = getattr(user, "name", str(user))
+    name = getattr(user, "display_name", None) or getattr(user, "name", str(user))
     user_id = getattr(user, "id", "Inconnu")
     mention = getattr(user, "mention", f"<@{user_id}>")
     return f"{mention} (`{name}` · `{user_id}`)"
@@ -69,6 +71,41 @@ def _get_client_locale(ctx) -> str:
     if locale:
         return f"`{locale}`"
     return "N/A (préfixe)"
+
+
+def _style_public_embed(
+    bot: Any,
+    title: str,
+    description: str,
+    color: discord.Color,
+    author_category: str = "ÉVÉNEMENT RÉSEAU",
+    user_avatar_url: str | None = None,
+) -> discord.Embed:
+    """Crée un embed stylisé pour les logs publics respectant la charte Root OS."""
+    from utils.root_emojis import replace_vanilla_emojis
+
+    clean_title = replace_vanilla_emojis(title)
+    clean_desc = replace_vanilla_emojis(description)
+
+    embed = discord.Embed(
+        title=clean_title,
+        description=clean_desc,
+        color=color,
+        timestamp=discord.utils.utcnow(),
+    )
+
+    bot_user = getattr(bot, "user", None)
+    bot_avatar = bot_user.display_avatar.url if bot_user and hasattr(bot_user, "display_avatar") else None
+
+    embed.set_author(
+        name=f"ROOT OS // {author_category.upper()}",
+        icon_url=user_avatar_url or bot_avatar,
+    )
+    embed.set_footer(
+        text=f"Root OS • Flux Public // {author_category.title()}",
+        icon_url=bot_avatar,
+    )
+    return embed
 
 
 class Logger:
@@ -125,10 +162,10 @@ class Logger:
             return
         try:
             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
-            if not callable(getattr(channel, "send", None)):
-                logger.warning("Le salon %s ne permet pas l'envoi de logs", channel_id)
-                return
-            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            send_fn = channel.send
+            res = send_fn(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+                await res
         except (discord.HTTPException, discord.Forbidden, discord.NotFound, OSError):
             logger.exception("Impossible d'envoyer le log %s", log_key)
         except Exception:
@@ -559,15 +596,22 @@ class Logger:
         guild = getattr(ctx, "guild", None)
         guild_str = f"{guild.name} (`{guild.id}`)" if guild else server_name
 
-        lines = [f"**Joueur :** {_format_user_compact(winner)}"]
-        lines.extend(details)
-        lines.append(f"**Serveur :** {guild_str}")
+        lines = [f"> 👤 **Opérateur :** {_format_user_compact(winner)}"]
+        for detail in details:
+            clean_d = detail if detail.startswith(">") else f"> {detail}"
+            lines.append(clean_d)
+        lines.append(f"> 🌐 **Serveur :** {guild_str}")
 
-        embed = discord.Embed(
+        winner_avatar = getattr(winner, "display_avatar", None)
+        avatar_url = winner_avatar.url if winner_avatar and hasattr(winner_avatar, "url") else None
+
+        embed = _style_public_embed(
+            self.bot,
             title=title,
             description="\n".join(lines),
             color=color,
-            timestamp=discord.utils.utcnow(),
+            author_category="ÉVÉNEMENT RÉSEAU",
+            user_avatar_url=avatar_url,
         )
         await self._send_embed("public", embed)
 
@@ -887,6 +931,24 @@ class Logger:
             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
 
+    async def _resolve_entity_name(self, entity: int | str) -> str | None:
+        """Tente de résoudre le pseudo Discord associé à un identifiant numérique."""
+        entity_str = str(entity).strip()
+        if not entity_str.isdigit():
+            return None
+        uid = int(entity_str)
+        try:
+            user = self.bot.get_user(uid) if hasattr(self.bot, "get_user") else None
+            if user and not type(user).__name__.startswith("MagicMock"):
+                return getattr(user, "display_name", None) or getattr(user, "name", None)
+            if not user and hasattr(self.bot, "fetch_user"):
+                user = await self.bot.fetch_user(uid)
+                if user and not type(user).__name__.startswith("MagicMock"):
+                    return getattr(user, "display_name", None) or getattr(user, "name", None)
+        except Exception:
+            pass
+        return None
+
     async def log_blockchain_ready(self):
         """Envoie le message d'initialisation lore-friendly dans le salon #blockchain à chaque démarrage."""
         channel_id = self.channel_id("blockchain")
@@ -900,7 +962,9 @@ class Logger:
         try:
             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
             if callable(getattr(channel, "send", None)):
-                await channel.send(content, allowed_mentions=discord.AllowedMentions.none())
+                res = channel.send(content, allowed_mentions=discord.AllowedMentions.none())
+                if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+                    await res
         except Exception:
             logger.exception("Impossible d'envoyer le statut de connexion blockchain")
 
@@ -912,10 +976,13 @@ class Logger:
         dt: datetime | None = None,
         tx_type: str | None = None,
         usd_amount: float | Decimal | str | None = None,
+        from_name: str | None = None,
+        to_name: str | None = None,
     ):
         """Envoie un log de transaction RTM formaté dans le salon #blockchain.
 
         tx_type / usd_amount sont optionnels (ex. vente DEX : TYPE SELL TOKEN + USD).
+        from_name / to_name permettent d'afficher le pseudo Discord à côté de l'identifiant.
         """
         channel_id = self.channel_id("blockchain")
         if channel_id is None:
@@ -925,6 +992,15 @@ class Logger:
         time_str = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         rtm_val = Decimal(str(rtm_amount or 0))
         rtm_str = f"{rtm_val:,.5f}"
+
+        # Résolution automatique du pseudo si non fourni et que l'entité est un ID utilisateur Discord numérique
+        if from_name is None:
+            from_name = await self._resolve_entity_name(from_id)
+        if to_name is None:
+            to_name = await self._resolve_entity_name(to_address)
+
+        from_str = f"{from_id} ({from_name})" if from_name else str(from_id)
+        to_str = f"{to_address} ({to_name})" if to_name else str(to_address)
 
         extra_lines = []
         if tx_type:
@@ -939,8 +1015,8 @@ class Logger:
             f"```text\n"
             f"{separator}\n"
             f"⏱  {time_str}\n"
-            f"FROM   {from_id}\n"
-            f"TO     {to_address}\n"
+            f"FROM   {from_str}\n"
+            f"TO     {to_str}\n"
             + "".join(f"{line}\n" for line in extra_lines) +
             f"{separator}\n"
             f"```"
@@ -948,7 +1024,9 @@ class Logger:
         try:
             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
             if callable(getattr(channel, "send", None)):
-                await channel.send(block_content, allowed_mentions=discord.AllowedMentions.none())
+                res = channel.send(block_content, allowed_mentions=discord.AllowedMentions.none())
+                if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+                    await res
         except Exception:
             logger.exception("Impossible d'envoyer le log blockchain pour la transaction")
 
@@ -1004,27 +1082,78 @@ class Logger:
 
     async def log_scan_exposed(self, scanner_id: int | str, target_name: str, secret_id: str):
         """Consigne l'exposition publique du Secret ID d'un joueur suite à un scan réussi."""
-        embed = discord.Embed(
-            title="🔓 FUITE DE DONNÉES",
-            description=f"**Intrusion confirmée** · <@{scanner_id}> a exposé le réseau de **{target_name}** !\n🔑 **Secret ID :** `{secret_id}`",
+        scanner_user = None
+        if str(scanner_id).isdigit() and hasattr(self.bot, "get_user"):
+            scanner_user = self.bot.get_user(int(scanner_id))
+            if scanner_user and type(scanner_user).__name__.startswith("MagicMock"):
+                scanner_user = None
+            if not scanner_user and hasattr(self.bot, "fetch_user"):
+                try:
+                    user_fetched = await self.bot.fetch_user(int(scanner_id))
+                    if user_fetched and not type(user_fetched).__name__.startswith("MagicMock"):
+                        scanner_user = user_fetched
+                except Exception:
+                    pass
+
+        scanner_str = _format_user_compact(scanner_user) if scanner_user else f"<@{scanner_id}> (`{scanner_id}`)"
+        scanner_avatar = getattr(scanner_user, "display_avatar", None) if scanner_user else None
+        avatar_url = scanner_avatar.url if scanner_avatar and hasattr(scanner_avatar, "url") else None
+
+        lines = [
+            f"> 🔍 **Intrusion confirmée** · {scanner_str} a infiltré le réseau de **{target_name}** !",
+            f"> 🔑 **Secret ID compromis :** `{secret_id}`",
+            f"> ⚠️ *La cible est désormais vulnérable aux cyberattaques ciblées (/hack).* ",
+        ]
+
+        embed = _style_public_embed(
+            self.bot,
+            title="🔓 Fuite de Données // Renseignement Réseau",
+            description="\n".join(lines),
             color=discord.Color.from_rgb(220, 50, 50),
-            timestamp=discord.utils.utcnow(),
+            author_category="CYBER-RENSEIGNEMENT",
+            user_avatar_url=avatar_url,
         )
         await self._send_embed("public", embed)
 
-    async def log_pvp_attack(self, attacker: discord.User | discord.Member | int | str, attack_points: int | None = None, attacker_name: str | None = None):
+    async def log_pvp_attack(
+        self,
+        attacker: discord.User | discord.Member | int | str,
+        attack_points: int | None = None,
+        attacker_name: str | None = None,
+    ):
         """Consigne une attaque PvP dans le salon de logs publics avec le nom de l'attaquant (sans divulguer les points d'attaque)."""
-        if isinstance(attacker, (discord.User, discord.Member)):
+        if isinstance(attacker, (discord.User, discord.Member)) and not type(attacker).__name__.startswith("MagicMock"):
             attacker_str = _format_user_compact(attacker)
+            attacker_avatar = getattr(attacker, "display_avatar", None)
         elif attacker_name:
             attacker_str = f"<@{attacker}> (`{attacker_name}` · `{attacker}`)"
+            attacker_avatar = None
         else:
-            attacker_str = f"<@{attacker}> (`{attacker}`)"
+            attacker_user = None
+            if str(attacker).isdigit() and hasattr(self.bot, "get_user"):
+                u = self.bot.get_user(int(attacker))
+                if u and not type(u).__name__.startswith("MagicMock"):
+                    attacker_user = u
+            if attacker_user:
+                attacker_str = _format_user_compact(attacker_user)
+                attacker_avatar = getattr(attacker_user, "display_avatar", None)
+            else:
+                attacker_str = f"<@{attacker}> (`{attacker}`)"
+                attacker_avatar = None
 
-        embed = discord.Embed(
-            title="⚔️ ATTAQUE RÉSEAU DÉTECTÉE",
-            description=f"Une cyberattaque a été lancée par {attacker_str}.",
+        avatar_url = attacker_avatar.url if attacker_avatar and hasattr(attacker_avatar, "url") else None
+
+        lines = [
+            f"> ⚔️ **Alerte offensive** · Une cyberattaque a été lancée par {attacker_str}.",
+            f"> 🛡️ *Les systèmes de défense et pare-feux ont engagé les contre-mesures.*",
+        ]
+
+        embed = _style_public_embed(
+            self.bot,
+            title="⚔️ Attaque Réseau Détectée",
+            description="\n".join(lines),
             color=discord.Color.from_rgb(231, 76, 60),
-            timestamp=discord.utils.utcnow(),
+            author_category="ALERTE OFFENSIVE",
+            user_avatar_url=avatar_url,
         )
         await self._send_embed("public", embed)

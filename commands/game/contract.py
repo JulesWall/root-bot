@@ -22,10 +22,12 @@ from game.db.players import Player
 from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+import time
 from utils import text
 from utils.check import Check
 from utils.root_embed import RootEmbed
 from utils.text import format_usd
+from utils.time_format import format_duration
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +57,11 @@ def _build_contract_content(ctx, result: dict) -> str:
         grace_ts = result.get("grace_ts") or result.get("offers_data", {}).get("grace_ts")
         if is_special_next:
             if grace_ts:
+                rem_grace = format_duration(max(0, int(grace_ts) - int(time.time())))
                 fidelity_hint = (
-                    f" · ⭐ **Special mission active!** (Relaunch before <t:{grace_ts}:R>)"
+                    f" · ⭐ **Special mission active!** (Relaunch before <t:{grace_ts}:R> ({rem_grace}))"
                     if is_en else
-                    f" · ⭐ **Mission spéciale active !** (Relancez avant <t:{grace_ts}:R>)"
+                    f" · ⭐ **Mission spéciale active !** (Relancez avant <t:{grace_ts}:R> ({rem_grace}))"
                 )
             else:
                 fidelity_hint = (" · ⭐ **Special mission unlocked!**" if is_en else " · ⭐ **Mission spéciale débloquée !**")
@@ -120,6 +123,8 @@ def _build_contract_content(ctx, result: dict) -> str:
                 reward_usd=reward_usd,
             )
         else:
+            rem_sec = contract.get("remaining_seconds", 0)
+            rem_str = format_duration(rem_sec)
             return text.get(
                 ctx,
                 "g_contract_active",
@@ -128,6 +133,10 @@ def _build_contract_content(ctx, result: dict) -> str:
                 title=title,
                 reward_usd=reward_usd,
                 expires_ts=expires_ts,
+                timestamp=expires_ts,
+                ts=expires_ts,
+                remaining=rem_str,
+                duration=rem_str,
             )
 
     # Cas 3 : Aucune mission active — Présentation des offres
@@ -141,10 +150,11 @@ def _build_contract_content(ctx, result: dict) -> str:
     grace_ts = result.get("grace_ts") or offers_data.get("grace_ts")
     if is_special:
         if grace_ts:
+            rem_grace = format_duration(max(0, int(grace_ts) - int(time.time())))
             fidelity_hint = (
-                f" · ⭐ **Special mission active!** (Relaunch before <t:{grace_ts}:R>)"
+                f" · ⭐ **Special mission active!** (Relaunch before <t:{grace_ts}:R> ({rem_grace}))"
                 if is_en else
-                f" · ⭐ **Mission spéciale active !** (Relancez avant <t:{grace_ts}:R>)"
+                f" · ⭐ **Mission spéciale active !** (Relancez avant <t:{grace_ts}:R> ({rem_grace}))"
             )
         else:
             fidelity_hint = (" · ⭐ **Special mission unlocked!**" if is_en else " · ⭐ **Mission spéciale débloquée !**")

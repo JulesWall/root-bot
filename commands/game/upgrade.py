@@ -193,11 +193,16 @@ class Upgrade(BaseGameCog):
             await self._send_embed(ctx, 'upgrade', content, view=view)
         elif result.get('upgrade_started'):
             # ── 2. Amélioration en cours (différée) ─────────────────────────────
+            ts = result.get('timestamp', 0)
+            dur = result.get('duration', '')
             content = text.get(
                 ctx, 'g_upgrade_started',
                 level=result.get('level', 1),
                 usd=usd,
-                timestamp=result.get('timestamp', 0),
+                timestamp=ts,
+                ts=ts,
+                duration=dur,
+                remaining=dur,
             )
             await self._send_embed(ctx, 'upgrade', content)
         else:
