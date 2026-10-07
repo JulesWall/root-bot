@@ -254,9 +254,10 @@ class ContractView(discord.ui.View):
             reward_usd = format_usd(contract.get("reward_usd", 0))
 
             if is_ready:
+                btn_emoji = get_button_emoji("root_usd") or "💵"
                 btn_collect = discord.ui.Button(
                     label=text.get(self.ctx, "g_contract_btn_collect", usd=reward_usd)[:80],
-                    emoji="💵",
+                    emoji=btn_emoji,
                     style=discord.ButtonStyle.success,
                 )
                 btn_collect.callback = self._on_collect

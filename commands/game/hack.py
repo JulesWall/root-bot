@@ -40,7 +40,7 @@ from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
 from utils.root_theme import VisualState
-from utils.time_format import format_duration
+from utils.time_format import format_duration, to_utc_timestamp
 
 
 logger = logging.getLogger(__name__)

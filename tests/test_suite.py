@@ -1492,8 +1492,8 @@ class TestPlayerAndGameOperations(unittest.TestCase):
         self.tx.players[self.actor]["firewall_level"] = 2
         net = Player.network(self.tx, self.actor)
         self.assertIn("stats", net)
-        self.assertEqual(net["network_defense"], 300)
-        self.assertEqual(net["stats"]["network_defense"], 300)
+        self.assertEqual(net["network_defense"], 500)
+        self.assertEqual(net["stats"]["network_defense"], 500)
 
     def test_buy_invalid_tier(self):
         with self.assertRaises(GameError) as cm:
@@ -1508,15 +1508,15 @@ class TestPlayerAndGameOperations(unittest.TestCase):
         self.assertTrue(quote.get("upgrade_quote"))
         self.assertEqual(quote.get("current_level"), 0)
         self.assertEqual(quote.get("next_level"), 1)
-        self.assertEqual(quote.get("defense_gain"), 100)
-        self.assertEqual(quote.get("defense_next"), 100)
+        self.assertEqual(quote.get("defense_gain"), 250)
+        self.assertEqual(quote.get("defense_next"), 250)
         self.assertEqual(quote.get("defense_current"), 0)
         self.assertEqual(quote.get("usd_price"), upgrade_cost)
 
         started = Player.upgrade(self.tx, self.actor, confirm=True)
         self.assertTrue(started.get("upgrade_started"))
-        self.assertEqual(started.get("defense_gain"), 100)
-        self.assertEqual(started.get("defense_next"), 100)
+        self.assertEqual(started.get("defense_gain"), 250)
+        self.assertEqual(started.get("defense_next"), 250)
         self.assertEqual(self.tx.players[self.actor]["dollars"], Decimal("0.00"))
         self.assertEqual(len(self.tx.upgrades), 1)
 
@@ -3745,8 +3745,8 @@ class TestPreExistingGameCoverage(unittest.TestCase):
         )
         self.assertEqual(stats["total_bits_per_s"], 3 * MathConfig.get_module_stat("attack", 1))
         self.assertEqual(stats["total_bay_defense"], MathConfig.get_module_stat("bay_defense", 1))
-        self.assertEqual(stats["network_defense"], 100)
-        self.assertEqual(stats["total_defense"], stats["total_bay_defense"] + 100)
+        self.assertEqual(stats["network_defense"], 250)
+        self.assertEqual(stats["total_defense"], stats["total_bay_defense"] + 250)
 
     def test_mining_price_progression_and_firewall_gate(self):
         cfg = MathConfig.load()
@@ -4664,11 +4664,11 @@ class TestScanFeature(unittest.TestCase):
         # Devis (confirm=False)
         quote = Player.scan(self.tx, self.scanner_id, target=self.target_id)
         self.assertTrue(quote.get("scan_quote"))
-        self.assertEqual(quote["prob_base_pct"], 33.3)
+        self.assertEqual(quote["prob_base_pct"], 20.0)
         self.assertEqual(len(quote["boost_options"]), 3)
-        self.assertEqual(quote["boost_options"][0]["prob_pct"], 33.3)
-        self.assertEqual(quote["boost_options"][1]["prob_pct"], 36.7)
-        self.assertEqual(quote["boost_options"][2]["prob_pct"], 46.7)
+        self.assertEqual(quote["boost_options"][0]["prob_pct"], 20.0)
+        self.assertEqual(quote["boost_options"][1]["prob_pct"], 24.0)
+        self.assertEqual(quote["boost_options"][2]["prob_pct"], 36.0)
 
         # Lancement avec boost multiplier 2
         res = Player.scan(self.tx, self.scanner_id, target=self.target_id, boost_multiplier=2, confirm=True)
