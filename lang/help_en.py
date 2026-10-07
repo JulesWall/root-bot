@@ -137,7 +137,7 @@ PAGES = {
     "all": {
         "title": "📜 ROOT — All Commands",
         "body_slash": (
-            "Complete index of all 27 public player commands in Root.\n\n"
+            "Complete index of all 29 public player commands in Root.\n\n"
             "**⛏️ Develop Network**\n"
             "• **/network** — Initialize profile or inspect balances & hardware\n"
             "• **/buy** — Purchase hardware (mining, attack, defense)\n"
@@ -145,7 +145,8 @@ PAGES = {
             "• **/hourly** — Claim hourly USD reward and build combo streak\n"
             "• **/contract** — View and accept guaranteed Root CyberSec missions\n"
             "• **/convert** — Sell Rootium for USD at current rate\n"
-            "• **/upgrade** — Upgrade infrastructure tier\n\n"
+            "• **/upgrade** — Upgrade infrastructure tier\n"
+            "• **/macro** — Automate routines by chaining sequential commands\n\n"
             "**⚔️ Attack & Defend**\n"
             "• **/compile** — Craft attack points (ATK) from Rootium\n"
             "• **/scan** — Scan an opponent to discover their Secret ID\n"
@@ -174,7 +175,7 @@ PAGES = {
             "👉 *Select any command below to open its detailed sheet.*"
         ),
         "body_text": (
-            "Complete index of all 28 public player commands in Root.\n\n"
+            "Complete index of all 29 public player commands in Root.\n\n"
             "**⛏️ Develop Network**\n"
             "• **{prefix}network** (alias `{prefix}n`) — Inspect balances & hardware\n"
             "• **{prefix}buy** — Purchase hardware (mining, attack, defense)\n"
@@ -182,7 +183,8 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) — Claim hourly USD reward\n"
             "• **{prefix}contract** — Accept guaranteed paid missions\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Sell RTM for USD\n"
-            "• **{prefix}upgrade** — Upgrade infrastructure tier\n\n"
+            "• **{prefix}upgrade** — Upgrade infrastructure tier\n"
+            "• **{prefix}macro** (alias `{prefix}mac`) — Automate command sequences\n\n"
             "**⚔️ Attack & Defend**\n"
             "• **{prefix}compile** (alias `{prefix}cp`) — Craft ATK points\n"
             "• **{prefix}scan** — Scan an opponent for Secret ID\n"
@@ -221,7 +223,8 @@ PAGES = {
             "• **/hourly**: Claim your hourly cash reward and stack up your combo for massive USD payouts.\n"
             "• **/contract**: Work for Root CyberSec and complete guaranteed missions for steady income.\n"
             "• **/convert**: Convert RTM to USD at the current market rate.\n"
-            "• **/upgrade**: Start upgrading your infrastructure tier.\n\n"
+            "• **/upgrade**: Start upgrading your infrastructure tier.\n"
+            "• **/macro**: Automate routines by chaining up to 5 sequential actions.\n\n"
             "👉 *Select a command in the dropdown menu below for complete details.*"
         ),
         "body_text": (
@@ -232,7 +235,8 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`): Claim your hourly reward and maintain your streak.\n"
             "• **{prefix}contract**: Accept guaranteed cybersecurity missions paid in USD.\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`): Sell RTM for USD.\n"
-            "• **{prefix}upgrade**: Upgrade your firewall tier.\n\n"
+            "• **{prefix}upgrade**: Upgrade your firewall tier.\n"
+            "• **{prefix}macro** (alias `{prefix}mac`): Automate routines by chaining up to 5 sequential actions.\n\n"
             "👉 *Select a command in the dropdown menu below for complete details.*"
         ),
     },
@@ -845,9 +849,33 @@ COMMANDS = {
         "aliases": ["{prefix}math", "{prefix}calc", "{prefix}calcul"],
         "linked_commands": [],
     },
+    "macro": {
+        "name": "macro",
+        "category": "network",
+        "title": "🤖 `/macro` — Macro Automation",
+        "description": "Create and execute automated sequences of 1 to 5 commands to manage your network in a flash.",
+        "slash_syntax": "/macro [nom:<name>] [display:<True|False>]\n/macro-create [nom:<name>]\n/macro-delete nom:<name>",
+        "text_syntax": "{prefix}macro [name] [d]\n{prefix}macro create [name]\n{prefix}macro delete <name>\n{prefix}macro list",
+        "parameters": (
+            "• `name`: Name of the macro to run (1-32 lowercase characters). Opens the help guide if omitted.\n"
+            "• `display` / `d`: **Detailed display option** — Displays the full interactive responses for each command as if you typed them yourself (default: compact summary).\n"
+            "• `create`: Launches the interactive step-by-step wizard to build your macro.\n"
+            "• `delete`: Permanently deletes the specified macro.\n"
+            "• `list`: Displays your saved macros and their step counts."
+        ),
+        "slash_example": "/macro nom:farm display:True",
+        "text_example": "{prefix}macro farm d",
+        "example_note": "Adding `d` after `{prefix}macro <name>` prints out full details for each command in chat.",
+        "prerequisites": "An active network. Max 3 macros per player, 1 to 5 steps per macro. Global 15s cooldown and 60 runs/hour quota.",
+        "advice": "Great for chaining `/claim`, `/hourly`, and `/buy ... all` in one quick routine. Commands waiting on cooldowns are automatically skipped without stopping the sequence.",
+        "aliases": ["{prefix}mac", "{prefix}macros"],
+        "linked_commands": ["claim", "hourly", "buy", "upgrade", "network"],
+    },
 }
 
 COMMAND_ALIASES = {
+    "mac": "macro",
+    "macros": "macro",
     "n": "network",
     "c": "claim",
     "cl": "claim",

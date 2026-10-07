@@ -24,9 +24,10 @@ from utils.text import get_locale
 
 logger = logging.getLogger(__name__)
 
-# Liste canonique des 27 commandes publiques autorisées
+# Liste canonique des 29 commandes publiques autorisées
 PUBLIC_COMMANDS = [
     "network", "buy", "claim", "hourly", "contract", "convert", "upgrade",
+    "macro",
     "compile", "scan", "hack",
     "event", "hash", "pin", "decode", "anomaly", "buffer", "signal", "packet",
     "rep", "trade", "attest", "top",

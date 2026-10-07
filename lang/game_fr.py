@@ -420,9 +420,12 @@ text = {
     'g_error_macro_cooldown': '> ⏳ **Cadence respectée** · Cooldown global de sécurité actif sur tes macros. Réessaie dans **{remaining}s**.',
     'g_error_macro_quota': '> ⛔ **Quota d\'exécution dépassé** · Limite de {max_runs} lancements par heure atteinte. Prochain slot libre dans **{remaining}s**.',
     'g_error_macro_step_failed': '> ❌ **Échec à l\'étape {pos}** (`{command}`) : {reason}.',
-    'g_macro_listen_title': '🎧 **ÉCOUTE ACTIVE · CRÉATION RAPIDE DE MACRO**',
-    'g_macro_listen_desc': 'Envoie tes commandes de jeu dans ce salon (1 commande par message ou séparées par `;`).\nLe bot interceptera chaque commande et l\'ajoutera directement comme étape de ta macro.\n\n• **Macro :** `{name}`\n• **Étapes :** `{count}/5`\n• ⏱️ **Délai :** 60 secondes d\'inactivité\n\n*Clique sur **Sauvegarder** ou tape `done` pour finaliser ta macro.*',
-    'g_macro_listen_timeout': '⏱️ *Délai d\'écoute de 60s expiré sans nouvelle commande.*',
+    'g_macro_run_tip': '> 💡 *Astuce : tape `{prefix}macro {name} d` ou `/macro nom:{name} display:True` pour voir le détail de chaque commande.*',
+    'g_macro_help_title': '🤖 **SYSTÈME DE MACROS ROOT OS**',
+    'g_macro_help_desc': 'Automatise tes routines en combinant jusqu\'à 5 commandes consécutives (max 3 macros).',
+    'g_macro_help_run': '• **Exécuter :** `{prefix}macro <nom>` *(rapport compact)*\n• **Exécution détaillée (`d`) :** `{prefix}macro <nom> d` ou `/macro nom:<nom> display:True`\n  *(Affiche le résultat complet et interactif de chaque commande !)*',
+    'g_macro_help_manage': '• **Créer :** `{prefix}macro create [nom]` ou `/macro-create` *(assistant interactif)*\n• **Supprimer :** `{prefix}macro delete <nom>` ou `/macro-delete`\n• **Lister :** `{prefix}macro list` ou `{prefix}macro`',
+    'g_macro_help_rules': '⏱️ Cooldown de 15s entre chaque lancement · Quota : 60 exécutions par heure.\n⏳ Les commandes en attente (cooldowns) sont automatiquement ignorées sans bloquer la suite.',
 }
 
 descriptions = {

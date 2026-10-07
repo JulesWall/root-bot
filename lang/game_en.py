@@ -420,10 +420,14 @@ text = {
     'g_error_macro_cooldown': '> ⏳ **Cadence enforced** · Global safety cooldown active on your macros. Try again in **{remaining}s**.',
     'g_error_macro_quota': '> ⛔ **Execution quota exceeded** · Hourly limit of {max_runs} runs reached. Next slot available in **{remaining}s**.',
     'g_error_macro_step_failed': '> ❌ **Step {pos} failed** (`{command}`): {reason}.',
-    'g_macro_listen_title': '🎧 **ACTIVE LISTENING · QUICK MACRO CREATION**',
-    'g_macro_listen_desc': 'Send your game commands in this channel (1 command per message or separated by `;`).\nThe bot will record each command and add it directly as a macro step.\n\n• **Macro:** `{name}`\n• **Steps:** `{count}/5`\n• ⏱️ **Timeout:** 60 seconds of inactivity\n\n*Click **Save** or type `done` to finalize your macro.*',
-    'g_macro_listen_timeout': '⏱️ *Listening timeout expired (60s) without new commands.*',
+    'g_macro_run_tip': '> 💡 *Tip: type `{prefix}macro {name} d` or `/macro nom:{name} display:True` to see each command in detail.*',
+    'g_macro_help_title': '🤖 **ROOT OS MACRO SYSTEM**',
+    'g_macro_help_desc': 'Automate your routines by chaining up to 5 consecutive commands (max 3 macros).',
+    'g_macro_help_run': '• **Run:** `{prefix}macro <name>` *(compact summary)*\n• **Detailed run (`d`):** `{prefix}macro <name> d` or `/macro nom:<name> display:True`\n  *(Displays the full interactive result of every command!)*',
+    'g_macro_help_manage': '• **Create:** `{prefix}macro create [name]` or `/macro-create` *(interactive wizard)*\n• **Delete:** `{prefix}macro delete <name>` or `/macro-delete`\n• **List:** `{prefix}macro list` or `{prefix}macro`',
+    'g_macro_help_rules': '⏱️ 15s cooldown between runs · Quota: 60 executions per hour.\n⏳ Commands waiting on cooldowns are automatically skipped without stopping the sequence.',
 }
+
 
 descriptions = {
     'network': 'Create or inspect your Root network.',

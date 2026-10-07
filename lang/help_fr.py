@@ -137,7 +137,7 @@ PAGES = {
     "all": {
         "title": "📜 ROOT — Toutes les commandes",
         "body_slash": (
-            "Index complet des 27 commandes publiques de Root.\n\n"
+            "Index complet des 29 commandes publiques de Root.\n\n"
             "**⛏️ Développer mon réseau**\n"
             "• **/network** — Créer ou consulter mon réseau et mes soldes\n"
             "• **/buy** — Acheter un module (minage, attaque, défense)\n"
@@ -145,7 +145,8 @@ PAGES = {
             "• **/hourly** — Réclamer ma prime horaire en dollars et faire monter le combo\n"
             "• **/contract** — Consulter et accepter des missions rémunérées avec Root CyberSec\n"
             "• **/convert** — Vendre du Rootium contre des dollars USD\n"
-            "• **/upgrade** — Améliorer le niveau d'infrastructure\n\n"
+            "• **/upgrade** — Améliorer le niveau d'infrastructure\n"
+            "• **/macro** — Automatiser des routines de commandes séquentielles\n\n"
             "**⚔️ Attaquer et me défendre**\n"
             "• **/compile** — Fabriquer des points d'attaque (ATK)\n"
             "• **/scan** — Scanner un joueur pour trouver son Secret ID\n"
@@ -174,7 +175,7 @@ PAGES = {
             "👉 *Sélectionne n'importe quelle commande ci-dessous pour ouvrir sa fiche détaillée.*"
         ),
         "body_text": (
-            "Index complet des 28 commandes publiques de Root.\n\n"
+            "Index complet des 29 commandes publiques de Root.\n\n"
             "**⛏️ Développer mon réseau**\n"
             "• **{prefix}network** (alias `{prefix}n`) — Créer ou consulter mon réseau\n"
             "• **{prefix}buy** — Acheter un module (minage, attaque, défense)\n"
@@ -182,7 +183,8 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) — Réclamer ma prime horaire en dollars\n"
             "• **{prefix}contract** — Accepter des missions rémunérées garanties\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Vendre des RTM\n"
-            "• **{prefix}upgrade** — Améliorer le niveau d'infrastructure\n\n"
+            "• **{prefix}upgrade** — Améliorer le niveau d'infrastructure\n"
+            "• **{prefix}macro** (alias `{prefix}mac`) — Automatiser des routines de commandes\n\n"
             "**⚔️ Attaquer et me défendre**\n"
             "• **{prefix}compile** (alias `{prefix}cp`) — Fabriquer des points ATK\n"
             "• **{prefix}scan** — Scanner un joueur pour trouver son Secret ID\n"
@@ -221,7 +223,8 @@ PAGES = {
             "• **/hourly** : Réclame ta prime horaire et fais monter ton combo pour décupler tes récompenses en USD.\n"
             "• **/contract** : Travaille pour Root CyberSec et accomplis des missions garanties pour un revenu régulier.\n"
             "• **/convert** : Convertis tes RTM en dollars USD au cours de change actuel.\n"
-            "• **/upgrade** : Lance l'amélioration de ton niveau d'infrastructure.\n\n"
+            "• **/upgrade** : Lance l'amélioration de ton niveau d'infrastructure.\n"
+            "• **/macro** : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
         ),
         "body_text": (
@@ -232,7 +235,8 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) : Réclame ta prime horaire et entretiens ton combo.\n"
             "• **{prefix}contract** : Accepte des contrats de sécurité informatique rémunérés en USD.\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) : Vends tes RTM en USD.\n"
-            "• **{prefix}upgrade** : Lance l'amélioration de ton infrastructure.\n\n"
+            "• **{prefix}upgrade** : Lance l'amélioration de ton infrastructure.\n"
+            "• **{prefix}macro** (alias `{prefix}mac`) : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
         ),
     },
@@ -845,9 +849,33 @@ COMMANDS = {
         "aliases": ["{prefix}math", "{prefix}calc", "{prefix}calcul"],
         "linked_commands": [],
     },
+    "macro": {
+        "name": "macro",
+        "category": "network",
+        "title": "🤖 `/macro` — Automatisation de Macros",
+        "description": "Enregistre et exécute des séquences automatisées de 1 à 5 commandes pour piloter ton réseau en un éclair.",
+        "slash_syntax": "/macro [nom:<nom>] [display:<True|False>]\n/macro-create [nom:<nom>]\n/macro-delete nom:<nom>",
+        "text_syntax": "{prefix}macro [nom] [d]\n{prefix}macro create [nom]\n{prefix}macro delete <nom>\n{prefix}macro list",
+        "parameters": (
+            "• `nom` : Nom de la macro à exécuter (1 à 32 caractères minuscules). Laisse vide pour ouvrir le guide d'aide.\n"
+            "• `display` / `d` : **Option d'affichage détaillé** — Affiche les réponses individuelles de chaque commande comme si tu les avais tapées toi-même (par défaut : rapport de synthèse compact).\n"
+            "• `create` : Lance l'assistant pas-à-pas interactif pour concevoir ta macro.\n"
+            "• `delete` : Supprime définitivement la macro spécifiée.\n"
+            "• `list` : Affiche tes macros enregistrées et le nombre d'étapes."
+        ),
+        "slash_example": "/macro nom:farm display:True",
+        "text_example": "{prefix}macro farm d",
+        "example_note": "Ajouter `d` à la fin de `{prefix}macro <nom>` affiche chaque commande en détail dans le salon.",
+        "prerequisites": "Un réseau créé. Maximum 3 macros par joueur, 1 à 5 étapes par macro. Cooldown global de 15s et quota de 60 lancements par heure.",
+        "advice": "Idéal pour combiner `/claim`, `/hourly` et `/buy ... all` en une routine. Les commandes en attente de délai (cooldowns) sont automatiquement ignorées sans bloquer la suite.",
+        "aliases": ["{prefix}mac", "{prefix}macros"],
+        "linked_commands": ["claim", "hourly", "buy", "upgrade", "network"],
+    },
 }
 
 COMMAND_ALIASES = {
+    "mac": "macro",
+    "macros": "macro",
     "n": "network",
     "c": "claim",
     "cl": "claim",

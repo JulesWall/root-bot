@@ -15,17 +15,18 @@ Vous rêviez d'enchaîner vos tâches de routine en une seule action ? Le systè
 ### ⚡ Ce qui change pour vous :
 - **Jusqu'à 3 macros personnalisées par joueur** : Programmez vos routines favorites (ex: `matin`, `farm`, `defense`).
 - **1 à 5 étapes séquentielles par macro** : Enchaînez vos actions préférées (`claim`, `hourly`, `buy`, `upgrade`, `convert`, `compile`, `contract`, `scan`, `hack`, `reputation`, `network`, etc.).
-- **Assistant Interactif Dédié & Mode Écoute Rapide** :
-  - Créez vos macros en toute simplicité sans vous soucier de la syntaxe grâce à `/macro-create` ou `!macro create` (assistant pas-à-pas avec menus déroulants et fenêtres de saisie).
-  - **Mode Écoute Rapide (`!macro listen [nom]`)** : activez l'écoute active dans le salon pour taper directement vos commandes au clavier (séparées par `;` ou un message par commande). Le bot enregistre vos actions en direct et réagit avec ✅ !
+- **Assistant Interactif Dédié** :
+  - Créez vos macros en toute simplicité sans vous soucier de la syntaxe grâce à `/macro-create` ou `!macro create` (assistant pas-à-pas avec menus déroulants et fenêtres de saisie pour configurer chaque étape).
 - **Commandes avec devis (`/buy`)** : confirmation directe simplifiée (`confirm: true/oui/confirm`) et prise en charge du mot-clé `all` pour acheter le maximum de modules abordables d'un coup.
 - **Exécution Directe & Sécurisée** :
   - Lancez votre routine avec `/macro nom:<nom>` (avec autocomplétion intelligente de vos macros) ou via le préfixe `!macro <nom>`.
-  - **Mode Verbeux / Display (`!macro <nom> d` ou `/macro display:True`)** : recevez les messages complets et interactifs de chaque commande comme si vous les aviez tapées vous-même dans le salon !
+  - **Mode Verbeux / Display (`!macro <nom> d` ou `/macro display:True`)** : recevez les messages complets et interactifs de chaque commande comme si vous les aviez tapées vous-même dans le salon ! Une astuce claire vous le rappelle automatiquement à chaque lancement.
+  - **Panneau d'aide intégré (`!macro`, `!macro help`, `/help macro`)** : taper `!macro` seul ou `!macro help` affiche immédiatement un guide complet illustré ainsi que la liste de vos macros en cours. La fiche `/help macro` rejoint officiellement le manuel public de Root OS.
   - **Rapport d'exécution compact** : par défaut, un rapport synthétique élégant avec jauge de progression unifiée (`■■■□□`) résume l'exécution en un seul message propre.
   - **Achat maximal (`buy ... all`)** : achetez en macro le maximum de modules abordables en une seule étape (`buy mining 1 all` ou `buy mining all`).
   - **Gestion intelligente des délais & cooldowns** : Si une commande est en attente de délai (ex: récompense `/hourly` ou récolte `/claim` pas encore disponible, contrat ou amélioration en cours), l'étape est automatiquement ignorée (`⏳ Étape ignorée`) sans interrompre votre routine.
   - **Exécution continue sans blocage** : même si une commande échoue (fonds insuffisants, cible invalide, etc.), elle ne bloque plus jamais les étapes suivantes. Le bot tente et mène à bien l'ensemble de votre routine programmée.
+  - **Traçabilité complète (Logs & Blockchain)** : chaque commande exécutée par une macro (récoltes `/claim`, primes `/hourly`, ventes `/convert`, achats offensifs en RTM, etc.) est rigoureusement consignée dans le salon `#blockchain` et les journaux de modération comme une commande standard.
 - **Cadence & Fair-Play** : Cooldown global de sécurité de 15 secondes et quota de 60 lancements par heure pour préserver la stabilité du réseau.
 
 ---

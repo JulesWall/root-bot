@@ -3,18 +3,18 @@ Module Discord pour les macros de joueurs (commands/game/macro.py).
 
 Prend en charge :
 - La commande préfixe :
-  • !macro <nom> : lance la macro.
-  • !macro create [nom] : ouvre l'assistant interactif de création (avec option d'écoute rapide des messages !).
-  • !macro listen [nom] : lance directement l'écoute active des messages pour enregistrer une macro à la volée.
+  • !macro <nom> [d] : lance la macro (mode compact ou verbeux/display avec 'd').
+  • !macro create [nom] : ouvre l'assistant interactif de création.
   • !macro delete <nom> : supprime la macro.
   • !macro (ou !macro list) : liste les macros du joueur.
 - Les Slash Commands :
-  • /macro nom:<nom> (avec autocomplétion des macros du joueur).
+  • /macro nom:<nom> [display:True/False] (avec autocomplétion des macros du joueur).
   • /macro-create [nom] : assistant interactif complet.
   • /macro-delete nom:<nom> (avec autocomplétion).
 """
 
 import asyncio
+from decimal import Decimal
 import logging
 import re
 import shlex
@@ -95,149 +95,14 @@ def _format_macro_run_content(ctx, result: dict) -> str:
     if skipped_count > 0:
         summary += f" *({skipped_count} ignorée(s) car en attente)*"
     lines.append(summary)
+
+    prefix = getattr(ctx, "prefix", "!")
+    if getattr(ctx, "interaction", None):
+        prefix = "/"
+    tip = text.get(ctx, "g_macro_run_tip", prefix=prefix, name=name)
+    lines.append("")
+    lines.append(tip)
     return "\n".join(lines)
-
-
-def _parse_command_line_to_step(line: str) -> dict | None:
-    """
-    Parse une chaîne de commande textuelle (ex: '!buy mining 2 5 confirm' ou 'claim')
-    en une étape de macro ({'method': '...', 'args': {...}}).
-    """
-    clean = line.strip()
-    if not clean or clean.lower() in ("done", "fin", "save", "sauvegarder"):
-        return None
-
-    # Enlève un préfixe éventuel (!, /, etc.)
-    if clean.startswith(("!", "/", ";", "$", "?")):
-        clean = clean[1:].strip()
-
-    try:
-        parts = shlex.split(clean)
-    except Exception:
-        parts = clean.split()
-
-    if not parts:
-        return None
-
-    cmd_name = parts[0].lower().strip()
-
-    # Alias fréquents
-    if cmd_name in ("co", "contrat"):
-        cmd_name = "contract"
-    elif cmd_name in ("n", "net"):
-        cmd_name = "network"
-    elif cmd_name in ("rep",):
-        cmd_name = "reputation"
-    elif cmd_name in ("cl",):
-        cmd_name = "claim"
-
-    if cmd_name not in MACRO_CATALOG:
-        return None
-
-    args = {}
-    tokens = parts[1:]
-
-    if cmd_name == "buy":
-        # Parsing de buy : [kind] [tier] [count|all] ou [kind] [count|all]
-        _ALL = ("all", "max", "tout")
-        clean_tokens = [t.lower() for t in tokens if t.lower() not in ("confirm", "confirmer", "valider")]
-        if clean_tokens:
-            args["kind"] = clean_tokens[0]
-        if len(clean_tokens) == 2:
-            if clean_tokens[1].isdigit():
-                args["tier"] = clean_tokens[1]
-                args["count"] = "1"
-            elif clean_tokens[1] in _ALL:
-                args["tier"] = "1"
-                args["count"] = "all"
-            else:
-                args["tier"] = "1"
-                args["count"] = clean_tokens[1]
-        elif len(clean_tokens) >= 3:
-            if clean_tokens[1].isdigit():
-                args["tier"] = clean_tokens[1]
-                args["count"] = clean_tokens[2]
-            elif clean_tokens[1] in _ALL:
-                args["tier"] = clean_tokens[2] if clean_tokens[2].isdigit() else "1"
-                args["count"] = "all"
-            else:
-                args["tier"] = "1"
-                args["count"] = clean_tokens[1]
-        elif len(clean_tokens) == 1:
-            args["tier"] = "1"
-            args["count"] = "1"
-
-    elif cmd_name == "contract":
-        # Parsing contract : [action] [duration]
-        if tokens:
-            first = tokens[0].lower()
-            if first in ("start", "lancer"):
-                args["action"] = "start"
-                if len(tokens) > 1:
-                    args["duration"] = tokens[1].lower()
-            elif first in ("collect", "claim", "recup", "recuperer"):
-                args["action"] = "collect"
-            elif first in ("short", "medium", "long", "court", "moyen"):
-                args["action"] = "start"
-                args["duration"] = "short" if first == "court" else ("medium" if first == "moyen" else first)
-            elif first in ("view", "voir", "status"):
-                args["action"] = "view"
-            else:
-                args["action"] = first
-        else:
-            args["action"] = "collect"
-
-    elif cmd_name == "convert":
-        if tokens:
-            args["amount"] = tokens[0]
-        else:
-            args["amount"] = "all"
-
-    elif cmd_name == "compile":
-        if tokens:
-            args["atk"] = tokens[0]
-            if len(tokens) > 1:
-                args["method_name"] = tokens[1].lower()
-        else:
-            args["atk"] = "all"
-
-    elif cmd_name == "claim_auto":
-        if tokens:
-            args["count"] = tokens[0]
-        else:
-            args["count"] = "all"
-
-    elif cmd_name == "top":
-        if tokens:
-            args["category"] = tokens[0].lower()
-
-    elif cmd_name == "rmd":
-        if tokens:
-            args["action"] = tokens[0].lower()
-            if len(tokens) > 1:
-                args["target"] = tokens[1].lower()
-
-    elif cmd_name in ("scan", "reputation"):
-        if tokens:
-            # Nettoyer mention Discord <@12345> -> 12345
-            raw_id = re.sub(r"[<@!>]", "", tokens[0])
-            if raw_id.isdigit():
-                args["target"] = int(raw_id)
-
-    elif cmd_name == "hack":
-        if tokens:
-            args["secret_id"] = tokens[0]
-        if len(tokens) > 1 and tokens[1].isdigit():
-            args["attack_points"] = int(tokens[1])
-        if len(tokens) > 2:
-            args["target"] = tokens[2].lower()
-
-    # Valide avec le catalogue
-    try:
-        clean_args = validate_step_args(cmd_name, args)
-        return {"method": cmd_name, "args": clean_args}
-    except Exception:
-        return None
 
 
 class StepArgsModal(discord.ui.Modal):
@@ -281,7 +146,6 @@ class MacroWizardView(discord.ui.View):
         self.macro_name = default_name.strip().lower() if default_name else None
         self.steps = []
         self.message = None
-        self.listening_task = None
         self._build_interface()
 
     def _build_interface(self):
@@ -312,15 +176,6 @@ class MacroWizardView(discord.ui.View):
             )
             select_cmd.callback = self._on_select_command
             self.add_item(select_cmd)
-
-            # Bouton mode écoute rapide de messages
-            btn_listen = discord.ui.Button(
-                label="Écoute rapide (chat)",
-                emoji=get_button_emoji("root_connexions") or "🎧",
-                style=discord.ButtonStyle.secondary,
-            )
-            btn_listen.callback = self._on_start_listen
-            self.add_item(btn_listen)
 
         # Bouton d'enregistrement si au moins 1 étape
         if self.steps:
@@ -354,7 +209,7 @@ class MacroWizardView(discord.ui.View):
                 args_repr = ", ".join(f"{k}={v}" for k, v in s.get("args", {}).items() if k != "confirm")
                 lines.append(f"> `{idx}.` **{m}** {f'({args_repr})' if args_repr else ''}")
         else:
-            lines.append("*(Choisis une commande dans le menu ou clique sur **Écoute rapide** pour taper directement vos actions)*")
+            lines.append("*(Choisis une commande dans le menu déroulant ci-dessous pour ajouter une étape)*")
         return "\n".join(lines)
 
     async def _check_interaction(self, interaction: discord.Interaction) -> bool:
@@ -423,102 +278,9 @@ class MacroWizardView(discord.ui.View):
             embed = RootEmbed(self.ctx, "macro", self._render_summary())
             await interaction.response.edit_message(embed=embed, view=self)
 
-    async def _on_start_listen(self, interaction: discord.Interaction):
-        """Active l'écoute des messages du joueur dans le salon pour ajouter des commandes en temps réel."""
-        if not await self._check_interaction(interaction):
-            return
-
-        if self.listening_task and not self.listening_task.done():
-            await interaction.response.send_message("🎧 *L'écoute est déjà en cours dans ce salon.*", ephemeral=True)
-            return
-
-        await interaction.response.defer()
-        listen_desc = text.get(
-            self.ctx,
-            "g_macro_listen_desc",
-            name=self.macro_name or "Nouvelle",
-            count=len(self.steps),
-        )
-        embed = RootEmbed(self.ctx, "macro", listen_desc)
-        if self.message:
-            await self.message.edit(embed=embed, view=self)
-
-        self.listening_task = asyncio.create_task(self._listen_loop())
-
-    async def _listen_loop(self):
-        """Boucle d'écoute des messages postés par le joueur dans le salon."""
-        bot = self.cog.bot
-        channel = getattr(self.ctx, "channel", None)
-        if not channel:
-            return
-
-        def check(m: discord.Message):
-            return m.author.id == self.author_id and m.channel.id == channel.id
-
-        while len(self.steps) < 5:
-            try:
-                msg = await bot.wait_for("message", timeout=60.0, check=check)
-            except asyncio.TimeoutError:
-                # Timeout atteint : met à jour le message
-                timeout_note = text.get(self.ctx, "g_macro_listen_timeout")
-                embed = RootEmbed(self.ctx, "macro", f"{self._render_summary()}\n\n{timeout_note}")
-                if self.message:
-                    await self.message.edit(embed=embed, view=self)
-                break
-
-            content = msg.content.strip()
-            if content.lower() in ("done", "fin", "save", "sauvegarder"):
-                # Sauvegarde immédiate
-                await self._save_macro_direct()
-                break
-
-            # Découpage par point-virgule si multi-commandes sur une même ligne
-            sub_lines = [s.strip() for s in content.split(";") if s.strip()]
-            added_any = False
-            for line in sub_lines:
-                if len(self.steps) >= 5:
-                    break
-                parsed = _parse_command_line_to_step(line)
-                if parsed:
-                    self.steps.append(parsed)
-                    added_any = True
-
-            if added_any:
-                try:
-                    await msg.add_reaction("✅")
-                except Exception:
-                    pass
-                self._build_interface()
-                embed = RootEmbed(self.ctx, "macro", self._render_summary())
-                if self.message:
-                    await self.message.edit(embed=embed, view=self)
-
-    async def _save_macro_direct(self):
-        """Sauvegarde directe de la macro sans passer par un bouton d'interaction."""
-        service = self.cog.macro_service
-        try:
-            res = await service.create_macro(self.author_id, self.macro_name, self.steps)
-            msg = text.get(
-                self.ctx,
-                "g_macro_created",
-                name=res["name"],
-                steps_count=len(res.get("steps", [])),
-            )
-            embed = RootEmbed(self.ctx, "macro", msg)
-            self.stop()
-            if self.message:
-                await self.message.edit(embed=embed, view=None)
-        except GameError as ge:
-            err_msg = text.get(self.ctx, "g_error_" + ge.key, **ge.values)
-            if self.message:
-                await self.message.edit(content=err_msg, view=self)
-
     async def _on_save(self, interaction: discord.Interaction):
         if not await self._check_interaction(interaction):
             return
-
-        if self.listening_task and not self.listening_task.done():
-            self.listening_task.cancel()
 
         service = self.cog.macro_service
         try:
@@ -545,8 +307,6 @@ class MacroWizardView(discord.ui.View):
     async def _on_cancel(self, interaction: discord.Interaction):
         if not await self._check_interaction(interaction):
             return
-        if self.listening_task and not self.listening_task.done():
-            self.listening_task.cancel()
         self.stop()
         embed = RootEmbed(self.ctx, "macro", "❌ *Création de macro annulée.*")
         await interaction.response.edit_message(embed=embed, view=None)
@@ -582,16 +342,16 @@ class Macro(BaseGameCog):
         ) = None,
         display: discord.Option(
             bool,
-            description="Afficher les réponses de chaque commande (mode verbeux / d)",
-            description_localizations={"fr": "Afficher les réponses de chaque commande (mode verbeux / d)"},
+            description="Afficher les réponses de chaque commande (mode verbeux / option d)",
+            description_localizations={"fr": "Afficher les réponses de chaque commande (mode verbeux / option d)"},
             required=False,
             default=False,
         ) = False,
     ):
         """Lancer une macro enregistrée ou lister ses macros."""
         await self._prefetch_lang(ctx.author.id)
-        if not nom:
-            await self._show_macro_list(ctx)
+        if not nom or nom.strip().lower() in ("help", "aide", "?"):
+            await self._show_macro_help(ctx)
             return
 
         try:
@@ -603,6 +363,7 @@ class Macro(BaseGameCog):
             if display:
                 await self._display_macro_steps(ctx, nom, result)
             else:
+                await self._dispatch_macro_logs(ctx, result)
                 content = _format_macro_run_content(ctx, result)
                 await self._send_embed(ctx, "macro", content)
         except GameError as error:
@@ -625,7 +386,7 @@ class Macro(BaseGameCog):
             default=None,
         ) = None,
     ):
-        """Créer une macro interactivement avec l'assistant ou l'écoute rapide."""
+        """Créer une macro interactivement avec l'assistant."""
         await self._prefetch_lang(ctx.author.id)
         view = MacroWizardView(self, ctx, default_name=nom)
         embed = RootEmbed(ctx, "macro", view._render_summary())
@@ -664,7 +425,7 @@ class Macro(BaseGameCog):
     # ── Commande Préfixe ─────────────────────────────────────────────────────
     @commands.command(name="macro", aliases=["mac"], help=FR["macro"])
     async def prefix_macro(self, ctx, *args):
-        """Commande préfixe !macro [create [nom] | listen [nom] | delete <nom> | <nom> [d] | list]."""
+        """Commande préfixe !macro [create [nom] | delete <nom> | <nom> [d] | list]."""
         await self._prefetch_lang(ctx.author.id)
         tokens = list(args)
         display_flags = {"d", "display", "-d", "--display", "v", "verbose"}
@@ -676,7 +437,11 @@ class Macro(BaseGameCog):
             else:
                 remaining_tokens.append(t)
 
-        if not remaining_tokens or remaining_tokens[0].lower() in ("list", "liste"):
+        if not remaining_tokens or remaining_tokens[0].lower() in ("help", "aide", "?"):
+            await self._show_macro_help(ctx)
+            return
+
+        if remaining_tokens[0].lower() in ("list", "liste"):
             await self._show_macro_list(ctx)
             return
 
@@ -688,21 +453,6 @@ class Macro(BaseGameCog):
             embed = RootEmbed(ctx, "macro", view._render_summary())
             msg = await ctx.send(embed=embed, view=view)
             view.message = msg
-            return
-
-        if action in ("listen", "ecoute", "quick"):
-            default_name = remaining_tokens[1].strip().lower() if len(remaining_tokens) > 1 else None
-            view = MacroWizardView(self, ctx, default_name=default_name)
-            listen_desc = text.get(
-                ctx,
-                "g_macro_listen_desc",
-                name=view.macro_name or "Nouvelle",
-                count=0,
-            )
-            embed = RootEmbed(ctx, "macro", listen_desc)
-            msg = await ctx.send(embed=embed, view=view)
-            view.message = msg
-            view.listening_task = asyncio.create_task(view._listen_loop())
             return
 
         if action in ("delete", "suppr", "remove", "del"):
@@ -736,6 +486,7 @@ class Macro(BaseGameCog):
             if display_steps:
                 await self._display_macro_steps(ctx, macro_name, result)
             else:
+                await self._dispatch_macro_logs(ctx, result)
                 content = _format_macro_run_content(ctx, result)
                 await self._send_embed(ctx, "macro", content)
         except GameError as error:
@@ -782,6 +533,7 @@ class Macro(BaseGameCog):
                     except Exception:
                         logger.exception("Erreur lors de l'affichage de l'étape %s via %s", method, cog_name)
                 if not displayed:
+                    await self._log_step(ctx, method, res)
                     await self._send_embed(ctx, method or "macro", f"> 🟢 **Étape {idx}/{total}** (`{method}`) · Exécutée avec succès.")
             elif s.get("skipped"):
                 skipped_count += 1
@@ -813,10 +565,161 @@ class Macro(BaseGameCog):
         else:
             await ctx.send(summary, allowed_mentions=discord.AllowedMentions.none())
 
+    async def _dispatch_macro_logs(self, ctx, result: dict):
+        """Déclenche les logs de modération et transactions blockchain pour chaque étape réussie."""
+        steps = result.get("steps", [])
+        for s in steps:
+            if s.get("success"):
+                method = s.get("method")
+                res = s.get("result", {})
+                await self._log_step(ctx, method, res)
+
+    async def _log_step(self, ctx, method: str, result: dict):
+        """Déclenche la journalisation modération et blockchain spécifique à la méthode exécutée."""
+        if not result or not isinstance(result, dict):
+            return
+
+        from utils.logger import Logger
+        bot_logger = getattr(self.bot, "discord_logger", None) or Logger(self.bot)
+        author = getattr(ctx, "author", None) or getattr(ctx, "user", None)
+        if isinstance(author, (int, str)):
+            author_id = int(author)
+            author = None
+            author_name = str(author_id)
+        elif author:
+            author_id = getattr(author, "id", None)
+            author_name = getattr(author, "display_name", None) or getattr(author, "name", None)
+        else:
+            author_id = None
+            author_name = None
+
+        try:
+            if method in ("claim", "claim_auto"):
+                claim_res = result.get("claim_result", {}) if method == "claim_auto" else result
+                if claim_res.get("claimed"):
+                    amount = Decimal(str(claim_res.get("amount", 0)))
+                    from commands.game.claim import log_claim_events
+                    await log_claim_events(self.bot, ctx, amount, claim_res)
+
+            elif method == "hourly":
+                if author:
+                    await bot_logger.log_hourly(
+                        ctx=ctx,
+                        user=author,
+                        base_usd=result.get("base_usd"),
+                        bonus_pct=result.get("bonus_pct"),
+                        total_usd=result.get("total_usd"),
+                        streak=result.get("streak"),
+                        interval_seconds=result.get("interval_seconds"),
+                        combo_lost=result.get("combo_lost", False),
+                        is_first=result.get("is_first", False),
+                        step_bonus_pct=result.get("step_bonus_pct", 0),
+                        new_dollars=result.get("new_dollars"),
+                    )
+
+            elif method == "buy":
+                kind = result.get("kind")
+                rtm_val = Decimal(str(result.get("rtm_price", 0)))
+                if kind == "attack" and rtm_val > 0 and author_id:
+                    await bot_logger.log_blockchain_transaction(
+                        from_id=author_id,
+                        to_address="0xROOT_BLACK_MARKET",
+                        rtm_amount=rtm_val,
+                        from_name=author_name,
+                    )
+
+            elif method == "convert":
+                from commands.game.convert import DEX_ADDRESS
+                rtm_val = Decimal(str(result.get("rtm_amount", 0)))
+                if rtm_val > 0 and author_id:
+                    await bot_logger.log_blockchain_transaction(
+                        from_id=author_id,
+                        to_address=DEX_ADDRESS,
+                        rtm_amount=rtm_val,
+                        tx_type="SELL TOKEN",
+                        usd_amount=result.get("usd_amount"),
+                        from_name=author_name,
+                    )
+
+            elif method == "compile":
+                from commands.game.compile import COMPILE_ADDRESSES
+                rtm_val = Decimal(str(result.get("rtm_paid") or 0))
+                method_key = result.get("method", "skilled")
+                to_address = COMPILE_ADDRESSES.get(method_key)
+                if rtm_val > 0 and to_address and author_id:
+                    await bot_logger.log_blockchain_transaction(
+                        from_id=author_id,
+                        to_address=to_address,
+                        rtm_amount=rtm_val,
+                        from_name=author_name,
+                    )
+
+            elif method == "scan":
+                if result.get("scan_started") and author_id:
+                    await bot_logger.log_blockchain_transaction(
+                        from_id=author_id,
+                        to_address="0xROOT_SCAN_NODE",
+                        rtm_amount=result.get("rtm_total"),
+                        tx_type="SCAN",
+                        from_name=author_name,
+                    )
+
+            elif method == "hack":
+                if result.get("hack_started"):
+                    await bot_logger.log_pvp_attack(
+                        author or author_id,
+                        result.get("attack_points"),
+                    )
+
+            elif method == "reputation":
+                target_id = result.get("target_id")
+                if target_id and author:
+                    target = self.bot.get_user(target_id)
+                    if not target and hasattr(self.bot, "fetch_user"):
+                        target = await self.bot.fetch_user(target_id)
+                    if target:
+                        await bot_logger.log_reputation(
+                            ctx,
+                            giver=author,
+                            recipient=target,
+                            points=result.get("points", 1),
+                        )
+        except Exception:
+            logger.exception("Erreur lors de la journalisation de l'étape macro %s", method)
+
+    async def _show_macro_help(self, ctx):
+        """Affiche le guide complet d'utilisation des macros et l'état des macros du joueur."""
+        macros = await self.macro_service.list_macros(ctx.author.id)
+        prefix = getattr(ctx, "prefix", "!")
+        if getattr(ctx, "interaction", None):
+            prefix = "/"
+
+        lines = [
+            text.get(ctx, "g_macro_help_title"),
+            text.get(ctx, "g_macro_help_desc"),
+            "",
+            "**Commandes & Syntaxe :**",
+            text.get(ctx, "g_macro_help_run", prefix=prefix),
+            text.get(ctx, "g_macro_help_manage", prefix=prefix),
+            "",
+            f"**Tes Macros Enregistrées ({len(macros)}/3) :**",
+        ]
+        if macros:
+            for m in macros:
+                lines.append(f"> • **`{m['name']}`** · `{m.get('steps_count', 0)}/5` étapes")
+        else:
+            lines.append(f"> *(Aucune macro configurée. Tape `{prefix}macro create` pour commencer !)*")
+
+        lines.append("")
+        lines.append(f"ℹ️ {text.get(ctx, 'g_macro_help_rules')}")
+        await self._send_embed(ctx, "macro", "\n".join(lines))
+
     async def _show_macro_list(self, ctx):
         """Affiche la liste des macros possédées par le joueur avec style Root OS."""
         macros = await self.macro_service.list_macros(ctx.author.id)
         prefix = getattr(ctx, "prefix", "!")
+        if getattr(ctx, "interaction", None):
+            prefix = "/"
         if not macros:
             msg = text.get(ctx, "g_macro_list_empty", prefix=prefix)
             await self._send_embed(ctx, "macro", msg)
@@ -829,7 +732,7 @@ class Macro(BaseGameCog):
         for m in macros:
             lines.append(f"> 🤖 **`{m['name']}`** · `{m.get('steps_count', 0)}/5` étapes")
         lines.append("")
-        lines.append(f"> 💡 Lance une routine avec `{prefix}macro <nom>` ou `/macro <nom>`.")
+        lines.append(f"> 💡 Lance avec `{prefix}macro <nom>` (ou `{prefix}macro <nom> d` pour afficher le détail de chaque commande).")
         await self._send_embed(ctx, "macro", "\n".join(lines))
 
     async def _send(self, ctx, method, result):

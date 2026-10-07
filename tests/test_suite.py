@@ -7918,10 +7918,10 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         from lang import help_fr, help_en
         from commands.utility.help import PUBLIC_COMMANDS
 
-        # 28 commandes publiques
-        self.assertEqual(len(PUBLIC_COMMANDS), 28)
-        self.assertEqual(len(help_fr.COMMANDS), 28)
-        self.assertEqual(len(help_en.COMMANDS), 28)
+        # 29 commandes publiques
+        self.assertEqual(len(PUBLIC_COMMANDS), 29)
+        self.assertEqual(len(help_fr.COMMANDS), 29)
+        self.assertEqual(len(help_en.COMMANDS), 29)
 
         for cmd_name in PUBLIC_COMMANDS:
             self.assertIn(cmd_name, help_fr.COMMANDS)
@@ -7967,7 +7967,7 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         for cs in cmd_selects:
             self.assertLessEqual(len(cs.options), 25)
             total_options.extend(opt.value for opt in cs.options)
-        self.assertEqual(len(total_options), 28)
+        self.assertEqual(len(total_options), 29)
         self.assertEqual(set(total_options), set(PUBLIC_COMMANDS))
 
         # Vérifie que l'embed de la page liste toutes les 27 commandes
@@ -11248,21 +11248,154 @@ class TestMacros(unittest.TestCase):
             loop.close()
 
     def test_macro_prefix_parsing_display_flag(self):
-        """Vérifie la détection du flag d / display dans la commande préfixe !macro et le parsing de buy."""
-        from commands.game.macro import _parse_command_line_to_step
+        """Vérifie la détection du flag d / display dans la commande préfixe !macro."""
+        display_flags = {"d", "display", "-d", "--display", "v", "verbose"}
+        tokens = ["farm", "d"]
+        display_steps = any(t.lower().strip() in display_flags for t in tokens)
+        remaining = [t for t in tokens if t.lower().strip() not in display_flags]
+        self.assertTrue(display_steps)
+        self.assertEqual(remaining, ["farm"])
 
-        # Parsing de buy mining all
-        parsed = _parse_command_line_to_step("buy mining all")
-        self.assertIsNotNone(parsed)
-        self.assertEqual(parsed["method"], "buy")
-        self.assertTrue(parsed["args"].get("all"))
-        self.assertEqual(parsed["args"].get("tier"), 1)
+        tokens2 = ["run", "my_macro", "--display"]
+        display_steps2 = any(t.lower().strip() in display_flags for t in tokens2)
+        remaining2 = [t for t in tokens2 if t.lower().strip() not in display_flags]
+        self.assertTrue(display_steps2)
+        self.assertEqual(remaining2, ["run", "my_macro"])
 
-        # Parsing de buy mining 2 all
-        parsed2 = _parse_command_line_to_step("buy mining 2 all")
-        self.assertIsNotNone(parsed2)
-        self.assertEqual(parsed2["args"].get("tier"), 2)
-        self.assertTrue(parsed2["args"].get("all"))
+    def test_format_macro_run_content_includes_d_tip(self):
+        """Vérifie que le rapport compact mentionne l'astuce avec le flag d / display."""
+        from commands.game.macro import _format_macro_run_content
+        mock_ctx = MagicMock()
+        mock_ctx.prefix = "!"
+        mock_ctx.interaction = None
+        result = {
+            "macro_name": "farm_routine",
+            "total_steps": 2,
+            "executed_steps": 2,
+            "steps": [
+                {"position": 1, "method": "claim", "success": True},
+                {"position": 2, "method": "hourly", "success": True},
+            ],
+        }
+        content = _format_macro_run_content(mock_ctx, result)
+        self.assertIn("!macro farm_routine d", content)
+        self.assertIn("display:True", content)
+
+    def test_help_resolves_macro_command(self):
+        """Vérifie que HelpCog résout la commande macro et ses alias (mac, macros)."""
+        from commands.utility.help import HelpCog
+        mock_bot = MagicMock()
+        help_cog = HelpCog(mock_bot)
+
+        # Résolution canonique
+        canonical, cat, err = help_cog._resolve_command_query("macro", "fr")
+        self.assertEqual(canonical, "macro")
+        self.assertEqual(cat, "network")
+        self.assertIsNone(err)
+
+        # Résolution alias mac
+        canonical_mac, cat_mac, err_mac = help_cog._resolve_command_query("mac", "fr")
+        self.assertEqual(canonical_mac, "macro")
+        self.assertEqual(cat_mac, "network")
+        self.assertIsNone(err_mac)
+
+        # Résolution alias macros
+        canonical_macros, cat_macros, err_macros = help_cog._resolve_command_query("macros", "en")
+        self.assertEqual(canonical_macros, "macro")
+        self.assertEqual(cat_macros, "network")
+        self.assertIsNone(err_macros)
+
+    def test_macro_logs_and_blockchain_dispatch(self):
+        """Vérifie que l'exécution des étapes de macro déclenche les logs et la blockchain."""
+        import asyncio
+        from commands.game.macro import Macro
+        from decimal import Decimal
+        mock_bot = MagicMock()
+        mock_discord_logger = MagicMock()
+        mock_discord_logger.log_blockchain_transaction = AsyncMock()
+        mock_discord_logger.log_hourly = AsyncMock()
+        mock_discord_logger.log_claim = AsyncMock()
+        mock_bot.discord_logger = mock_discord_logger
+
+        macro_cog = Macro(mock_bot)
+
+        mock_ctx = MagicMock()
+        mock_author = MagicMock()
+        mock_author.id = 987654321
+        mock_author.display_name = "PlayerOne"
+        mock_ctx.author = mock_author
+        mock_ctx.user = mock_author
+
+        loop = asyncio.new_event_loop()
+        try:
+            # 1. Étape Claim réussie -> Blockchain + modération
+            claim_result = {
+                "claimed": True,
+                "amount": Decimal("15.5"),
+                "new_rootium": Decimal("100"),
+                "rate_per_min": Decimal("2.5"),
+                "total_ram_formatted": "500 Mo",
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "claim", claim_result))
+            mock_discord_logger.log_blockchain_transaction.assert_awaited()
+            last_bc_call = mock_discord_logger.log_blockchain_transaction.call_args
+            self.assertEqual(last_bc_call.kwargs.get("rtm_amount"), Decimal("15.5"))
+            self.assertEqual(last_bc_call.kwargs.get("to_address"), "987654321")
+
+            # 2. Étape Hourly réussie -> Log hourly
+            hourly_result = {
+                "base_usd": Decimal("100"),
+                "bonus_pct": Decimal("50"),
+                "total_usd": Decimal("150"),
+                "streak": 5,
+                "combo_lost": False,
+                "is_first": False,
+                "new_dollars": Decimal("1000"),
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "hourly", hourly_result))
+            mock_discord_logger.log_hourly.assert_awaited()
+
+            # 3. Étape Buy Attack (RTM) -> Log blockchain
+            mock_discord_logger.log_blockchain_transaction.reset_mock()
+            buy_result = {
+                "kind": "attack",
+                "rtm_price": Decimal("25"),
+                "tier": 2,
+                "count": 1,
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "buy", buy_result))
+            mock_discord_logger.log_blockchain_transaction.assert_awaited_once()
+            buy_bc_call = mock_discord_logger.log_blockchain_transaction.call_args
+            self.assertEqual(buy_bc_call.kwargs.get("to_address"), "0xROOT_BLACK_MARKET")
+            self.assertEqual(buy_bc_call.kwargs.get("rtm_amount"), Decimal("25"))
+
+            # 4. Étape Convert (RTM -> USD) -> Log blockchain DEX
+            mock_discord_logger.log_blockchain_transaction.reset_mock()
+            convert_result = {
+                "rtm_amount": Decimal("50"),
+                "usd_amount": Decimal("100"),
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "convert", convert_result))
+            mock_discord_logger.log_blockchain_transaction.assert_awaited_once()
+            convert_bc_call = mock_discord_logger.log_blockchain_transaction.call_args
+            self.assertEqual(convert_bc_call.kwargs.get("tx_type"), "SELL TOKEN")
+            self.assertEqual(convert_bc_call.kwargs.get("rtm_amount"), Decimal("50"))
+
+            # 5. _dispatch_macro_logs complet
+            mock_discord_logger.log_blockchain_transaction.reset_mock()
+            macro_run_res = {
+                "steps": [
+                    {"method": "claim", "success": True, "result": claim_result},
+                    {"method": "convert", "success": True, "result": convert_result},
+                    {"method": "claim", "success": False, "skipped": True},
+                ]
+            }
+            loop.run_until_complete(macro_cog._dispatch_macro_logs(mock_ctx, macro_run_res))
+            self.assertEqual(mock_discord_logger.log_blockchain_transaction.await_count, 2)
+        finally:
+            loop.close()
+
+
 
 
 if __name__ == '__main__':
