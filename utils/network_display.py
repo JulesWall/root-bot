@@ -102,9 +102,15 @@ def build_overview_embed(
         mining_status = "Production active" if is_fr else "Mining active"
         color = COLOR_TURQUOISE
 
+    secret_id = result.get('secret_id') or "------"
+    secret_next_ts = result.get('secret_next_ts')
+    next_rot_str = _format_time_relative(secret_next_ts) if secret_next_ts else None
+    rot_info = f" · *({'rotation' if is_fr else 'rot.'} {next_rot_str})*" if next_rot_str else ""
+    secret_line = f"{get_emoji('root_terminal', True)}**Secret ID** : ||`{secret_id}`||{rot_info}"
+
     embed = discord.Embed(
         title=None,
-        description=f"**{infra_name}** · {'Infrastructure' if is_fr else 'Infrastructure'} {level}/5\n*{mining_status}*",
+        description=f"{secret_line}\n**{infra_name}** · {'Infrastructure' if is_fr else 'Infrastructure'} {level}/5\n*{mining_status}*",
         color=color,
         timestamp=discord.utils.utcnow(),
     )
@@ -671,10 +677,15 @@ def build_overview_container(
     if img_name:
         c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
 
-    clean_name = display_name.upper()
+    clean_name = display_name
     term_icon = get_emoji('root_terminal', True)
+    secret_id = result.get('secret_id') or "------"
+    secret_next_ts = result.get('secret_next_ts')
+    next_rot_str = _format_time_relative(secret_next_ts) if secret_next_ts else None
+    rot_info = f" · *({'rotation' if is_fr else 'rot.'} {next_rot_str})*" if next_rot_str else ""
+    secret_line = f"{term_icon}**Secret ID** : ||`{secret_id}`||{rot_info}"
     subtitle = f"{infra_name} ({'Niveau' if is_fr else 'Level'} {level}/5) · {'Session active' if is_fr else 'Active session'}"
-    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{subtitle}")
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{secret_line}\n{subtitle}")
     c.add_separator(divider=True)
 
     total_miners = sum(stats.get('bay_details', {}).get(t, {}).get('mining_count', 0) for t in range(1, 6))
@@ -733,7 +744,7 @@ def build_farm_container(
     if img_name:
         c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
 
-    clean_name = display_name.upper()
+    clean_name = display_name
     term_icon = get_emoji('root_terminal', True)
     subtitle = "Débits de hachage & Stockage mémoire" if is_fr else "Hashrate rates & Memory storage"
     c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{subtitle}")
@@ -819,7 +830,7 @@ def build_hardware_container(
     if img_name:
         c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
 
-    clean_name = display_name.upper()
+    clean_name = display_name
     term_icon = get_emoji('root_terminal', True)
     c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Inventaire des baies & Matériel' if is_fr else 'Rack inventory & Hardware'}")
     c.add_separator(divider=True)
@@ -896,7 +907,7 @@ def build_operations_container(
     if img_name:
         c.add_gallery(discord.MediaGalleryItem(f"attachment://{img_name}"))
 
-    clean_name = display_name.upper()
+    clean_name = display_name
     term_icon = get_emoji('root_terminal', True)
     c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Opérations & Sécurité · Poste de combat' if is_fr else 'Operations & Security · Combat station'}")
     c.add_separator(divider=True)

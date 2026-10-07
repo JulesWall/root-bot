@@ -15,9 +15,11 @@ Vous rêviez d'enchaîner vos tâches de routine en une seule action ? Le systè
 ### ⚡ Ce qui change pour vous :
 - **Jusqu'à 3 macros personnalisées par joueur** : Programmez vos routines favorites (ex: `matin`, `farm`, `defense`).
 - **1 à 5 étapes séquentielles par macro** : Enchaînez vos actions préférées (`claim`, `hourly`, `buy`, `upgrade`, `convert`, `compile`, `contract`, `scan`, `hack`, `reputation`, `network`, etc.).
-- **Assistant Interactif Dédié** :
-  - Créez vos macros en toute simplicité sans vous soucier de la syntaxe grâce à `/macro-create` ou `!macro create` (assistant pas-à-pas avec menus déroulants et fenêtres de saisie pour configurer chaque étape).
+- **Assistant Interactif & Création Rapide** :
+  - **Assistant pas-à-pas fiabilisé (`/macro-create` ou `!macro create`)** : résolution complète des blocages lors de la saisie du nom ou des paramètres d'étape. Ajout d'un bouton pour annuler ou retirer la dernière étape programmée (`↩️`).
+  - **Création rapide directe (`!macro create <nom> <cmd1> [cmd2]...`)** : créez instantanément une macro en une seule ligne sans passer par les menus déroulants (ex: `!macro create farm claim hourly upgrade`).
 - **Commandes avec devis (`/buy`)** : confirmation directe simplifiée (`confirm: true/oui/confirm`) et prise en charge du mot-clé `all` pour acheter le maximum de modules abordables d'un coup.
+- **Rappels intelligents (`/rmd` & `!rmd`) dans les macros** : intégration naturelle et simplifiée de `rmd` dans vos routines. Un seul paramètre intuitif (par défaut `all`, ou au choix `hourly`, `claim`, `events`, `list`, `cancel`). Plus besoin d'action technique complexe : tapez simplement `rmd:all`, `rmd:hourly` ou sélectionnez directement votre cible dans l'assistant !
 - **Exécution Directe & Sécurisée** :
   - Lancez votre routine avec `/macro nom:<nom>` (avec autocomplétion intelligente de vos macros) ou via le préfixe `!macro <nom>`.
   - **Mode Verbeux / Display (`!macro <nom> d` ou `/macro display:True`)** : recevez les messages complets et interactifs de chaque commande comme si vous les aviez tapées vous-même dans le salon ! Une astuce claire vous le rappelle automatiquement à chaque lancement.
@@ -58,7 +60,7 @@ Désormais, lorsque vous améliorez votre réseau avec `/upgrade`, vous ne faite
 L'affichage central de votre réseau a été entièrement repensé autour des composants interactifs de Discord pour devenir votre véritable cockpit de jeu :
 
 - **4 Onglets Dédiés et Complets** :
-  - **Accueil** : Vue d'ensemble immédiate, identité secrète, statistiques clés, état de l'infrastructure et progression vers le palier suivant.
+  - **Accueil** : Vue d'ensemble immédiate, affichage de votre **Secret ID** protégé directement sous l'en-tête du réseau, statistiques clés, état de l'infrastructure et progression vers le palier suivant.
   - **Ferme** : Débits de minage en temps réel, jauge visuelle de mémoire vive, répartition des mineurs par tier et état de l'automatisation.
   - **Matériel** : Inventaire complet et limpide de vos baies (Minage, Attaque, Défense) réparties par palier, avec raccourcis d'achat.
   - **Opérations** : Stock d'outils offensifs, état des compilations d'exploits, scans actifs, attaques en cours et droits de représailles.

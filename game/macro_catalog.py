@@ -323,21 +323,28 @@ MACRO_CATALOG: dict[str, MacroCommandSpec] = {
         label_en="View or set reminder",
         params=[
             ParamSpec(
-                name="action",
-                type="choice",
-                label_fr="Action de rappel",
-                label_en="Reminder action",
-                choices=["list", "create", "cancel"],
-                default="list",
-            ),
-            ParamSpec(
                 name="target",
                 type="choice",
-                label_fr="Cible intelligente (si create)",
-                label_en="Smart target (if create)",
+                label_fr="Cible (all, hourly, claim, events, list, cancel)",
+                label_en="Target (all, hourly, claim, events, list, cancel)",
                 required=False,
-                default=None,
-                choices=["hourly", "claim", "events", "all"],
+                default="all",
+                choices=[
+                    "all",
+                    "hourly",
+                    "claim",
+                    "events",
+                    "event",
+                    "list",
+                    "cancel",
+                    "hash",
+                    "pin",
+                    "signal",
+                    "decode",
+                    "anomaly",
+                    "buffer",
+                    "packet",
+                ],
             ),
         ],
     ),
@@ -358,7 +365,23 @@ def validate_step_args(method: str, raw_args: dict | None) -> dict:
     if not spec:
         raise GameError("macro_unknown_command", command=clean_method)
 
-    raw = raw_args or {}
+    raw = dict(raw_args) if raw_args else {}
+
+    # Pré-normalisation : commande rmd
+    if clean_method == "rmd":
+        raw_target = raw.get("target")
+        raw_action = raw.get("action")
+        if not raw_target and raw_action:
+            act_str = str(raw_action).strip().lower()
+            if act_str not in ("create", "create_smart"):
+                raw["target"] = act_str
+            else:
+                raw["target"] = "all"
+        elif raw_target:
+            raw["target"] = str(raw_target).strip().lower()
+        else:
+            raw["target"] = "all"
+
     validated = dict(spec.force_args)
 
     for p in spec.params:
@@ -441,6 +464,22 @@ def validate_step_args(method: str, raw_args: dict | None) -> dict:
                 validated["tier"] = 1
         else:
             validated["tier"] = 1
+
+    # Cas particulier : commande rmd
+    if clean_method == "rmd":
+        cand = str(validated.get("target") or "all").strip().lower()
+        if cand in ("list", "liste", "ls"):
+            validated["action"] = "list"
+            validated["target"] = "list"
+        elif cand in ("cancel", "clear", "del", "delete", "reset"):
+            validated["action"] = "cancel"
+            validated["reminder_id"] = "all"
+            validated["target"] = "cancel"
+        else:
+            if cand == "event":
+                cand = "events"
+            validated["action"] = "create_smart"
+            validated["target"] = cand
 
     # Forcer les arguments prioritaires du catalogue (ex: confirm=True)
     validated.update(spec.force_args)

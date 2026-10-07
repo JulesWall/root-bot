@@ -25,6 +25,7 @@ from discord.ext import commands
 import data
 from commands.game.commandgame import BaseGameCog
 from game.game_error import GameError
+from game.db.macros import validate_macro_name
 from game.macro_catalog import MACRO_CATALOG, validate_step_args
 from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
@@ -115,7 +116,8 @@ class StepArgsModal(discord.ui.Modal):
         self.inputs = {}
 
         for p in self.spec.params[:5]:
-            placeholder = p.label_fr
+            choices_hint = f" ({', '.join(p.choices)})" if getattr(p, "choices", None) else ""
+            placeholder = f"{p.label_fr}{choices_hint}"
             default_val = str(p.default) if p.default is not None else ""
             field = discord.ui.InputText(
                 label=f"{p.name} ({p.type})"[:45],
@@ -143,7 +145,12 @@ class MacroWizardView(discord.ui.View):
         self.cog = cog
         self.ctx = ctx
         self.author_id = ctx.author.id
-        self.macro_name = default_name.strip().lower() if default_name else None
+        self.macro_name = None
+        if default_name:
+            try:
+                self.macro_name = validate_macro_name(default_name)
+            except GameError:
+                self.macro_name = default_name.strip().lower()
         self.steps = []
         self.message = None
         self._build_interface()
@@ -160,6 +167,14 @@ class MacroWizardView(discord.ui.View):
             )
             btn_name.callback = self._prompt_name
             self.add_item(btn_name)
+
+            btn_cancel = discord.ui.Button(
+                label="Annuler",
+                emoji="✖️",
+                style=discord.ButtonStyle.danger,
+            )
+            btn_cancel.callback = self._on_cancel
+            self.add_item(btn_cancel)
             return
 
         # Menu déroulant des commandes (si moins de 5 étapes)
@@ -187,6 +202,14 @@ class MacroWizardView(discord.ui.View):
             btn_save.callback = self._on_save
             self.add_item(btn_save)
 
+            btn_undo = discord.ui.Button(
+                label="Retirer dernière étape",
+                emoji="↩️",
+                style=discord.ButtonStyle.secondary,
+            )
+            btn_undo.callback = self._on_undo
+            self.add_item(btn_undo)
+
         btn_cancel = discord.ui.Button(
             label="Annuler",
             emoji="✖️",
@@ -206,29 +229,97 @@ class MacroWizardView(discord.ui.View):
             lines.append("**Séquence programmée :**")
             for idx, s in enumerate(self.steps, start=1):
                 m = s["method"]
-                args_repr = ", ".join(f"{k}={v}" for k, v in s.get("args", {}).items() if k != "confirm")
-                lines.append(f"> `{idx}.` **{m}** {f'({args_repr})' if args_repr else ''}")
+                args = s.get("args", {})
+                if m == "rmd":
+                    t = args.get("target") or "all"
+                    lines.append(f"> `{idx}.` **{m}** `({t})`")
+                elif m == "buy":
+                    k = args.get("kind", "")
+                    t = args.get("tier", "1")
+                    c = args.get("count", "1")
+                    lines.append(f"> `{idx}.` **{m}** `({k} T{t} x{c})`")
+                else:
+                    args_repr = ", ".join(f"{k}={v}" for k, v in args.items() if k != "confirm")
+                    lines.append(f"> `{idx}.` **{m}** {f'({args_repr})' if args_repr else ''}")
         else:
             lines.append("*(Choisis une commande dans le menu déroulant ci-dessous pour ajouter une étape)*")
         return "\n".join(lines)
 
     async def _check_interaction(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
-            await interaction.response.send_message(
-                text.get(self.ctx, "no_permission"),
-                ephemeral=True,
-            )
+            msg = text.get(self.ctx, "no_permission")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(msg, ephemeral=True)
+            else:
+                await interaction.followup.send(msg, ephemeral=True)
             return False
         return True
+
+    async def _update_from_component(self, interaction: discord.Interaction, embed: discord.Embed):
+        """Met à jour le message suite à un clic sur composant (bouton ou select)."""
+        if interaction.message:
+            self.message = interaction.message
+
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.edit_message(embed=embed, view=self)
+                return
+            except Exception:
+                pass
+
+        if self.message:
+            try:
+                await self.message.edit(embed=embed, view=self)
+                return
+            except Exception:
+                pass
+
+        if getattr(self.ctx, "interaction", None):
+            try:
+                await self.ctx.interaction.edit_original_response(embed=embed, view=self)
+            except Exception:
+                pass
+
+    async def _update_from_modal(self, modal_inter: discord.Interaction, embed: discord.Embed):
+        """Met à jour le message suite à la soumission d'une modal sans erreur Discord."""
+        if modal_inter.message:
+            self.message = modal_inter.message
+
+        if not modal_inter.response.is_done():
+            try:
+                await modal_inter.response.defer(ephemeral=True, invisible=False)
+            except Exception:
+                pass
+
+        updated = False
+        if self.message:
+            try:
+                await self.message.edit(embed=embed, view=self)
+                updated = True
+            except Exception:
+                pass
+
+        if not updated and getattr(self.ctx, "interaction", None):
+            try:
+                await self.ctx.interaction.edit_original_response(embed=embed, view=self)
+                updated = True
+            except Exception:
+                pass
+
+        try:
+            await modal_inter.delete_original_response()
+        except Exception:
+            pass
 
     async def _prompt_name(self, interaction: discord.Interaction):
         if not await self._check_interaction(interaction):
             return
 
+        parent_view = self
+
         class NameModal(discord.ui.Modal):
-            def __init__(self, parent):
+            def __init__(self):
                 super().__init__(title="Nom de la macro")
-                self.parent = parent
                 self.input_name = discord.ui.InputText(
                     label="Nom (1-32 caractères minuscules)",
                     placeholder="ex: farm_matin",
@@ -238,16 +329,20 @@ class MacroWizardView(discord.ui.View):
                 self.add_item(self.input_name)
 
             async def callback(self, modal_interaction: discord.Interaction):
-                clean_name = self.input_name.value.strip().lower()
-                self.parent.macro_name = clean_name
-                self.parent._build_interface()
-                embed = RootEmbed(self.parent.ctx, "macro", self.parent._render_summary())
-                await modal_interaction.response.edit_message(
-                    embed=embed,
-                    view=self.parent,
-                )
+                try:
+                    clean_name = validate_macro_name(self.input_name.value)
+                    parent_view.macro_name = clean_name
+                    parent_view._build_interface()
+                    embed = RootEmbed(parent_view.ctx, "macro", parent_view._render_summary())
+                    await parent_view._update_from_modal(modal_interaction, embed)
+                except GameError as ge:
+                    err_msg = text.get(parent_view.ctx, "g_error_" + ge.key, **ge.values)
+                    if not modal_interaction.response.is_done():
+                        await modal_interaction.response.send_message(err_msg, ephemeral=True)
+                    else:
+                        await modal_interaction.followup.send(err_msg, ephemeral=True)
 
-        await interaction.response.send_modal(NameModal(self))
+        await interaction.response.send_modal(NameModal())
 
     async def _on_select_command(self, interaction: discord.Interaction):
         if not await self._check_interaction(interaction):
@@ -259,16 +354,21 @@ class MacroWizardView(discord.ui.View):
             return
 
         if spec.params:
+            parent_view = self
+
             async def _modal_submit(modal_inter: discord.Interaction, m_method: str, m_args: dict):
                 try:
                     clean_args = validate_step_args(m_method, m_args)
-                    self.steps.append({"method": m_method, "args": clean_args})
-                    self._build_interface()
-                    embed = RootEmbed(self.ctx, "macro", self._render_summary())
-                    await modal_inter.response.edit_message(embed=embed, view=self)
+                    parent_view.steps.append({"method": m_method, "args": clean_args})
+                    parent_view._build_interface()
+                    embed = RootEmbed(parent_view.ctx, "macro", parent_view._render_summary())
+                    await parent_view._update_from_modal(modal_inter, embed)
                 except GameError as ge:
-                    msg = text.get(self.ctx, "g_error_" + ge.key, **ge.values)
-                    await modal_inter.followup.send(msg, ephemeral=True)
+                    msg = text.get(parent_view.ctx, "g_error_" + ge.key, **ge.values)
+                    if not modal_inter.response.is_done():
+                        await modal_inter.response.send_message(msg, ephemeral=True)
+                    else:
+                        await modal_inter.followup.send(msg, ephemeral=True)
 
             await interaction.response.send_modal(StepArgsModal(spec, _modal_submit))
         else:
@@ -276,11 +376,26 @@ class MacroWizardView(discord.ui.View):
             self.steps.append({"method": method, "args": clean_args})
             self._build_interface()
             embed = RootEmbed(self.ctx, "macro", self._render_summary())
-            await interaction.response.edit_message(embed=embed, view=self)
+            await self._update_from_component(interaction, embed)
+
+    async def _on_undo(self, interaction: discord.Interaction):
+        if not await self._check_interaction(interaction):
+            return
+        if self.steps:
+            self.steps.pop()
+        self._build_interface()
+        embed = RootEmbed(self.ctx, "macro", self._render_summary())
+        await self._update_from_component(interaction, embed)
 
     async def _on_save(self, interaction: discord.Interaction):
         if not await self._check_interaction(interaction):
             return
+
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
 
         service = self.cog.macro_service
         try:
@@ -293,23 +408,51 @@ class MacroWizardView(discord.ui.View):
             )
             embed = RootEmbed(self.ctx, "macro", msg)
             self.stop()
-            if interaction.response.is_done():
-                await interaction.edit_original_response(embed=embed, view=None)
-            else:
-                await interaction.response.edit_message(embed=embed, view=None)
+            if interaction.message:
+                self.message = interaction.message
+            if self.message:
+                try:
+                    await self.message.edit(embed=embed, view=None)
+                    return
+                except Exception:
+                    pass
+            await interaction.edit_original_response(embed=embed, view=None)
         except GameError as ge:
             err_msg = text.get(self.ctx, "g_error_" + ge.key, **ge.values)
-            if not interaction.response.is_done():
-                await interaction.response.send_message(err_msg, ephemeral=True)
-            else:
+            if interaction.response.is_done():
                 await interaction.followup.send(err_msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(err_msg, ephemeral=True)
 
     async def _on_cancel(self, interaction: discord.Interaction):
         if not await self._check_interaction(interaction):
             return
         self.stop()
         embed = RootEmbed(self.ctx, "macro", "❌ *Création de macro annulée.*")
-        await interaction.response.edit_message(embed=embed, view=None)
+        if interaction.message:
+            self.message = interaction.message
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.edit_message(embed=embed, view=None)
+                return
+            except Exception:
+                pass
+        if self.message:
+            try:
+                await self.message.edit(embed=embed, view=None)
+                return
+            except Exception:
+                pass
+        await interaction.edit_original_response(embed=embed, view=None)
+
+    async def on_timeout(self):
+        self.clear_items()
+        if self.message:
+            try:
+                embed = RootEmbed(self.ctx, "macro", "⏱️ *Session de création de macro expirée (délai dépassé).*")
+                await self.message.edit(embed=embed, view=None)
+            except Exception:
+                pass
 
 
 class Macro(BaseGameCog):
@@ -449,6 +592,55 @@ class Macro(BaseGameCog):
 
         if action in ("create", "creer", "new"):
             default_name = remaining_tokens[1].strip().lower() if len(remaining_tokens) > 1 else None
+
+            # Création directe si des étapes sont fournies en arguments (ex: !macro create farm claim hourly)
+            if default_name and len(remaining_tokens) > 2:
+                step_tokens = remaining_tokens[2:]
+                steps = []
+                try:
+                    for st in step_tokens[:5]:
+                        parts = st.split(":")
+                        st_method = parts[0].strip().lower()
+                        st_args = {}
+                        if st_method == "buy" and len(parts) > 1:
+                            st_args["kind"] = parts[1]
+                            if len(parts) > 2:
+                                st_args["tier"] = parts[2]
+                            if len(parts) > 3:
+                                st_args["count"] = parts[3]
+                        elif st_method == "convert" and len(parts) > 1:
+                            st_args["amount"] = parts[1]
+                        elif st_method == "compile" and len(parts) > 1:
+                            st_args["atk"] = parts[1]
+                            if len(parts) > 2:
+                                st_args["method_name"] = parts[2]
+                        elif st_method == "contract" and len(parts) > 1:
+                            st_args["action"] = parts[1]
+                            if len(parts) > 2:
+                                st_args["duration"] = parts[2]
+                        elif st_method == "claim_auto" and len(parts) > 1:
+                            st_args["count"] = parts[1]
+                        elif st_method == "top" and len(parts) > 1:
+                            st_args["category"] = parts[1]
+                        elif st_method == "rmd" and len(parts) > 1:
+                            st_args["target"] = parts[1]
+
+                        clean_args = validate_step_args(st_method, st_args)
+                        steps.append({"method": st_method, "args": clean_args})
+
+                    res = await self.macro_service.create_macro(ctx.author.id, default_name, steps)
+                    msg = text.get(
+                        ctx,
+                        "g_macro_created",
+                        name=res["name"],
+                        steps_count=len(res.get("steps", [])),
+                    )
+                    await self._send_embed(ctx, "macro", msg)
+                    return
+                except GameError as error:
+                    await self._send_error(ctx, error)
+                    return
+
             view = MacroWizardView(self, ctx, default_name=default_name)
             embed = RootEmbed(ctx, "macro", view._render_summary())
             msg = await ctx.send(embed=embed, view=view)

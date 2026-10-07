@@ -5913,6 +5913,33 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Plein dans** : **5min**", lines)
         self.assertNotIn("10min", lines)
 
+    def test_overview_container_displays_secret_id_after_title(self):
+        """Vérifie que la page d'accueil affiche le Secret ID immédiatement après le titre ROOT OS / display_name."""
+        from utils.network_display import build_overview_container, build_overview_embed
+        res = {
+            "discord_id": 10001,
+            "dollars": Decimal("100"),
+            "rootium": Decimal("50"),
+            "firewall_level": 1,
+            "secret_id": "ABC123XYZ",
+            "secret_next_ts": 1700000000,
+        }
+        # 1. Container V2
+        container, _ = build_overview_container(res, display_name="Jules")
+        items = getattr(container, "items", [])
+        text_items = [getattr(it, "content", "") for it in items if hasattr(it, "content")]
+        header_text = text_items[0] if text_items else ""
+        self.assertIn("ROOT OS / Jules", header_text)
+        self.assertIn("||`ABC123XYZ`||", header_text)
+        # Vérification de l'ordre : Secret ID apparaît juste après ROOT OS / Jules
+        pos_title = header_text.find("ROOT OS / Jules")
+        pos_secret = header_text.find("||`ABC123XYZ`||")
+        self.assertGreater(pos_secret, pos_title)
+
+        # 2. Embed fallback V1
+        embed, _ = build_overview_embed(res, display_name="Jules")
+        self.assertIn("||`ABC123XYZ`||", embed.description)
+
 
 class TestBuyCatalogAndShop(unittest.IsolatedAsyncioTestCase):
     """Tests du catalogue interactif et de la boutique (Chantier C)."""
@@ -11395,7 +11422,178 @@ class TestMacros(unittest.TestCase):
         finally:
             loop.close()
 
+    def test_macro_wizard_view_and_inline_create(self):
+        """Vérifie le cycle de vie du wizard de macro et la création directe en ligne."""
+        import asyncio
+        from commands.game.macro import MacroWizardView, Macro
+        from game.macro_catalog import validate_step_args
 
+        loop = asyncio.new_event_loop()
+        try:
+            async def _test():
+                mock_cog = MagicMock()
+                mock_ctx = MagicMock()
+                mock_ctx.author.id = self.player_id
+                mock_ctx.guild = None
+
+                # 1. Wizard initialisé sans nom
+                view = MacroWizardView(mock_cog, mock_ctx, default_name=None)
+                self.assertIsNone(view.macro_name)
+                self.assertEqual(len(view.steps), 0)
+                self.assertEqual(len(view.children), 2)  # Bouton "Nommer la macro" + "Annuler"
+
+                # 2. Assignation de nom
+                view.macro_name = "daily_routine"
+                view._build_interface()
+                self.assertEqual(view.macro_name, "daily_routine")
+                self.assertGreaterEqual(len(view.children), 2)
+
+                # 3. Ajout d'étapes valides
+                args_claim = validate_step_args("claim", {})
+                view.steps.append({"method": "claim", "args": args_claim})
+                args_buy = validate_step_args("buy", {"kind": "mining", "count": 2})
+                view.steps.append({"method": "buy", "args": args_buy})
+                view._build_interface()
+                self.assertEqual(len(view.steps), 2)
+
+                summary = view._render_summary()
+                self.assertIn("daily_routine", summary)
+                self.assertIn("claim", summary)
+                self.assertIn("buy", summary)
+
+                # 4. Undo (retirer dernière étape)
+                mock_inter = MagicMock()
+                mock_inter.user.id = self.player_id
+                mock_inter.response.is_done.return_value = False
+                mock_inter.response.edit_message = AsyncMock()
+                await view._on_undo(mock_inter)
+                self.assertEqual(len(view.steps), 1)
+                self.assertEqual(view.steps[0]["method"], "claim")
+
+                # 5. Création directe inline via prefix_macro
+                mock_macro_service = MagicMock()
+                mock_macro_service.create_macro = AsyncMock(return_value={"name": "fast_farm", "steps": [{"method": "claim"}, {"method": "hourly"}]})
+                mock_bot = MagicMock()
+                mock_bot.root_service.macro_service = mock_macro_service
+
+                macro_cog = Macro(mock_bot)
+                mock_ctx_prefix = MagicMock()
+                mock_ctx_prefix.author.id = self.player_id
+                mock_ctx_prefix.prefix = "!"
+                mock_ctx_prefix.guild = None
+                macro_cog._send_embed = AsyncMock()
+
+                await macro_cog.prefix_macro.callback(macro_cog, mock_ctx_prefix, "create", "fast_farm", "claim", "hourly")
+                mock_macro_service.create_macro.assert_awaited_once()
+                call_args = mock_macro_service.create_macro.call_args
+                self.assertEqual(call_args[0][1], "fast_farm")
+                self.assertEqual(len(call_args[0][2]), 2)
+                self.assertEqual(call_args[0][2][0]["method"], "claim")
+                self.assertEqual(call_args[0][2][1]["method"], "hourly")
+                macro_cog._send_embed.assert_awaited_once()
+
+            loop.run_until_complete(_test())
+        finally:
+            loop.close()
+
+    def test_macro_rmd_step_validation_and_execution(self):
+        """Vérifie la validation de la commande rmd dans les macros et son exécution avec target et create_smart."""
+        import asyncio
+        from game.macro_catalog import validate_step_args
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+        from commands.game.macro import Macro
+
+        # 1. Validation sans arguments -> create_smart avec target="all"
+        res_empty = validate_step_args("rmd", {})
+        self.assertEqual(res_empty.get("action"), "create_smart")
+        self.assertEqual(res_empty.get("target"), "all")
+
+        # 2. Validation avec target="all"
+        res_all = validate_step_args("rmd", {"target": "all"})
+        self.assertEqual(res_all.get("action"), "create_smart")
+        self.assertEqual(res_all.get("target"), "all")
+
+        # 3. Validation avec target="hourly"
+        res_hourly = validate_step_args("rmd", {"target": "hourly"})
+        self.assertEqual(res_hourly.get("action"), "create_smart")
+        self.assertEqual(res_hourly.get("target"), "hourly")
+
+        # 4. Tolérance ancien format {"action": "create", "target": "all"}
+        res_legacy = validate_step_args("rmd", {"action": "create", "target": "all"})
+        self.assertEqual(res_legacy.get("action"), "create_smart")
+        self.assertEqual(res_legacy.get("target"), "all")
+
+        # 5. Tolérance parsing inline {"action": "all"}
+        res_inline = validate_step_args("rmd", {"action": "all"})
+        self.assertEqual(res_inline.get("action"), "create_smart")
+        self.assertEqual(res_inline.get("target"), "all")
+
+        # 6. Action list
+        res_list = validate_step_args("rmd", {"target": "list"})
+        self.assertEqual(res_list.get("action"), "list")
+
+        # 7. Action cancel
+        res_cancel = validate_step_args("rmd", {"target": "cancel"})
+        self.assertEqual(res_cancel.get("action"), "cancel")
+        self.assertEqual(res_cancel.get("reminder_id"), "all")
+
+        # 8. Création inline via prefix_macro avec rmd:all et rmd:hourly
+        mock_macro_service = MagicMock()
+        mock_macro_service.create_macro = AsyncMock(return_value={"name": "rmd_macro", "steps": []})
+        mock_bot = MagicMock()
+        mock_bot.root_service.macro_service = mock_macro_service
+
+        macro_cog = Macro(mock_bot)
+        mock_ctx = MagicMock()
+        mock_ctx.author.id = self.player_id
+        mock_ctx.prefix = "!"
+        mock_ctx.guild = None
+        macro_cog._send_embed = AsyncMock()
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                macro_cog.prefix_macro.callback(macro_cog, mock_ctx, "create", "rmd_macro", "rmd:all", "rmd:hourly")
+            )
+            mock_macro_service.create_macro.assert_awaited_once()
+            created_steps = mock_macro_service.create_macro.call_args[0][2]
+            self.assertEqual(len(created_steps), 2)
+            self.assertEqual(created_steps[0]["args"]["action"], "create_smart")
+            self.assertEqual(created_steps[0]["args"]["target"], "all")
+            self.assertEqual(created_steps[1]["args"]["action"], "create_smart")
+            self.assertEqual(created_steps[1]["args"]["target"], "hourly")
+
+            # 9. Exécution complète via MacroService
+            mock_db = MagicMock()
+            mock_db.now = self.tx.now
+
+            async def run_fn(callback, locks=None, readonly=False, resource=None):
+                return callback(self.tx)
+
+            mock_db.run = AsyncMock(side_effect=run_fn)
+            root_service = RootService(database=mock_db)
+            macro_service = MacroService(root_service)
+            root_service.macro_service = macro_service
+
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "test_rmd_run", created_steps))
+
+            executed_calls = []
+
+            async def fake_execute(actor, guild, method, **kwargs):
+                executed_calls.append((method, kwargs))
+                return {"status": "created_all", "results": []}
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "test_rmd_run"))
+            self.assertEqual(run_result["executed_steps"], 2)
+            self.assertEqual(len(executed_calls), 2)
+            self.assertEqual(executed_calls[0][0], "rmd")
+            self.assertEqual(executed_calls[0][1].get("action"), "create_smart")
+            self.assertEqual(executed_calls[0][1].get("target"), "all")
+        finally:
+            loop.close()
 
 
 if __name__ == '__main__':
