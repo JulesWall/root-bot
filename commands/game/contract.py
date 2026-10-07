@@ -26,6 +26,8 @@ import time
 from utils import text
 from utils.check import Check
 from utils.root_embed import RootEmbed
+from utils.root_emojis import get_button_emoji, get_emoji
+from utils.root_theme import COLOR_AMBER, COLOR_TURQUOISE
 from utils.text import format_usd
 from utils.time_format import format_duration
 
@@ -33,10 +35,10 @@ logger = logging.getLogger(__name__)
 
 
 def _format_fidelity_bar(fidelity: int, threshold: int = 5) -> str:
-    """Génère la jauge ASCII de fidélité inspirée du style Root OS (ex: ▰▰▰▱▱)."""
+    """Génère la jauge Unicode de fidélité universelle (ex: ■■■□□)."""
     t = max(1, threshold)
     filled = max(0, min(t, fidelity))
-    return "▰" * filled + "▱" * (t - filled)
+    return "■" * filled + "□" * (t - filled)
 
 
 def _build_contract_content(ctx, result: dict) -> str:
@@ -82,7 +84,30 @@ def _build_contract_content(ctx, result: dict) -> str:
 
         # Ajoute les nouvelles offres en dessous
         offers = result.get("offers_data", {}).get("offers", {})
+        offers_data = result.get("offers_data", {})
+        gen_offers = offers_data.get("generated_offers", [])
         special_badge = text.get(ctx, "g_contract_special_badge") if is_special_next else ""
+
+        if gen_offers:
+            offers_list = ""
+            for off in gen_offers:
+                offers_list += text.get(
+                    ctx,
+                    "g_contract_offer_item",
+                    num=f"{int(off['index']):02d}",
+                    title=off["title"],
+                    company=off["company"],
+                    duration=off["duration_formatted"],
+                    reward_usd=format_usd(off["reward_usd"]),
+                ) + "\n"
+        else:
+            offers = offers_data.get("offers", {})
+            offers_list = (
+                f"> ⏱️ **Court** (30 min) : `{format_usd(offers.get('short', {}).get('reward_usd', 75))} USD`\n"
+                f"> ⏱️ **Moyen** (2 heures) : `{format_usd(offers.get('medium', {}).get('reward_usd', 250))} USD`\n"
+                f"> ⏱️ **Long** (6 heures) : `{format_usd(offers.get('long', {}).get('reward_usd', 600))} USD`\n"
+            )
+
         offers_msg = text.get(
             ctx,
             "g_contract_offers",
@@ -91,6 +116,7 @@ def _build_contract_content(ctx, result: dict) -> str:
             short_usd=format_usd(offers.get("short", {}).get("reward_usd", 75)),
             medium_usd=format_usd(offers.get("medium", {}).get("reward_usd", 250)),
             long_usd=format_usd(offers.get("long", {}).get("reward_usd", 600)),
+            offers_list=offers_list,
             fidelity_bar=bar,
             fidelity=fidelity,
             threshold=threshold,
@@ -165,6 +191,26 @@ def _build_contract_content(ctx, result: dict) -> str:
     short_usd = format_usd(offers.get("short", {}).get("reward_usd", 75))
     medium_usd = format_usd(offers.get("medium", {}).get("reward_usd", 250))
     long_usd = format_usd(offers.get("long", {}).get("reward_usd", 600))
+    gen_offers = offers_data.get("generated_offers", [])
+    if gen_offers:
+        offers_list = ""
+        for off in gen_offers:
+            offers_list += text.get(
+                ctx,
+                "g_contract_offer_item",
+                num=f"{int(off['index']):02d}",
+                title=off["title"],
+                company=off["company"],
+                duration=off["duration_formatted"],
+                reward_usd=format_usd(off["reward_usd"]),
+            ) + "\n"
+    else:
+        offers = offers_data.get("offers", {})
+        offers_list = (
+            f"> ⏱️ **Court** (30 min) : `{format_usd(offers.get('short', {}).get('reward_usd', 75))} USD`\n"
+            f"> ⏱️ **Moyen** (2 heures) : `{format_usd(offers.get('medium', {}).get('reward_usd', 250))} USD`\n"
+            f"> ⏱️ **Long** (6 heures) : `{format_usd(offers.get('long', {}).get('reward_usd', 600))} USD`\n"
+        )
 
     return text.get(
         ctx,
@@ -174,6 +220,7 @@ def _build_contract_content(ctx, result: dict) -> str:
         short_usd=short_usd,
         medium_usd=medium_usd,
         long_usd=long_usd,
+        offers_list=offers_list,
         fidelity_bar=bar,
         fidelity=fidelity,
         threshold=threshold,
@@ -191,6 +238,7 @@ class ContractView(discord.ui.View):
         self.author_id = ctx.author.id
         self.lock = asyncio.Lock()
         self.message = None
+        self._current_offers = []
         self._update_buttons(result)
 
     def _update_buttons(self, result: dict):
@@ -214,8 +262,9 @@ class ContractView(discord.ui.View):
                 btn_collect.callback = self._on_collect
                 self.add_item(btn_collect)
             else:
+                dur_name = contract.get("title", "") or contract.get("duration_type", "")
                 btn_running = discord.ui.Button(
-                    label=text.get(self.ctx, "g_contract_btn_short" if contract.get("duration_type") == "short" else ("g_contract_btn_medium" if contract.get("duration_type") == "medium" else "g_contract_btn_long"))[:80],
+                    label=f"⏳ En mission… ({dur_name})"[:80],
                     emoji="⏳",
                     style=discord.ButtonStyle.secondary,
                     disabled=True,
@@ -230,46 +279,111 @@ class ContractView(discord.ui.View):
             btn_refresh.callback = self._on_refresh
             self.add_item(btn_refresh)
         else:
-            async def _start_short(i: discord.Interaction):
-                await self._on_start(i, "short")
+            offers_data = result.get("offers_data", {})
+            gen_offers = offers_data.get("generated_offers", [])
+            self._current_offers = gen_offers
+            if gen_offers:
+                # 4 boutons compacts numérotés pour une rangée épurée
+                for off in gen_offers:
+                    num_str = f"{int(off['index']):02d}"
+                    btn_offer = discord.ui.Button(
+                        label=f"{num_str}",
+                        emoji="💼",
+                        style=discord.ButtonStyle.primary,
+                    )
+                    # Closure capturant l'offre spécifique
+                    btn_offer.callback = self._make_offer_callback(off)
+                    self.add_item(btn_offer)
+            else:
+                async def _start_short(i: discord.Interaction):
+                    await self._on_start(i, "short")
 
-            async def _start_med(i: discord.Interaction):
-                await self._on_start(i, "medium")
+                async def _start_med(i: discord.Interaction):
+                    await self._on_start(i, "medium")
 
-            async def _start_long(i: discord.Interaction):
-                await self._on_start(i, "long")
+                async def _start_long(i: discord.Interaction):
+                    await self._on_start(i, "long")
 
-            btn_short = discord.ui.Button(
-                label=text.get(self.ctx, "g_contract_btn_short")[:80],
-                emoji="⚡",
-                style=discord.ButtonStyle.primary,
-            )
-            btn_short.callback = _start_short
-            self.add_item(btn_short)
+                btn_short = discord.ui.Button(
+                    label=text.get(self.ctx, "g_contract_btn_short")[:80],
+                    emoji="⚡",
+                    style=discord.ButtonStyle.primary,
+                )
+                btn_short.callback = _start_short
+                self.add_item(btn_short)
 
-            btn_med = discord.ui.Button(
-                label=text.get(self.ctx, "g_contract_btn_medium")[:80],
-                emoji="💼",
-                style=discord.ButtonStyle.primary,
-            )
-            btn_med.callback = _start_med
-            self.add_item(btn_med)
+                btn_med = discord.ui.Button(
+                    label=text.get(self.ctx, "g_contract_btn_medium")[:80],
+                    emoji="💼",
+                    style=discord.ButtonStyle.primary,
+                )
+                btn_med.callback = _start_med
+                self.add_item(btn_med)
 
-            btn_long = discord.ui.Button(
-                label=text.get(self.ctx, "g_contract_btn_long")[:80],
-                emoji="🛡️",
-                style=discord.ButtonStyle.primary,
-            )
-            btn_long.callback = _start_long
-            self.add_item(btn_long)
+                btn_long = discord.ui.Button(
+                    label=text.get(self.ctx, "g_contract_btn_long")[:80],
+                    emoji="🛡️",
+                    style=discord.ButtonStyle.primary,
+                )
+                btn_long.callback = _start_long
+                self.add_item(btn_long)
 
             btn_refresh = discord.ui.Button(
-                label=text.get(self.ctx, "g_net_btn_refresh", fallback="Actualiser")[:80],
+                label=text.get(self.ctx, "g_contract_btn_new_offers", fallback="Nouvelles offres")[:80],
                 emoji="🔄",
                 style=discord.ButtonStyle.secondary,
             )
             btn_refresh.callback = self._on_refresh
             self.add_item(btn_refresh)
+
+    def _make_offer_callback(self, offer: dict):
+        async def _callback(interaction: discord.Interaction):
+            await self._on_start_offer(interaction, offer)
+        return _callback
+
+    async def _on_start_offer(self, interaction: discord.Interaction, offer: dict):
+        if not await self._check_interaction(interaction):
+            return
+
+        async with self.lock:
+            await interaction.response.defer()
+            try:
+                await self.cog.service.execute(
+                    self.author_id,
+                    interaction.guild.id if interaction.guild else None,
+                    "contract",
+                    action="start",
+                    duration=offer["profile"],
+                    title=offer["title"],
+                    company=offer["company"],
+                    duration_seconds=offer["duration_seconds"],
+                    reward_usd=offer["reward_usd"],
+                )
+            except Exception as err:
+                msg = (
+                    text.get(self.ctx, "g_error_" + err.key, **getattr(err, "values", {}))
+                    if hasattr(err, "key")
+                    else str(err)
+                )
+                await interaction.followup.send(msg, ephemeral=True)
+                return
+
+            new_status = await self.cog.service.execute(
+                self.author_id,
+                interaction.guild.id if interaction.guild else None,
+                "contract",
+                action="view",
+            )
+            content = _build_contract_content(self.ctx, new_status)
+            self._update_buttons(new_status)
+            embed = RootEmbed(self.ctx, "contract", content)
+            try:
+                if self.message:
+                    await self.message.edit(embed=embed, view=self)
+                elif interaction.message:
+                    await interaction.message.edit(embed=embed, view=self)
+            except Exception:
+                logger.exception("Erreur lors de la mise à jour du contrat après start")
 
     async def _check_interaction(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -392,7 +506,6 @@ class ContractView(discord.ui.View):
             except Exception:
                 logger.exception("Erreur lors du rafraîchissement du contrat")
 
-
 class Contract(BaseGameCog):
     """Cog gérant les contrats de travail de Root CyberSec."""
 
@@ -513,12 +626,13 @@ class Contract(BaseGameCog):
 
     # ── Rendu ────────────────────────────────────────────────────────────────
     async def _send(self, ctx, method, result):
-        """Génère l'affichage stylisé du contrat avec la vue interactive."""
+        """Génère l'affichage stylisé du contrat avec l'embed et ses boutons compacts."""
         content = _build_contract_content(ctx, result)
         view = ContractView(self, ctx, result)
         msg = await self._send_embed(ctx, "contract", content, view=view)
         if msg:
             view.message = msg
+        return msg
 
 
 def setup(bot):

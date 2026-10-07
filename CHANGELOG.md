@@ -64,6 +64,24 @@ L'affichage central de votre réseau a été entièrement repensé autour des co
 - **Purge Glissante en 24h** : Les données d'audit et d'historique de modération sont désormais gérées sur une fenêtre glissante stricte de 24 heures, garantissant une surveillance en temps réel, nette et respectueuse des ressources.
 - **Outils d'Audit OP Modernisés** : Les rapports et commandes de contrôle (`!claimaudit`, `!hourlyaudit`, `!eventaudit`) fournissent aux équipes de modération des analyses ultra-précises sur la cadence des 24 dernières heures.
 
+## ⚙️ Équilibrage de la Compilation d'Exploits (`/compile`)
+
+Les méthodes de génération de points d'attaque (`ATK`) ont été réajustées pour mieux valoriser vos choix stratégiques :
+
+- **Méthode Non-Qualifiée (`unskilled`)** : Coût réduit à **`0.00009 RTM / ATK`** avec un multiplicateur de durée ajusté à **`90.0`** (idéal pour économiser votre Rootium sur des sessions de compilation modérées).
+- **Méthode Qualifiée (`skilled`)** : Vitesse optimisée avec un multiplicateur de durée fixé à **`25.0`** pour un coût de **`0.0005 RTM / ATK`** (le choix rapide pour les attaques éclair).
+- **Méthode IA (`ai`)** : Coût ultra-économique à seulement **`0.000007 RTM / ATK`** (`7e-06 RTM`) pour un multiplicateur de durée étendu à **`180.0`** (parfait pour lancer de très grosses productions de fond en arrière-plan à coût quasi nul en Rootium).
+
+## 💼 Marché des Missions & Embed Cybernétique Épuré (`/contract`)
+
+Le système de missions garanties en USD fait peau neuve avec une refonte graphique complète façon tableau d'affichage de cyber-agence :
+
+- **Mise en Forme Épurée dans l'Embed** : Les offres sont désormais présentées sous forme de cartes d'agence aérées avec badge numéroté (`** 01 ** Audit de sécurité...`), entreprise commanditaire, durée et rémunération mise en valeur d'un coup d'œil.
+- **Boutons Ultra-Compacts sur une Seule Rangée** : Remplacement des longs boutons encombrants par une rangée compacte de boutons numérotés épurés (`[ 01 ]`, `[ 02 ]`, `[ 03 ]`, `[ 04 ]`) et du bouton d'actualisation (`[ 🔄 Actualiser ]`), s'intégrant parfaitement sous l'embed sans occuper d'espace inutile.
+- **Jauge de Progression Universelle** : Remplacement des glyphes carrés par une jauge de fidélité Unicode haute lisibilité (`■■■□□ 3/5`).
+- **4 Contrats Dynamiques & Entreprises Variées** : Tirage de 4 missions sans doublon parmi les grandes corporations du jeu (*Novacore Systems, Asterion Bank, Helix Medical, etc.*) avec durées et rémunérations ajustées à vos multiplicateurs d'infrastructure.
+- **Fiabilité & Fluidité Absolue** : Intégration standardisée dans les embeds Discord pour un affichage instantané et infaillible sur tous les supports (PC, Mac, mobile).
+
 ---
 
 ## 🤝 Échanges Réseau & Commerce (`/trade`)

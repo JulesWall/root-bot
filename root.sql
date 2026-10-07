@@ -155,8 +155,8 @@ CREATE TABLE IF NOT EXISTS hack (
 -- 4bis. Table des Contrats de Travail en cours (/contract)
 CREATE TABLE IF NOT EXISTS contracts (
     discord_id       BIGINT UNSIGNED NOT NULL,
-    duration_type    VARCHAR(16)     NOT NULL,
-    title            VARCHAR(128)    NOT NULL,
+    duration_type    VARCHAR(32)     NOT NULL,
+    title            VARCHAR(255)    NOT NULL,
     reward_usd       DECIMAL(30, 2)  NOT NULL,
     is_special       TINYINT(1)      NOT NULL DEFAULT 0,
     started_at       DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -164,7 +164,6 @@ CREATE TABLE IF NOT EXISTS contracts (
     notified         TINYINT(1)      NOT NULL DEFAULT 0,
     PRIMARY KEY (discord_id),
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE,
-    CHECK (duration_type IN ('short', 'medium', 'long')),
     CHECK (reward_usd >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

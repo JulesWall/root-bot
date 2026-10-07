@@ -4256,19 +4256,19 @@ class TestCompile(unittest.TestCase):
         full = MathConfig.compile_quote(t1, t1, "unskilled")
         double_atk = MathConfig.compile_quote(t1, t1 * 2, "unskilled")
         double_bits = MathConfig.compile_quote(t1 * 2, t1, "unskilled")
-        self.assertEqual(full["duration_seconds"], 4500)
-        self.assertEqual(double_atk["duration_seconds"], 9000)
-        self.assertEqual(double_bits["duration_seconds"], 2250)
-        self.assertEqual(full["rtm_paid"], Decimal("0.00100"))
-        self.assertEqual(double_atk["rtm_paid"], Decimal("0.00200"))
-        self.assertEqual(MathConfig.compile_quote(t1, t1, "skilled")["duration_seconds"], 1200)
+        self.assertEqual(full["duration_seconds"], 5400)
+        self.assertEqual(double_atk["duration_seconds"], 10800)
+        self.assertEqual(double_bits["duration_seconds"], 2700)
+        self.assertEqual(full["rtm_paid"], Decimal("0.00045"))
+        self.assertEqual(double_atk["rtm_paid"], Decimal("0.00090"))
+        self.assertEqual(MathConfig.compile_quote(t1, t1, "skilled")["duration_seconds"], 1500)
         self.assertEqual(MathConfig.compile_quote(t1, t1, "ai")["duration_seconds"], 10800)
 
     def test_compile_quote_and_execution(self):
         quote = Player.compile(self.tx, self.actor, method="unskilled", atk=5, confirm=False)
         self.assertTrue(quote.get("compile_quote"))
         self.assertEqual(quote["atk_yield"], 5)
-        self.assertEqual(quote["rtm_paid"], Decimal("0.00100"))
+        self.assertEqual(quote["rtm_paid"], Decimal("0.00045"))
         bits = 2 * MathConfig.get_module_stat("attack", 1) + MathConfig.get_module_stat("attack", 5)
         expected_duration = MathConfig.compile_quote(bits, 5, "unskilled")["duration_seconds"]
         self.assertEqual(quote["duration_seconds"], expected_duration)
@@ -4276,7 +4276,7 @@ class TestCompile(unittest.TestCase):
         before_rtm = Decimal(str(self.tx.players[self.actor]["rootium"]))
         started = Player.compile(self.tx, self.actor, method="unskilled", atk=5, confirm=True)
         self.assertTrue(started.get("compile_started"))
-        self.assertEqual(self.tx.players[self.actor]["rootium"], before_rtm - Decimal("0.00100"))
+        self.assertEqual(self.tx.players[self.actor]["rootium"], before_rtm - Decimal("0.00045"))
         self.assertEqual(self.tx.players[self.actor]["attack_t1"], 2)
         self.assertEqual(self.tx.players[self.actor]["attack_t5"], 1)
         self.assertEqual(self.tx.players[self.actor]["attack_points"], 0)
@@ -9434,6 +9434,18 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res['fidelity_threshold'], 5)
         self.assertEqual(res['contracts_completed'], 0)
 
+        # Offres dynamiques : exactement 4 offres générées
+        gen_offers = res['offers_data']['generated_offers']
+        self.assertEqual(len(gen_offers), 4)
+        for i, off in enumerate(gen_offers):
+            self.assertEqual(off['index'], i + 1)
+            self.assertTrue(len(off['title']) > 0)
+            self.assertTrue(len(off['company']) > 0)
+            self.assertGreaterEqual(off['duration_seconds'], 1200)
+            self.assertLessEqual(off['duration_seconds'], 43200)
+            self.assertGreaterEqual(off['reward_usd'], Decimal('50.00'))
+
+        # Rétrocompatibilité : dictionnaire 'offers' legacy toujours présent
         offers = res['offers_data']['offers']
         self.assertEqual(offers['short']['reward_usd'], Decimal('75.00'))
         self.assertEqual(offers['short']['duration_seconds'], 1800)
@@ -9446,6 +9458,32 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(offers['long']['reward_usd'], Decimal('600.00'))
         self.assertEqual(offers['long']['duration_seconds'], 21600)
         self.assertEqual(offers['long']['hourly_rate'], 100)
+
+    async def test_contract_dynamic_offers_four_distinct_missions(self):
+        """Vérifie que les 4 contrats proposés n'ont pas de doublons d'intitulé ni d'entreprise."""
+        res = await self.service.execute(self.actor, None, 'contract', action='view')
+        gen_offers = res['offers_data']['generated_offers']
+        self.assertEqual(len(gen_offers), 4)
+
+        titles = [o['title'] for o in gen_offers]
+        companies = [o['company'] for o in gen_offers]
+        self.assertEqual(len(set(titles)), 4, "Les intitulés des 4 offres doivent être uniques")
+        self.assertEqual(len(set(companies)), 4, "Les entreprises des 4 offres doivent être uniques")
+
+        # Sélection d'une des 4 offres dynamiques via paramètres personnalisés
+        chosen = gen_offers[1]
+        start_res = await self.service.execute(
+            self.actor, None, 'contract', action='start',
+            duration=chosen['profile'],
+            title=chosen['title'],
+            company=chosen['company'],
+            duration_seconds=chosen['duration_seconds'],
+            reward_usd=chosen['reward_usd'],
+        )
+        self.assertEqual(start_res['reward_usd'], chosen['reward_usd'])
+        self.assertIn(chosen['title'], start_res['title'])
+        self.assertIn(chosen['company'], start_res['title'])
+        self.assertEqual(start_res['duration_seconds'], chosen['duration_seconds'])
 
     async def test_contract_start_and_view_active(self):
         """Démarre un contrat court et vérifie son statut actif."""

@@ -317,16 +317,48 @@ text = {
     'g_error_contract_in_progress': '> ⏳ **Contrat en cours** · Tu as déjà un contrat de travail actif (échéance : <t:{timestamp}:R> ({remaining})).',
     'g_error_no_active_contract': '> 📄 **Aucun contrat actif** · Tu n\'as aucun contrat en cours. Utilise `/contract` pour choisir une mission.',
     'g_error_contract_not_ready': '> ⏱️ **Contrat en cours** · Ta mission n\'est pas encore terminée. Reviens <t:{timestamp}:R> ({remaining}) !',
-    'g_error_invalid_contract_duration': '> ⚠️ **Durée invalide** · Choisis une durée valide : `short` (30m), `medium` (2h) ou `long` (6h).',
+    'g_error_invalid_contract_duration': '> ⚠️ **Sélection invalide** · Choisis une offre parmi la liste proposée (ex: 1, 2, 3 ou 4).',
     'g_contract_special_badge': '⭐ **Mission Spéciale (+40 % USD active)**\n',
-    'g_contract_offers': '{special_badge}**{agency}** · Offres de contrats disponibles :\n\n> ⏱️ **Court** (30 min) : `{short_usd} USD`\n> ⏱️ **Moyen** (2 heures) : `{medium_usd} USD`\n> ⏱️ **Long** (6 heures) : `{long_usd} USD`\n\nFidélité agence : `{fidelity_bar}` **{fidelity}/{threshold}**{fidelity_hint}',
-    'g_contract_active': '{special_badge}**{agency}** · Contrat en cours :\n\n> 💼 **Mission** : {title}\n> 💵 **Rémunération** : `{reward_usd} USD`\n> ⏱️ **Échéance** : <t:{expires_ts}:R> ({remaining}) *(vers <t:{expires_ts}:t>)*',
-    'g_contract_ready': '{special_badge}**{agency}** · Contrat accompli !\n\n> 💼 **Mission** : {title}\n> 💵 **Rémunération** : `{reward_usd} USD`\n\nClique ci-dessous pour encaisser ton salaire.',
-    'g_contract_collected': '💵 **Paiement encaissé !** Mission *{title}* validée chez **{agency}**.\n> 💵 **Gain** : `+{reward_usd} USD`\n> 💰 **Nouveau solde** : `{new_dollars} USD`',
+    'g_contract_offers': (
+        '{special_badge}### 💼 MARCHÉ DES MISSIONS\n'
+        '> **{agency}** · Offres de contrats disponibles :\n'
+        '> *Sélectionne une mission via les boutons numérotés ci-dessous.*\n\n'
+        '{offers_list}'
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+        '📈 **Fidélité agence** : `{fidelity_bar}` **{fidelity}/{threshold}**{fidelity_hint}'
+    ),
+    'g_contract_offer_item': (
+        '**` {num} ` {title}**\n'
+        '> 🏢 {company} · ⏱️ {duration} · 💵 **`{reward_usd} USD`**\n'
+    ),
+    'g_contract_active': (
+        '{special_badge}### ⏳ MISSION EN COURS\n'
+        '> **{agency}** · Contrat en cours :\n\n'
+        '**` EN COURS ` {title}**\n'
+        '> 🏢 **Client** : {agency}\n'
+        '> ⏱️ **Échéance** : <t:{expires_ts}:R> ({remaining}) *(vers <t:{expires_ts}:t>)*\n'
+        '> 💵 **Rémunération** : **`{reward_usd} USD`**'
+    ),
+    'g_contract_ready': (
+        '{special_badge}### 💵 MISSION TERMINÉE\n'
+        '> **{agency}** · Contrat accompli !\n\n'
+        '**` SUCCÈS ` {title}**\n'
+        '> 🏢 **Client** : {agency}\n'
+        '> 💵 **Rémunération disponible** : **`{reward_usd} USD`**\n\n'
+        '> *Clique ci-dessous pour encaisser ton salaire.*'
+    ),
+    'g_contract_collected': (
+        '### 💵 **Paiement encaissé !**\n'
+        '> Mission *{title}* validée chez **{agency}**.\n\n'
+        '> 💵 **Gain net** : `+{reward_usd} USD`\n'
+        '> 💰 **Nouveau solde** : `{new_dollars} USD`'
+    ),
     'g_contract_btn_short': 'Court (30m)',
     'g_contract_btn_medium': 'Moyen (2h)',
     'g_contract_btn_long': 'Long (6h)',
     'g_contract_btn_collect': 'Récupérer {usd} USD',
+    'g_contract_btn_offer': '{num} · {reward_usd} USD · {duration}',
+    'g_contract_btn_new_offers': 'Nouvelles offres',
     # ── Reminders (/rmd) & Contrats ───────────────────────────────────────────
     'g_rmd_syntax': (
         "### Syntaxe de la commande `{prefix}rmd`\n\n"

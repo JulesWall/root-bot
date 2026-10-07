@@ -1469,12 +1469,12 @@ class Player:
         }
 
     @staticmethod
-    def contract(tx, actor: int, action: str = 'view', duration: str | None = None) -> dict:
+    def contract(tx, actor: int, action: str = 'view', duration: str | None = None, **kwargs) -> dict:
         """Gère les contrats de travail (/contract).
 
         Actions supportées :
         - 'view' : consulte les offres ou le contrat en cours
-        - 'start' : accepte et lance une offre selon sa durée ('short', 'medium', 'long')
+        - 'start' : accepte et lance une offre selon son profil ou ses paramètres personnalisés
         - 'collect' : récupère le paiement d'un contrat arrivé à échéance
         """
         from game.db.contracts import ContractsDB
@@ -1483,9 +1483,10 @@ class Player:
         if action == 'view':
             return ContractsDB.get_status(tx, actor)
         elif action == 'start':
-            if not duration:
+            choice = duration or kwargs.get('target') or kwargs.get('offer_id')
+            if not choice and not kwargs.get('duration_seconds'):
                 raise GameError('invalid_contract_duration')
-            return ContractsDB.start(tx, actor, duration)
+            return ContractsDB.start(tx, actor, duration_type=choice, **kwargs)
         elif action == 'collect':
             return ContractsDB.collect(tx, actor)
         else:

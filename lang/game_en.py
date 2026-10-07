@@ -317,16 +317,48 @@ text = {
     'g_error_contract_in_progress': '> ⏳ **Contract in Progress** · You already have an active work contract (deadline: <t:{timestamp}:R> ({remaining})).',
     'g_error_no_active_contract': '> 📄 **No Active Contract** · You do not have any contract in progress. Use `/contract` to pick a mission.',
     'g_error_contract_not_ready': '> ⏱️ **Contract in Progress** · Your mission is not completed yet. Come back <t:{timestamp}:R> ({remaining})!',
-    'g_error_invalid_contract_duration': '> ⚠️ **Invalid Duration** · Choose a valid duration: `short` (30m), `medium` (2h), or `long` (6h).',
+    'g_error_invalid_contract_duration': '> ⚠️ **Invalid Selection** · Choose a mission from the available offers (e.g. 1, 2, 3 or 4).',
     'g_contract_special_badge': '⭐ **Special Mission (+40% USD active)**\n',
-    'g_contract_offers': '{special_badge}**{agency}** · Available Contracts:\n\n> ⏱️ **Short** (30 min): `{short_usd} USD`\n> ⏱️ **Medium** (2 hours): `{medium_usd} USD`\n> ⏱️ **Long** (6 hours): `{long_usd} USD`\n\nAgency Loyalty: `{fidelity_bar}` **{fidelity}/{threshold}**{fidelity_hint}',
-    'g_contract_active': '{special_badge}**{agency}** · Active Contract:\n\n> 💼 **Mission**: {title}\n> 💵 **Reward**: `{reward_usd} USD`\n> ⏱️ **Deadline**: <t:{expires_ts}:R> ({remaining}) *(around <t:{expires_ts}:t>)*',
-    'g_contract_ready': '{special_badge}**{agency}** · Contract Completed!\n\n> 💼 **Mission**: {title}\n> 💵 **Reward**: `{reward_usd} USD`\n\nClick below to collect your salary.',
-    'g_contract_collected': '💵 **Payment Collected!** Mission *{title}* completed for **{agency}**.\n> 💵 **Reward**: `+{reward_usd} USD`\n> 💰 **New Balance**: `{new_dollars} USD`',
+    'g_contract_offers': (
+        '{special_badge}### 💼 MISSION MARKET\n'
+        '> **{agency}** · Available Contracts:\n'
+        '> *Select a mission using the numbered buttons below.*\n\n'
+        '{offers_list}'
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+        '📈 **Agency Loyalty**: `{fidelity_bar}` **{fidelity}/{threshold}**{fidelity_hint}'
+    ),
+    'g_contract_offer_item': (
+        '**` {num} ` {title}**\n'
+        '> 🏢 {company} · ⏱️ {duration} · 💵 **`{reward_usd} USD`**\n'
+    ),
+    'g_contract_active': (
+        '{special_badge}### ⏳ ACTIVE MISSION\n'
+        '> **{agency}** · Active Contract:\n\n'
+        '**` RUNNING ` {title}**\n'
+        '> 🏢 **Client**: {agency}\n'
+        '> ⏱️ **Deadline**: <t:{expires_ts}:R> ({remaining}) *(around <t:{expires_ts}:t>)*\n'
+        '> 💵 **Reward**: **`{reward_usd} USD`**'
+    ),
+    'g_contract_ready': (
+        '{special_badge}### 💵 MISSION COMPLETED\n'
+        '> **{agency}** · Contract Completed!\n\n'
+        '**` SUCCESS ` {title}**\n'
+        '> 🏢 **Client**: {agency}\n'
+        '> 💵 **Available Reward**: **`{reward_usd} USD`**\n\n'
+        '> *Click below to collect your salary.*'
+    ),
+    'g_contract_collected': (
+        '### 💵 **Payment Collected!**\n'
+        '> Mission *{title}* completed for **{agency}**.\n\n'
+        '> 💵 **Reward**: `+{reward_usd} USD`\n'
+        '> 💰 **New Balance**: `{new_dollars} USD`'
+    ),
     'g_contract_btn_short': 'Short (30m)',
     'g_contract_btn_medium': 'Medium (2h)',
     'g_contract_btn_long': 'Long (6h)',
     'g_contract_btn_collect': 'Collect {usd} USD',
+    'g_contract_btn_offer': '{num} · {reward_usd} USD · {duration}',
+    'g_contract_btn_new_offers': 'New offers',
     # ── Reminders (/rmd) & Contrats ───────────────────────────────────────────
     'g_rmd_syntax': (
         "### `{prefix}rmd` Command Syntax\n\n"
