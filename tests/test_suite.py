@@ -11044,8 +11044,8 @@ class TestMacros(unittest.TestCase):
         res_new = MacrosDB.reserve_run(self.tx, self.player_id)
         self.assertIsNotNone(res_new)
 
-    def test_macro_service_step_execution_and_stop_on_error(self):
-        """Vérifie l'exécution séquentielle pas-à-pas et l'arrêt à la première erreur."""
+    def test_macro_service_step_execution_continues_on_error(self):
+        """Vérifie l'exécution séquentielle pas-à-pas et la continuation des étapes suivantes en cas d'erreur."""
         import asyncio
 
         # Création d'un mock database enveloppant notre transaction
@@ -11066,8 +11066,8 @@ class TestMacros(unittest.TestCase):
 
         # Enregistrement d'une macro :
         # Étape 1 : claim (réussit)
-        # Étape 2 : buy avec quantité invalide ou ressource insuffisante
-        # Étape 3 : hourly
+        # Étape 2 : buy avec quantité invalide ou ressource insuffisante (échoue sans bloquer)
+        # Étape 3 : hourly (exécutée quand même et réussit)
         loop = asyncio.new_event_loop()
         try:
             steps = [
@@ -11095,9 +11095,8 @@ class TestMacros(unittest.TestCase):
             # Vérifications :
             self.assertEqual(run_result["macro_name"], "combo_test")
             self.assertEqual(run_result["total_steps"], 3)
-            self.assertEqual(run_result["executed_steps"], 2)  # S'est arrêté à l'étape 2
-            self.assertEqual(run_result["stopped_at"], 2)
-            self.assertEqual(run_result["error"]["key"], "insufficient_dollars")
+            self.assertEqual(run_result["executed_steps"], 3)  # Toutes les étapes ont été exécutées
+            self.assertIsNone(run_result["stopped_at"])
 
             # L'étape 1 a réussi
             self.assertTrue(run_result["steps"][0]["success"])
@@ -11106,9 +11105,12 @@ class TestMacros(unittest.TestCase):
             # L'étape 2 a échoué
             self.assertFalse(run_result["steps"][1]["success"])
             self.assertEqual(run_result["steps"][1]["method"], "buy")
+            self.assertEqual(run_result["steps"][1]["error"]["key"], "insufficient_dollars")
 
-            # L'étape 3 n'a pas été appelée
-            self.assertEqual(root_service.execute.call_count, 2)
+            # L'étape 3 a été appelée et a réussi
+            self.assertTrue(run_result["steps"][2]["success"])
+            self.assertEqual(run_result["steps"][2]["method"], "hourly")
+            self.assertEqual(root_service.execute.call_count, 3)
         finally:
             loop.close()
 

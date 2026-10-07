@@ -149,33 +149,19 @@ class MacroService:
                     "key": ge.key,
                     "values": ge.values,
                 }
-                # Si l'erreur est un simple délai d'attente / cooldown non échu, on ignore l'étape
-                # sans interrompre l'exécution globale de la macro.
-                if ge.key in NON_FATAL_COOLDOWN_ERRORS:
-                    step_results.append({
-                        "position": pos,
-                        "method": method,
-                        "success": False,
-                        "skipped": True,
-                        "error": step_error,
-                    })
-                    continue
-
-                stopped_at = pos
-                error_info = step_error
+                is_cooldown = ge.key in NON_FATAL_COOLDOWN_ERRORS
                 step_results.append({
                     "position": pos,
                     "method": method,
                     "success": False,
-                    "skipped": False,
-                    "error": error_info,
+                    "skipped": is_cooldown,
+                    "error": step_error,
                 })
-                # Arrêt immédiat à la première vraie erreur bloquante rencontrée
-                break
+                # Ne bloque pas les commandes suivantes même en cas d'erreur
+                continue
             except Exception as exc:
                 logger.exception("Erreur inattendue lors de l'étape %d de la macro '%s'", pos, clean_name)
-                stopped_at = pos
-                error_info = {
+                step_error = {
                     "key": "macro_step_failed",
                     "values": {"pos": pos, "command": method, "reason": str(exc)},
                 }
@@ -183,9 +169,11 @@ class MacroService:
                     "position": pos,
                     "method": method,
                     "success": False,
-                    "error": error_info,
+                    "skipped": False,
+                    "error": step_error,
                 })
-                break
+                # Ne bloque pas les commandes suivantes
+                continue
 
         return {
             "macro_name": clean_name,
