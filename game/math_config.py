@@ -541,3 +541,17 @@ class MathConfig:
         extra = int(Decimal(str(delta)) // threshold)
         return max(1, 1 + extra)
 
+    @classmethod
+    def get_pvp_critical_damage_cap_percent(cls) -> int:
+        """Retourne le pourcentage maximal de modules pouvant être perdus lors d'une attaque PvP (0 à 100)."""
+        rules = cls.load()
+        val = int(rules.get('pvp', {}).get('critical_damage_cap_percent', 60))
+        return max(0, min(100, val))
+
+    @classmethod
+    def get_pvp_critical_lock_duration_hours(cls) -> int:
+        """Retourne la durée en heures du verrouillage de sauvegarde en cas de dégâts critiques."""
+        rules = cls.load()
+        val = int(rules.get('pvp', {}).get('critical_lock_duration_hours', 48))
+        return max(1, val)
+

@@ -208,7 +208,9 @@
     "retaliation_window_hours": 72,
     "overrun_multiplier": 10,
     "overrun_time_factor": 30,
-    "overrun_formula": "pvp_overrun_threshold"
+    "overrun_formula": "pvp_overrun_threshold",
+    "critical_damage_cap_percent": 60,
+    "critical_lock_duration_hours": 48
   },
   "hourly": {
     "reward_min_usd": 60,

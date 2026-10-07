@@ -1,10 +1,44 @@
 # 🚀 Changelog — Root OS : Mise à Jour Majeure 3.0
 
+## 🎨 Intégration des Emojis `root_verrou` & `root_usd` et Polissage Visuel
+
+- **Nouvel emoji `root_verrou` (🔒)** :
+  - Intégré dans le log public de dégâts critiques.
+  - Affiché dans les alertes privées et les messages de refus en cas de tentative de `/hack` ou `/scan` sous verrouillage critique.
+  - Affiché dans `/network` (Poste de commande et Opérations) pour indiquer en temps réel la durée de protection restante.
+- **Nouvel emoji `root_usd` (💵)** :
+  - Intégré dans les offres et gains de contrats (`/contract`).
+  - Intégré pour le solde USD dans `/network` et les récapitulatifs financiers de manière sobre et épurée (sans répétition excessive sur chaque ligne).
+- **Correction du double titre dans les rapports PvP (`/hack`)** :
+  - Suppression des titres d'en-tête redondants dans le corps du texte.
+  - Titres d'embeds précis et contextualisés : *Rapport d'opération — Accès obtenu/refusé* et *Alerte intrusion — Brèche confirmée / Intrusion repoussée*.
+- **Protection des blocs de code et balises inline** :
+  - Le convertisseur d'emojis préserve désormais strictement le texte entre accents graves (`` `...` `` et ``` ```) afin d'éviter l'affichage de codes d'emojis bruts non interprétés par Discord.
+
 Bienvenue dans l'**Update 3 de Root OS** ! 🎉
 
 Merci à toutes et à tous pour votre fidélité, votre énergie et vos retours précieux depuis le lancement. Cette mise à jour est un cap majeur pour toute la communauté : elle transforme en profondeur votre expérience de jeu, enrichit l'univers cyberpunk du bot et vous offre un poste de commande plus vivant, plus beau et plus intuitif que jamais. 
 
 Installez-vous confortablement, préparez vos rigs, voici tout ce qui change pour vous !
+
+## 🛡️ Procédure de Sauvegarde d'Urgence PvP (Dégâts Critiques)
+
+Afin d'éviter qu'une intrusion brutale ne réduise à néant vos investissements matériels, Root OS introduit la **Procédure de Sauvegarde d'Urgence** lors des combats PvP !
+
+### ⚡ Ce qui change pour vous :
+- **Plafonnement strict des pertes de modules (60 %)** :
+  - Si une cyberattaque ennemie réussie devait détruire ou transférer une part excessive de vos modules d'attaque ou de minage (perte strictement supérieure à 60 % de vos modules dans la catégorie visée), la procédure de sécurité se déclenche automatiquement.
+  - La perte infligée est alors strictement limitée au plafond configuré (`floor(total × 60 / 100)`).
+  - Si vous ne possédez qu'un seul module dans cette catégorie, l'arrondi protège l'intégralité de votre équipement : aucun module n'est perdu !
+- **Verrouillage de sauvegarde temporaire (48h)** :
+  - Lors du déclenchement, votre profil réseau entre sous protocole d'urgence pendant 48 heures.
+  - Pendant cette période de reconstruction, votre profil est sanctuarisé : **impossible de subir ou de lancer des attaques (`/hack`)** et **impossible de lancer des scans (`/scan`)**.
+  - Le verrouillage s'applique à votre profil de jeu global sur l'ensemble des serveurs Discord.
+- **Activités économiques et défensives préservées** :
+  - Même sous verrouillage, vous conservez le plein accès à toutes vos commandes régulières : récolter votre Rootium (`/claim`), récupérer vos primes (`/hourly`), compiler des points d'attaque (`/compile`), acheter du matériel (`/buy`), améliorer votre infrastructure (`/upgrade`) et accomplir des contrats (`/contract`).
+- **Journal public & notifications dédiées** :
+  - Un événement public dédié (teinté de violet électrique) annonce la mise sous sauvegarde de la victime et la durée du verrouillage, sans divulguer de détails sensibles (ni attaquant, ni puissance ATK, ni Secret ID).
+  - Les rapports d'opération privés en DM détaillent avec précision les modules préservés et l'horodatage exact d'expiration de la protection.
 
 ---
 

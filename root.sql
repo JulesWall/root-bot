@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS players (
     contracts_completed INT UNSIGNED    NOT NULL DEFAULT 0,
     contract_grace_until DATETIME(6)    NULL     DEFAULT NULL,
 
+    -- Procédure de sauvegarde et dégâts critiques PvP
+    critical_lock_until DATETIME(6)     NULL     DEFAULT NULL,
+
     -- Contraintes d'intégrité
     PRIMARY KEY (discord_id),
     UNIQUE KEY uq_players_secret_id (secret_id),

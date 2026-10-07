@@ -12,7 +12,7 @@ Ce module gère le cycle de vie complet d'une attaque /hack :
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from game.db.consequence import ConsequenceDB
 from game.db.database import player_lock_name
@@ -92,7 +92,7 @@ class PvpDB:
         Résout une unique attaque PvP de façon strictement atomique.
         Acquiert les verrous joueur nécessaires dans l'ordre croissant anti-deadlock.
         """
-        from game.db.players import _settle_mining, UpdatePlayer
+        from game.db.players import _settle_mining, UpdatePlayer, Player
 
         # Verrouillage de la ligne d'attaque
         attack = tx.one(
@@ -120,6 +120,22 @@ class PvpDB:
             # Si un compte a disparu entre-temps, nettoyage propre sans erreur
             tx.execute('DELETE FROM pvp_attacks WHERE id = %s', (int(attack_id),))
             return None
+
+        # Vérification si la cible est actuellement sous verrouillage critique (attaque en vol annulée)
+        victim_lock = Player.get_critical_lock_expiration(victim, tx.now)
+        if victim_lock:
+            tx.execute('DELETE FROM pvp_attacks WHERE id = %s', (int(attack_id),))
+            return {
+                'attack_id': int(attack_id),
+                'attacker_id': attacker_id,
+                'victim_id': victim_id,
+                'attack_points': attack_points,
+                'target': target_choice,
+                'aborted_victim_locked': True,
+                'victim_lock_until': victim_lock,
+                'attacker_lang': attacker.get('lang') or 'fr',
+                'victim_lang': victim.get('lang') or 'fr',
+            }
 
         # 1. Calcul de la défense totale initiale de la victime
         module_def_points = 0
@@ -174,16 +190,40 @@ class PvpDB:
             else 0
         )
 
+        # Calcul des modules possédés dans la catégorie visée et plafonnement des dégâts critiques
+        total_category_modules = 0
+        if target_choice == 'attack':
+            total_category_modules = sum(int(victim.get(f'attack_t{tier}') or 0) for tier in range(1, 7))
+        elif target_choice == 'mining':
+            total_category_modules = sum(int(victim.get(f'mining_t{tier}') or 0) for tier in range(1, 7))
+
+        critical_triggered = False
+        critical_lock_until = None
+        critical_lock_duration_hours = 0
+        effective_count_to_take = target_count_to_take
+
+        if intrusion_success and target_count_to_take > 0 and total_category_modules > 0:
+            cap_percent = MathConfig.get_pvp_critical_damage_cap_percent()
+            planned_loss = min(target_count_to_take, total_category_modules)
+            # Le plafond est strict : perte égale au pourcentage ne déclenche pas ; perte supérieure déclenche
+            if (planned_loss * 100) > (total_category_modules * cap_percent):
+                critical_triggered = True
+                effective_count_to_take = (total_category_modules * cap_percent) // 100
+                critical_lock_duration_hours = MathConfig.get_pvp_critical_lock_duration_hours()
+                critical_lock_until = tx.now + timedelta(hours=critical_lock_duration_hours)
+                updates_victim['critical_lock_until'] = critical_lock_until
+                victim['critical_lock_until'] = critical_lock_until
+
         destroyed_attack_tier = None
         captured_mining_tier = None
         destroyed_attack_modules = {}
         captured_mining_modules = {}
         updates_attacker = {}
 
-        if intrusion_success and target_count_to_take > 0:
-            remaining_to_take = target_count_to_take
+        if intrusion_success and effective_count_to_take > 0:
+            remaining_to_take = effective_count_to_take
             if target_choice == 'attack':
-                # Détruire jusqu'à target_count_to_take modules d'attaque du tier le plus haut au plus bas (T6 -> T1)
+                # Détruire jusqu'à effective_count_to_take modules d'attaque du tier le plus haut au plus bas (T6 -> T1)
                 for tier in range(6, 0, -1):
                     if remaining_to_take <= 0:
                         break
@@ -255,6 +295,11 @@ class PvpDB:
             'destroyed_defense_modules': destroyed_modules_by_tier,
             'intrusion_success': intrusion_success,
             'target_count_to_take': target_count_to_take,
+            'effective_count_to_take': effective_count_to_take if intrusion_success else 0,
+            'critical_triggered': critical_triggered,
+            'critical_lock_until': critical_lock_until,
+            'critical_lock_duration_hours': critical_lock_duration_hours,
+            'total_category_modules': total_category_modules,
             'overrun_threshold': overrun_threshold,
             'destroyed_attack_tier': destroyed_attack_tier,
             'captured_mining_tier': captured_mining_tier,

@@ -237,6 +237,22 @@ class Hack(BaseGameCog):
         """Notifie l'attaquant et la victime en DM lors de la résolution de l'attaque."""
         attacker_id = item['attacker_id']
         victim_id = item['victim_id']
+        attacker_lang = item.get('attacker_lang') or 'fr'
+        victim_lang = item.get('victim_lang') or 'fr'
+
+        # 0. Cas où l'attaque en vol a été annulée car la cible est déjà sous verrouillage critique
+        if item.get('aborted_victim_locked'):
+            try:
+                attacker_user = self.bot.get_user(attacker_id) or await self.bot.fetch_user(attacker_id)
+                if attacker_user:
+                    title = "Opération interrompue" if attacker_lang == 'fr' else "Operation Aborted"
+                    msg = text.get_for_lang(attacker_lang, 'g_hack_attacker_aborted_target_locked', target_id=victim_id)
+                    embed = RootEmbed.report(attacker_lang, title, msg, is_loss=False)
+                    await embed.send_to(attacker_user)
+            except Exception:
+                logger.warning("Impossible d'envoyer l'alerte d'annulation à l'attaquant %s", attacker_id)
+            return
+
         attack_points = item['attack_points']
         target_zone = item['target']
         intrusion_success = item['intrusion_success']
@@ -256,8 +272,17 @@ class Hack(BaseGameCog):
             captured_mining_tier,
         )
 
-        attacker_lang = item.get('attacker_lang') or 'fr'
-        victim_lang = item.get('victim_lang') or 'fr'
+        # Émission unique du log public en cas de procédure de sauvegarde déclenchée
+        if item.get('critical_triggered'):
+            try:
+                bot_logger = getattr(self.bot, 'discord_logger', None) or Logger(self.bot)
+                await bot_logger.log_pvp_critical_lock(
+                    victim=victim_id,
+                    duration_hours=item.get('critical_lock_duration_hours', 48),
+                    lock_until=item.get('critical_lock_until'),
+                )
+            except Exception:
+                logger.exception("Erreur lors de l'émission du log public de verrouillage critique")
 
         # 1. Notification DM à l'attaquant
         attacker_user = None
@@ -311,7 +336,17 @@ class Hack(BaseGameCog):
                                 total_defense=total_defense,
                                 destroyed_defense=destroyed_defense,
                             )
-                title_atk = "Rapport d'opération" if attacker_lang == 'fr' else "Operation Report"
+
+                    if item.get('critical_triggered'):
+                        attacker_msg += "\n\n" + text.get_for_lang(
+                            attacker_lang, 'g_hack_attacker_critical_capped',
+                            effective=item.get('effective_count_to_take', 0),
+                        )
+
+                if intrusion_success:
+                    title_atk = "Rapport d'opération — Accès obtenu" if attacker_lang == 'fr' else "Operation Report — Access Granted"
+                else:
+                    title_atk = "Rapport d'opération — Accès refusé" if attacker_lang == 'fr' else "Operation Report — Access Denied"
                 embed_atk = RootEmbed.report(attacker_lang, title_atk, attacker_msg, is_loss=False)
                 await embed_atk.send_to(attacker_user)
 
@@ -324,6 +359,7 @@ class Hack(BaseGameCog):
                     overrun_threshold_fmt = f"{float(overrun_threshold):.2f}" if overrun_threshold != 'N/A' else 'N/A'
                     fw_atk = item.get('attacker_fw', '?')
                     fw_vic = item.get('victim_fw', '?')
+                    effective_count = item.get('effective_count_to_take', target_count)
                     lines_debug = [
                         "```",
                         "🔬 ROOT DEBUG — Calcul Overrun PvP",
@@ -340,9 +376,13 @@ class Hack(BaseGameCog):
                         f"   formule : V = (cost_mining_USD / (cost_atk_RTM * rtm_usd)) * mult * sqrt(bits*time)",
                         f"🎯  Modules pris (base) : 1" if intrusion_success else "🎯  Modules pris       : 0",
                         f"➕  Bonus overrun       : +{extra}  (delta // V = {delta} // {overrun_threshold_fmt})" if intrusion_success else "",
-                        f"📦  Total modules pris  : {target_count}",
-                        "```",
                     ]
+                    if item.get('critical_triggered'):
+                        lines_debug.append(f"🛡️  Plafond critique     : {effective_count} (procédure active)")
+                        lines_debug.append(f"📦  Total modules pris  : {effective_count} (brut calculé : {target_count})")
+                    else:
+                        lines_debug.append(f"📦  Total modules pris  : {target_count}")
+                    lines_debug.append("```")
                     debug_msg = "\n".join(l for l in lines_debug if l != "")
                     await attacker_user.send(debug_msg)
                 except Exception as exc:
@@ -407,7 +447,21 @@ class Hack(BaseGameCog):
                                 destroyed_defense=destroyed_defense,
                                 new_secret_id=new_victim_secret,
                             )
-                title_vic = "Rapport d'intrusion" if victim_lang == 'fr' else "Intrusion Report"
+
+                    if item.get('critical_triggered'):
+                        lock_until = item.get('critical_lock_until')
+                        ts_lock = to_utc_timestamp(lock_until) if lock_until else 0
+                        duration_hours = item.get('critical_lock_duration_hours', 48)
+                        victim_msg += "\n\n" + text.get_for_lang(
+                            victim_lang, 'g_hack_victim_critical_saved',
+                            duration=duration_hours,
+                            timestamp=ts_lock,
+                        )
+
+                if intrusion_success:
+                    title_vic = "Alerte intrusion — Brèche confirmée" if victim_lang == 'fr' else "Intrusion Alert — Breach Confirmed"
+                else:
+                    title_vic = "Alerte réseau — Intrusion repoussée" if victim_lang == 'fr' else "Network Alert — Intrusion Repelled"
                 embed_vic = RootEmbed.report(victim_lang, title_vic, victim_msg, is_loss=intrusion_success)
                 await embed_vic.send_to(victim_user)
         except Exception:

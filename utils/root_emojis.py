@@ -39,6 +39,8 @@ ALL_EMOJI_NAMES = {
     'root_retour',
     'root_bilan',
     'root_firewall',  # Ressource historique
+    'root_verrou',
+    'root_usd',
 }
 
 DEFAULT_EMOJI_IDS: dict[str, tuple[int, bool]] = {
@@ -59,6 +61,8 @@ DEFAULT_EMOJI_IDS: dict[str, tuple[int, bool]] = {
     'root_production': (1554180930904522863, False),
     'root_puissance': (1554180932821454918, False),
     'root_temps': (1554181059011416205, False),
+    'root_verrou': (1554180918154104984, False),
+    'root_usd': (1554180904329420893, False),
 }
 
 # Registre interne pré-rempli avec les identifiants Discord réels
@@ -137,6 +141,8 @@ FALLBACK_EMOJIS = {
     'root_connexions': '🌐',
     'root_retour': '↩️',
     'root_bilan': '💵',
+    'root_verrou': '🔒',
+    'root_usd': '💵',
 }
 
 
@@ -196,8 +202,8 @@ VANILLA_TO_ROOT_MAP: dict[str, str] = {
     '🎉': 'root_puissance',
     '✨': 'root_puissance',
     '🛡️': 'root_firewall',
-    '🔒': 'root_firewall',
-    '🔐': 'root_firewall',
+    '🔒': 'root_verrou',
+    '🔐': 'root_verrou',
     '🔑': 'root_firewall',
     '🔓': 'root_firewall',
     '🏰': 'root_firewall',
@@ -215,7 +221,6 @@ VANILLA_TO_ROOT_MAP: dict[str, str] = {
     '📥': 'root_recolter',
     '✅': 'root_terminal',
     '🟢': 'root_terminal',
-    '✓': 'root_terminal',
     '🔄': 'root_recolter',
     '📤': 'root_recolter',
     '🎁': 'root_recolter',
@@ -265,7 +270,7 @@ VANILLA_TO_ROOT_MAP: dict[str, str] = {
     '🔗': 'root_connexions',
     '↩️': 'root_retour',
     '⬅️': 'root_retour',
-    '💵': 'root_bilan',
+    '💵': 'root_usd',
     '💰': 'root_bilan',
     '💳': 'root_bilan',
     '💼': 'root_bilan',
@@ -277,17 +282,31 @@ VANILLA_TO_ROOT_MAP: dict[str, str] = {
 
 
 def replace_vanilla_emojis(content: str) -> str:
-    """Remplace les emojis unicode vanilla par les emojis Discord personnalisés Root OS."""
+    """Remplace les emojis unicode vanilla par les emojis Discord personnalisés Root OS.
+    
+    Préserve strictement le contenu situé à l'intérieur des blocs de code (``` ... ```)
+    ou du code inline (` ... `), où Discord ne parse jamais les emojis personnalisés.
+    """
     if not content:
         return content
-    res = content
-    for vanilla, root_name in sorted(VANILLA_TO_ROOT_MAP.items(), key=lambda x: len(x[0]), reverse=True):
-        emoji_rep = get_emoji(root_name)
-        if vanilla in res:
-            res = res.replace(vanilla, emoji_rep)
-        bare = vanilla.replace('\ufe0f', '')
-        if bare != vanilla and bare in res:
-            res = res.replace(bare, emoji_rep)
-    return res
+
+    import re
+
+    # Découpe en segments : texte normal vs segments de code (inline `...` ou triple ```...```)
+    # Les segments avec indices impairs dans resultats seront le code protégé
+    parts = re.split(r'(```[\s\S]*?```|`[^`\n]*?`)', content)
+
+    for i in range(0, len(parts), 2):
+        chunk = parts[i]
+        for vanilla, root_name in sorted(VANILLA_TO_ROOT_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+            emoji_rep = get_emoji(root_name)
+            if vanilla in chunk:
+                chunk = chunk.replace(vanilla, emoji_rep)
+            bare = vanilla.replace('\ufe0f', '')
+            if bare != vanilla and bare in chunk:
+                chunk = chunk.replace(bare, emoji_rep)
+        parts[i] = chunk
+
+    return ''.join(parts)
 
 

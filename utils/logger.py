@@ -19,7 +19,8 @@ from typing import Any
 import discord
 
 from lang.fr import text
-from utils.root_theme import COLOR_LOG_ATTACK, COLOR_LOG_EVENT, COLOR_LOG_SCAN
+from utils.root_emojis import get_emoji
+from utils.root_theme import COLOR_LOG_ATTACK, COLOR_LOG_EVENT, COLOR_LOG_SCAN, COLOR_LOG_CRITICAL
 from utils.time_format import to_utc_timestamp
 
 # Mapping entre les clés logicielles et les noms des variables d'environnement
@@ -1159,3 +1160,56 @@ class Logger:
             user_avatar_url=avatar_url,
         )
         await self._send_embed("public", embed)
+
+    async def log_pvp_critical_lock(
+        self,
+        victim: discord.User | discord.Member | int | str,
+        duration_hours: int,
+        lock_until: datetime | None,
+        victim_name: str | None = None,
+    ):
+        """Consigne le déclenchement d'une procédure de sauvegarde critique dans le salon public.
+        
+        Reste concis : annonce la protection, identifie la victime et la durée du verrouillage avec horodatage Discord.
+        Ne publie AUCUN détail sur les dégâts, l'attaquant, le Secret ID ou le nombre de modules.
+        """
+        if isinstance(victim, (discord.User, discord.Member)) and not type(victim).__name__.startswith("MagicMock"):
+            victim_str = _format_user_compact(victim)
+            victim_avatar = getattr(victim, "display_avatar", None)
+        elif victim_name:
+            victim_str = f"<@{victim}> (`{victim_name}` · `{victim}`)"
+            victim_avatar = None
+        else:
+            victim_user = None
+            if str(victim).isdigit() and hasattr(self.bot, "get_user"):
+                u = self.bot.get_user(int(victim))
+                if u and not type(u).__name__.startswith("MagicMock"):
+                    victim_user = u
+            if victim_user:
+                victim_str = _format_user_compact(victim_user)
+                victim_avatar = getattr(victim_user, "display_avatar", None)
+            else:
+                victim_str = f"<@{victim}> (`{victim}`)"
+                victim_avatar = None
+
+        avatar_url = victim_avatar.url if victim_avatar and hasattr(victim_avatar, "url") else None
+
+        ts = to_utc_timestamp(lock_until) if lock_until else 0
+        ts_str = f"<t:{ts}:f> (<t:{ts}:R>)" if ts > 0 else "N/A"
+
+        verrou_icon = get_emoji('root_verrou', True)
+        lines = [
+            f"> {verrou_icon}**Procédure de sauvegarde** · Une attaque critique a déclenché le protocole d'urgence pour {victim_str}.",
+            f"> {verrou_icon}*Profil temporairement verrouillé pour **{duration_hours}h** (fin : {ts_str}).*",
+        ]
+
+        embed = _style_public_embed(
+            self.bot,
+            title=f"{verrou_icon}Procédure de Sauvegarde Déclenchée",
+            description="\n".join(lines),
+            color=COLOR_LOG_CRITICAL,
+            author_category="SÉCURITÉ RÉSEAU",
+            user_avatar_url=avatar_url,
+        )
+        await self._send_embed("public", embed)
+

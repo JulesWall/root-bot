@@ -9,7 +9,7 @@ Ce module implémente les classes d'accès aux données (DAO / Repository) et la
 - Player : Opérations de jeu conservées (network, buy, upgrade, reputation, top, set_language, get_language).
 """
 
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import random
 
@@ -169,6 +169,7 @@ class UpdatePlayer:
             'hourly_last_at', 'hourly_combo_bonus', 'hourly_streak',
             'hourly_lost_streak', 'hourly_lost_bonus', 'combo_saver_credits',
             'contract_fidelity', 'contracts_completed', 'contract_grace_until',
+            'critical_lock_until',
         } | {f'{kind}_t{tier}' for kind in ('mining', 'attack', 'bay_defense') for tier in range(1, 7)}
 
         if not values or any(key not in allowed for key in values):
@@ -181,6 +182,28 @@ class UpdatePlayer:
 
 class Player:
     """Opérations et règles métier interactives liées au joueur."""
+
+    @staticmethod
+    def get_critical_lock_expiration(player_row: dict | None, now=None) -> datetime | None:
+        """Renvoie la date d'expiration si le joueur est sous verrouillage critique actif, sinon None.
+        
+        Une date passée ou absente signifie que le joueur est actif (aucun verrou).
+        """
+        if not player_row:
+            return None
+        until = player_row.get('critical_lock_until')
+        if not until:
+            return None
+
+        now_dt = now or datetime.now(timezone.utc)
+        if getattr(until, 'tzinfo', None) is not None and getattr(now_dt, 'tzinfo', None) is None:
+            now_dt = now_dt.replace(tzinfo=timezone.utc)
+        elif getattr(until, 'tzinfo', None) is None and getattr(now_dt, 'tzinfo', None) is not None:
+            until = until.replace(tzinfo=now_dt.tzinfo)
+
+        if until > now_dt:
+            return until
+        return None
 
     @staticmethod
     def network(tx, actor: int) -> dict:
@@ -767,6 +790,17 @@ class Player:
             if not ConsequenceDB.check(tx, victim_id=actor, attacker_id=target_id):
                 raise GameError('scan_target_protected')
 
+        # Verrouillage critique de profil (procédure de sauvegarde)
+        scanner_lock = Player.get_critical_lock_expiration(scanner, tx.now)
+        if scanner_lock:
+            ts = to_utc_timestamp(scanner_lock)
+            raise GameError('scan_self_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(scanner_lock, tx.now))
+
+        target_lock = Player.get_critical_lock_expiration(target, tx.now)
+        if target_lock:
+            ts = to_utc_timestamp(target_lock)
+            raise GameError('scan_target_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(target_lock, tx.now))
+
         # Stock ATK requis
         if int(scanner.get('attack_points') or 0) == 0:
             raise GameError('scan_no_atk')
@@ -893,6 +927,17 @@ class Player:
         if target_fw < attacker_fw:
             if not ConsequenceDB.check(tx, victim_id=actor, attacker_id=target_id):
                 raise GameError('hack_target_protected')
+
+        # Verrouillage critique de profil (procédure de sauvegarde)
+        attacker_lock = Player.get_critical_lock_expiration(attacker, tx.now)
+        if attacker_lock:
+            ts = to_utc_timestamp(attacker_lock)
+            raise GameError('hack_self_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(attacker_lock, tx.now))
+
+        target_lock = Player.get_critical_lock_expiration(target, tx.now)
+        if target_lock:
+            ts = to_utc_timestamp(target_lock)
+            raise GameError('hack_target_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(target_lock, tx.now))
 
         # Vérifier si la victime subit déjà une attaque en cours
         if PvpDB.get_active_for_victim(tx, target_id):

@@ -151,5 +151,23 @@
     "bytes": 509,
     "source": "https://raw.githubusercontent.com/lucide-icons/lucide/0.468.0/icons/chart-no-axes-column-increasing.svg",
     "size": 128
+  },
+  {
+    "name": "root_verrou",
+    "usage": "Profil verrouillé après dégâts critiques",
+    "color": "#B66DFF",
+    "file": "png/root_verrou.png",
+    "bytes": 6960,
+    "source": "Original ROOT OS icon, built from the matching SVG source in this pack",
+    "size": 128
+  },
+  {
+    "name": "root_usd",
+    "usage": "Paiement en USD",
+    "color": "#FFC15A",
+    "file": "png/root_usd.png",
+    "bytes": 9867,
+    "source": "Original ROOT OS icon, built from the matching SVG source in this pack",
+    "size": 128
   }
 ]

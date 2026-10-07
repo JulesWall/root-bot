@@ -159,9 +159,10 @@ def build_overview_embed(
     # 3. Ressources (Portefeuille)
     usd_str = text.format_usd(result.get('dollars') or 0)
     rtm_wallet = Decimal(str(result.get('rootium') or 0))
+    usd_icon = get_emoji('root_usd', True)
     embed.add_field(
         name=f"{get_emoji('root_bilan', True)}{'Ressources' if is_fr else 'Resources'}",
-        value=f"💵 **{'Solde USD' if is_fr else 'USD Balance'}** : `{usd_str} USD`\n{get_emoji('root_memoire', True)}**{'Portefeuille RTM' if is_fr else 'RTM Wallet'}** : `{text.format_rtm(rtm_wallet)} RTM`",
+        value=f"{usd_icon}**{'Solde USD' if is_fr else 'USD Balance'}** : `{usd_str} USD`\n{get_emoji('root_memoire', True)}**{'Portefeuille RTM' if is_fr else 'RTM Wallet'}** : `{text.format_rtm(rtm_wallet)} RTM`",
         inline=False,
     )
 
@@ -182,6 +183,17 @@ def build_overview_embed(
         f"{get_emoji('root_connexions', True)}**{'Multiplicateurs' if is_fr else 'Multipliers'}** : `x{mult_str}` {'horaire/contrats' if is_fr else 'hourly/contracts'} · `x{mult_str}` {'events' if is_fr else 'events'}",
         f"{get_emoji('root_scan', True)}**{'Détection des scans' if is_fr else 'Scan detection'}** : `{detect_pct}%`",
     ]
+
+    # Signalement du verrouillage critique avec root_verrou s'il est actif
+    crit_lock = result.get('critical_lock_until')
+    crit_ts = to_utc_timestamp(crit_lock) if crit_lock else 0
+    now_ts = int(time.time())
+    if crit_ts > now_ts:
+        rem_lock_str = _format_time_relative(crit_lock)
+        protect_lines.append(
+            f"{get_emoji('root_verrou', True)}**{'Verrouillage d’urgence' if is_fr else 'Emergency lock'}** : {rem_lock_str}"
+        )
+
     embed.add_field(
         name=f"{get_emoji('root_connexions', True)}{'Infrastructure et protection' if is_fr else 'Infrastructure and protection'}",
         value='\n'.join(protect_lines),
@@ -581,6 +593,16 @@ def build_operations_embed(
     if not prep_lines:
         prep_lines.append("Aucune préparation en cours" if is_fr else "No preparations in progress")
 
+    # Signalement du verrouillage d'urgence critique
+    crit_lock = result.get('critical_lock_until')
+    crit_ts = to_utc_timestamp(crit_lock) if crit_lock else 0
+    now_ts = int(time.time())
+    if crit_ts > now_ts:
+        rem_lock_str = _format_time_relative(crit_lock)
+        prep_lines.append(
+            f"{get_emoji('root_verrou', True)}**{'Verrouillage d’urgence actif' if is_fr else 'Active emergency lock'}** : {rem_lock_str}"
+        )
+
     embed.add_field(
         name=f"{get_emoji('root_temps', True)}{'Préparations en cours' if is_fr else 'Active preparations'}",
         value='\n'.join(prep_lines),
@@ -702,6 +724,7 @@ def build_overview_container(
     usd_str = text.format_usd(result.get('dollars') or 0)
     rtm_wallet = Decimal(str(result.get('rootium') or 0))
     rep_val = int(result.get('reputation') or 0)
+    usd_icon = get_emoji('root_usd', True)
 
     stats_lines = [
         f"{get_emoji('root_ferme', True)}**{'Ferme de minage' if is_fr else 'Mining farm'}** · {total_miners} {'mineurs' if is_fr else 'miners'} ({hashrate_str}) · {text.format_rtm(hourly_rtm)} RTM/h",
@@ -709,8 +732,18 @@ def build_overview_container(
         f"{get_emoji('root_recolter', True)}**{'À récolter' if is_fr else 'To claim'}** · **{text.format_rtm(buffer_rtm)} RTM**",
         f"{get_emoji('root_puissance', True)}**{'Puissance de calcul' if is_fr else 'Computing power'}** · {tot_bits}",
         f"{get_emoji('root_firewall', True)}**{'Défense globale' if is_fr else 'Total defense'}** · {tdef} DEF *({bdef} baies + {ndef} infra)*",
-        f"{get_emoji('root_bilan', True)}**{'Portefeuille' if is_fr else 'Wallet'}** · 💵 `{usd_str} USD` · {text.format_rtm(rtm_wallet)} RTM · {rep_val} {'pts réputation' if is_fr else 'reputation pts'}",
+        f"{get_emoji('root_bilan', True)}**{'Portefeuille' if is_fr else 'Wallet'}** · {usd_icon}`{usd_str} USD` · {text.format_rtm(rtm_wallet)} RTM · {rep_val} {'pts réputation' if is_fr else 'reputation pts'}",
     ]
+
+    crit_lock = result.get('critical_lock_until')
+    crit_ts = to_utc_timestamp(crit_lock) if crit_lock else 0
+    now_ts = int(time.time())
+    if crit_ts > now_ts:
+        rem_lock_str = _format_time_relative(crit_lock)
+        stats_lines.append(
+            f"{get_emoji('root_verrou', True)}**{'Verrouillage d’urgence' if is_fr else 'Emergency lock'}** · {rem_lock_str}"
+        )
+
     c.add_text('\n'.join(stats_lines))
     c.add_separator(divider=True)
 

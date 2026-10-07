@@ -33,3 +33,6 @@ CREATE TABLE IF NOT EXISTS macro_runs (
     INDEX idx_macro_runs_owner_time (discord_id, started_at),
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration SQL : Procédure de sauvegarde et dégâts critiques PvP
+ALTER TABLE players ADD COLUMN critical_lock_until DATETIME(6) NULL DEFAULT NULL;

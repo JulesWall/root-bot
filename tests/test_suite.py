@@ -5060,6 +5060,9 @@ class TestPvPFeature(unittest.TestCase):
         self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(830 + 700, 830, 2), 2)
         self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(830 + 1300, 830, 2), 3)
 
+        # Victime a 5 modules d'attaque au total (1x T4 + 4x T1) : perte de 3 modules = 60% (ne déclenche pas le cap)
+        self.tx.players[self.victim_id]["attack_t1"] = 4
+
         attack_id = PvpDB.create(
             self.tx,
             attacker_id=self.attacker_id,
@@ -5076,12 +5079,13 @@ class TestPvPFeature(unittest.TestCase):
         self.assertEqual(result["destroyed_attack_modules"], {4: 1, 1: 2})
         self.assertEqual(result["destroyed_attack_tier"], 4)
 
-        # Tous les modules d'attaque de la victime sont détruits
+        # 1x T4 et 2x T1 détruits, il reste 2x T1
         self.assertEqual(self.tx.players[self.victim_id]["attack_t4"], 0)
-        self.assertEqual(self.tx.players[self.victim_id]["attack_t1"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["attack_t1"], 2)
 
         # Test de capture multiple sur cible 'mining' (surplus = 700 -> 2 modules)
-        # Victime a 1x T5 et 1x T2
+        # Victime a 4 modules de minage (1x T5, 1x T2, 2x T1) : perte de 2 modules = 50% <= 60%
+        self.tx.players[self.victim_id]["mining_t1"] = 2
         attack_id_mining = PvpDB.create(
             self.tx,
             attacker_id=self.attacker_id,
@@ -5096,6 +5100,7 @@ class TestPvPFeature(unittest.TestCase):
         self.assertEqual(res_mining["captured_mining_modules"], {5: 1, 2: 1})
         self.assertEqual(self.tx.players[self.victim_id]["mining_t5"], 0)
         self.assertEqual(self.tx.players[self.victim_id]["mining_t2"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t1"], 2)
         self.assertEqual(self.tx.players[self.attacker_id]["mining_t5"], 1)
         self.assertEqual(self.tx.players[self.attacker_id]["mining_t2"], 1)
 
@@ -5126,6 +5131,10 @@ class TestPvPFeature(unittest.TestCase):
             "g_error_hack_self_invulnerable", "g_error_hack_target_invulnerable",
             "g_error_hack_target_protected", "g_error_hack_target_in_progress",
             "g_error_hack_insufficient_atk", "g_error_hack_usage",
+            "g_error_hack_self_critical_locked", "g_error_hack_target_critical_locked",
+            "g_error_scan_self_critical_locked", "g_error_scan_target_critical_locked",
+            "g_hack_attacker_critical_capped", "g_hack_victim_critical_saved",
+            "g_hack_attacker_aborted_target_locked",
         )
         for k in required_keys:
             self.assertIn(k, game_fr.text, f"Clé manquante dans game_fr: {k}")
@@ -5165,6 +5174,170 @@ class TestPvPFeature(unittest.TestCase):
         quote = Player.hack(self.tx, self.attacker_id, secret_id=new_secret, atk=100, zone="mining", confirm=False)
         self.assertTrue(quote.get("hack_quote"))
         self.assertEqual(quote["target_id"], self.victim_id)
+
+    def test_pvp_critical_damage_cap_and_lock(self):
+        """Vérifie le déclenchement de la procédure de sauvegarde critique et le plafonnement strict."""
+        from datetime import timedelta
+        for t in range(1, 7):
+            self.tx.players[self.victim_id][f"mining_t{t}"] = 10 if t == 1 else 0
+        self.tx.players[self.victim_id]["bay_defense_t1"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t2"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t3"] = 0
+        self.tx.players[self.victim_id]["firewall_level"] = 1
+
+        # Attaquant Firewall 2 : seuil V(2) ≈ 628.6
+        threshold = MathConfig.calculate_pvp_overrun_threshold(2)
+        # 7 modules demandés (1 base + 6 bonus) : delta // V = 6
+        attack_pts = 250 + int(threshold * 6) + 10
+
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=attack_pts,
+            target="mining",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result["intrusion_success"])
+        self.assertEqual(result["target_count_to_take"], 7)
+        self.assertTrue(result["critical_triggered"])
+        self.assertEqual(result["critical_lock_duration_hours"], 48)
+        self.assertEqual(result["total_category_modules"], 10)
+        self.assertEqual(result["effective_count_to_take"], 6)
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t1"], 4)
+        self.assertEqual(self.tx.players[self.attacker_id]["mining_t1"], 8)
+        self.assertEqual(self.tx.players[self.victim_id]["critical_lock_until"], self.tx.now + timedelta(hours=48))
+
+    def test_pvp_critical_damage_not_triggered_at_exact_cap(self):
+        """Vérifie qu'une perte égale au plafond configuré (60%) ne déclenche pas la procédure."""
+        for t in range(1, 7):
+            self.tx.players[self.victim_id][f"mining_t{t}"] = 10 if t == 1 else 0
+        self.tx.players[self.victim_id]["bay_defense_t1"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t2"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t3"] = 0
+        self.tx.players[self.victim_id]["firewall_level"] = 1
+
+        # Attaquant Firewall 2 : seuil V(2) ≈ 628.6
+        threshold = MathConfig.calculate_pvp_overrun_threshold(2)
+        # 6 modules demandés (1 base + 5 bonus) : delta // V = 5
+        attack_pts = 250 + int(threshold * 5) + 10
+
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=attack_pts,
+            target="mining",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result["intrusion_success"])
+        self.assertEqual(result["target_count_to_take"], 6)
+        self.assertFalse(result["critical_triggered"])
+        self.assertIsNone(result["critical_lock_until"])
+        self.assertIsNone(self.tx.players[self.victim_id].get("critical_lock_until"))
+
+    def test_pvp_critical_damage_single_module_floor_zero(self):
+        """Vérifie qu'avec 1 seul module possédé, floor(1 * 0.6) = 0 module perdu et profil verrouillé."""
+        from datetime import timedelta
+        for t in range(1, 7):
+            self.tx.players[self.victim_id][f"attack_t{t}"] = 1 if t == 1 else 0
+        self.tx.players[self.victim_id]["bay_defense_t1"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t2"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t3"] = 0
+        self.tx.players[self.victim_id]["firewall_level"] = 1
+
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=300,
+            target="attack",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result["intrusion_success"])
+        self.assertTrue(result["critical_triggered"])
+        self.assertEqual(result["effective_count_to_take"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["attack_t1"], 1)
+        self.assertEqual(self.tx.players[self.victim_id]["critical_lock_until"], self.tx.now + timedelta(hours=48))
+
+    def test_critical_lock_blocks_hack_and_scan(self):
+        """Vérifie qu'un profil verrouillé ne peut ni hacker ni être hacké, ni scanner ni être scanné."""
+        from datetime import timedelta
+        self.tx.players[self.victim_id]["critical_lock_until"] = self.tx.now + timedelta(hours=24)
+
+        with self.assertRaises(GameError) as cm:
+            Player.hack(self.tx, self.attacker_id, secret_id="654321", atk=100, zone="mining")
+        self.assertEqual(cm.exception.key, "hack_target_critical_locked")
+
+        with self.assertRaises(GameError) as cm:
+            Player.scan(self.tx, self.attacker_id, target=self.victim_id)
+        self.assertEqual(cm.exception.key, "scan_target_critical_locked")
+
+        self.tx.players[self.victim_id]["critical_lock_until"] = None
+        self.tx.players[self.attacker_id]["critical_lock_until"] = self.tx.now + timedelta(hours=24)
+
+        with self.assertRaises(GameError) as cm:
+            Player.hack(self.tx, self.attacker_id, secret_id="654321", atk=100, zone="mining")
+        self.assertEqual(cm.exception.key, "hack_self_critical_locked")
+
+        with self.assertRaises(GameError) as cm:
+            Player.scan(self.tx, self.attacker_id, target=self.victim_id)
+        self.assertEqual(cm.exception.key, "scan_self_critical_locked")
+
+        self.tx.players[self.attacker_id]["critical_lock_until"] = self.tx.now - timedelta(seconds=1)
+        quote = Player.hack(self.tx, self.attacker_id, secret_id="654321", atk=100, zone="mining", confirm=False)
+        self.assertTrue(quote.get("hack_quote"))
+
+    def test_in_flight_pvp_aborted_if_victim_locked(self):
+        """Vérifie qu'une attaque déjà en vol est annulée si la cible a été verrouillée entre-temps."""
+        from datetime import timedelta
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=500,
+            target="mining",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        self.tx.players[self.victim_id]["critical_lock_until"] = self.tx.now + timedelta(hours=48)
+        initial_mining = self.tx.players[self.victim_id]["mining_t2"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result.get("aborted_victim_locked"))
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t2"], initial_mining)
+        self.assertEqual(self.tx.pvp_attacks, [])
+
+    def test_player_critical_lock_expiration_helper(self):
+        """Vérifie le fonctionnement du helper Player.get_critical_lock_expiration."""
+        from datetime import datetime, timedelta, timezone
+        now = datetime(2026, 10, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        # Joueur sans verrou
+        self.assertIsNone(Player.get_critical_lock_expiration({}, now))
+        self.assertIsNone(Player.get_critical_lock_expiration(None, now))
+        self.assertIsNone(Player.get_critical_lock_expiration({"critical_lock_until": None}, now))
+
+        # Verrou passé
+        past = now - timedelta(hours=1)
+        self.assertIsNone(Player.get_critical_lock_expiration({"critical_lock_until": past}, now))
+
+        # Verrou futur (actif)
+        future = now + timedelta(hours=48)
+        self.assertEqual(Player.get_critical_lock_expiration({"critical_lock_until": future}, now), future)
+
+        # Naive datetime future comparée à aware now
+        future_naive = datetime(2026, 10, 3, 12, 0, 0)
+        exp = Player.get_critical_lock_expiration({"critical_lock_until": future_naive}, now)
+        self.assertIsNotNone(exp)
+        self.assertTrue(exp > now)
+
 
     def test_victim_notification_formatting(self):
         """Vérifie que les chaînes de notification victime s'affichent correctement avec new_secret_id."""
@@ -5312,6 +5485,48 @@ class TestPvPLogger(unittest.IsolatedAsyncioTestCase):
 
         await cog._send(ctx, 'hack', started_result)
         mock_logger.log_pvp_attack.assert_awaited_once_with(ctx.author, 1500)
+
+    async def test_logger_pvp_critical_lock(self):
+        """Vérifie le log public concis de procédure de sauvegarde avec COLOR_LOG_CRITICAL."""
+        from unittest.mock import AsyncMock
+        from datetime import timedelta
+        import discord
+        from utils.logger import Logger
+        from utils.root_theme import COLOR_LOG_CRITICAL
+        bot = MagicMock()
+        logger = Logger(bot)
+        logger._send_embed = AsyncMock()
+
+        lock_until = discord.utils.utcnow() + timedelta(hours=48)
+        await logger.log_pvp_critical_lock(victim=2222, duration_hours=48, lock_until=lock_until, victim_name="VictimUser")
+        logger._send_embed.assert_awaited_once()
+        embed = logger._send_embed.call_args[0][1]
+
+        self.assertEqual(embed.color, COLOR_LOG_CRITICAL)
+        self.assertIn("VictimUser", embed.description)
+        self.assertIn("48h", embed.description)
+        self.assertNotIn("Secret ID", embed.description)
+        self.assertNotIn("ATK", embed.description)
+        self.assertIn("root_verrou", embed.description)
+
+    def test_root_verrou_and_usd_emojis_and_backtick_protection(self):
+        """Vérifie la présence des emojis root_verrou et root_usd et l'absence de remplacement dans les backticks."""
+        from utils.root_emojis import get_emoji, replace_vanilla_emojis, ALL_EMOJI_NAMES
+        self.assertIn("root_verrou", ALL_EMOJI_NAMES)
+        self.assertIn("root_usd", ALL_EMOJI_NAMES)
+        self.assertIn("root_verrou", get_emoji("root_verrou"))
+        self.assertIn("root_usd", get_emoji("root_usd"))
+
+        # Vérifie que les backticks ne sont pas corrompus
+        raw_intrusion = "`[ INTRUSION CONFIRMÉE ]`"
+        replaced = replace_vanilla_emojis(raw_intrusion)
+        self.assertEqual(replaced, raw_intrusion)
+
+        # Vérifie que les emojis vanilla hors backticks sont transformés
+        test_str = "Solde: 💵 et statut: 🔒"
+        res = replace_vanilla_emojis(test_str)
+        self.assertIn("root_usd", res)
+        self.assertIn("root_verrou", res)
 
 # ── 2. Bêta Launch & Réputation ────────────────────────────────────────────
 
