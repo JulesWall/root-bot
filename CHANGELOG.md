@@ -8,6 +8,26 @@ Installez-vous confortablement, préparez vos rigs, voici tout ce qui change pou
 
 ---
 
+## 🤖 Nouveauté : Système de Macros Joueur (`/macro` & `!macro`)
+
+Vous rêviez d'enchaîner vos tâches de routine en une seule action ? Le système de **macros séquentielles** débarque dans Root OS !
+
+### ⚡ Ce qui change pour vous :
+- **Jusqu'à 3 macros personnalisées par joueur** : Programmez vos routines favorites (ex: `matin`, `farm`, `defense`).
+- **1 à 5 étapes séquentielles par macro** : Enchaînez vos actions préférées (`claim`, `hourly`, `buy`, `upgrade`, `convert`, `compile`, `contract`, `scan`, `hack`, `reputation`, `network`, etc.).
+- **Assistant Interactif Dédié & Mode Écoute Rapide** :
+  - Créez vos macros en toute simplicité sans vous soucier de la syntaxe grâce à `/macro-create` ou `!macro create` (assistant pas-à-pas avec menus déroulants et fenêtres de saisie).
+  - **Mode Écoute Rapide (`!macro listen [nom]`)** : activez l'écoute active dans le salon pour taper directement vos commandes au clavier (séparées par `;` ou un message par commande). Le bot enregistre vos actions en direct et réagit avec ✅ !
+- **Commandes avec devis (`/buy`)** : confirmation directe simplifiée (`confirm: true/oui/confirm`) et prise en charge du mot-clé `all` pour acheter le maximum de modules abordables d'un coup.
+- **Exécution Directe & Sécurisée** :
+  - Lancez votre routine avec `/macro nom:<nom>` (avec autocomplétion intelligente de vos macros) ou via le préfixe `!macro <nom>`.
+  - Rapport d'exécution compact et élégant respectant la charte graphique Root OS avec jauge de progression unifiée (`■■■□□`).
+  - **Gestion intelligente des délais & cooldowns** : Si une commande est en attente de délai (ex: récompense `/hourly` ou récolte `/claim` pas encore disponible, contrat ou amélioration en cours), l'étape est automatiquement ignorée (`⏳ Étape ignorée`) sans bloquer ni interrompre le reste de votre macro !
+  - Arrêt automatique sécurisé uniquement en cas de véritable erreur bloquante (fonds insuffisants, cible invalide), sans rollback des étapes déjà réussies.
+- **Cadence & Fair-Play** : Cooldown global de sécurité de 15 secondes et quota de 60 lancements par heure pour préserver la stabilité du réseau.
+
+---
+
 ## 🏢 Adieu le « Firewall », place aux véritables Infrastructures !
 
 Le terme générique de **« Firewall » tire sa révérence** pour laisser place à un système bien plus immersif et représentatif de votre ascension : les **Infrastructures de contrôle**.

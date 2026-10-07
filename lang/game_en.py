@@ -396,6 +396,33 @@ text = {
     'g_error_invalid_duration': '> ⚠️ **Invalid duration format** · Valid examples: `30s`, `15min`, `2h`, `1h30m`, `1d`.',
     'g_error_duration_out_of_range': '> ⚠️ **Duration out of range** · Duration must be between 10 seconds and 30 days.',
     'g_error_reminder_not_found': '> ❌ **Reminder not found** or already expired.',
+    'g_macro_header': '🤖 **ROOT OS MACRO SYSTEM**',
+    'g_macro_list_title': '📋 **Your Registered Macros** ({count}/3)',
+    'g_macro_list_empty': '> ℹ️ You currently have no registered macros.\n> Use `{prefix}macro create` or `/macro-create` to create one!',
+    'g_macro_list_item': '> • **`{name}`** · `{steps_count}` step(s)',
+    'g_macro_created': '> ✅ **Macro `{name}` created successfully!** ({steps_count} scheduled step(s)).',
+    'g_macro_deleted': '> 🗑️ **Macro `{name}` deleted** successfully.',
+    'g_macro_run_header': '⚡ **RUNNING MACRO `{name}`**',
+    'g_macro_step_ok': '> ✅ **Step {pos}/{total}** (`{command}`): Executed successfully.',
+    'g_macro_step_skipped': '> ⏳ **Step {pos}/{total}** (`{command}`): Not ready ({reason}) · Step skipped.',
+    'g_macro_step_fail': '> ❌ **Step {pos}/{total}** (`{command}`): Failed · {reason}',
+    'g_macro_summary': '📊 **Summary:** `{success_count}/{total}` step(s) completed.',
+    'g_error_macro_not_found': '> ❌ **Macro `{name}` not found**.',
+    'g_error_macro_limit': '> ⛔ **Limit reached** · You already have {max_macros} macros. Delete one with `{prefix}macro delete <name>` to proceed.',
+    'g_error_macro_name_invalid': '> ⚠️ **Invalid macro name** · Use 1 to 32 lowercase alphanumeric characters, dashes or underscores (e.g. `farming_routine`).',
+    'g_error_macro_name_reserved': '> ⚠️ **Reserved name** · The name `{name}` is a reserved system keyword.',
+    'g_error_macro_name_taken': '> ⚠️ **Name already in use** · You already have a macro named `{name}`.',
+    'g_error_macro_empty': '> ⚠️ **Empty macro** · A macro must contain between 1 and 5 steps.',
+    'g_error_macro_steps_limit': '> ⚠️ **Step limit exceeded** · A macro can contain at most {max_steps} steps.',
+    'g_error_macro_excluded': '> ⛔ **Command not eligible** · Command `{command}` cannot be automated in a macro.',
+    'g_error_macro_unknown_command': '> ❌ **Unknown command** · `{command}` is not part of the macro catalog.',
+    'g_error_macro_invalid_args': '> ⚠️ **Invalid argument** for step `{param}`: {reason}.',
+    'g_error_macro_cooldown': '> ⏳ **Cadence enforced** · Global safety cooldown active on your macros. Try again in **{remaining}s**.',
+    'g_error_macro_quota': '> ⛔ **Execution quota exceeded** · Hourly limit of {max_runs} runs reached. Next slot available in **{remaining}s**.',
+    'g_error_macro_step_failed': '> ❌ **Step {pos} failed** (`{command}`): {reason}.',
+    'g_macro_listen_title': '🎧 **ACTIVE LISTENING · QUICK MACRO CREATION**',
+    'g_macro_listen_desc': 'Send your game commands in this channel (1 command per message or separated by `;`).\nThe bot will record each command and add it directly as a macro step.\n\n• **Macro:** `{name}`\n• **Steps:** `{count}/5`\n• ⏱️ **Timeout:** 60 seconds of inactivity\n\n*Click **Save** or type `done` to finalize your macro.*',
+    'g_macro_listen_timeout': '⏱️ *Listening timeout expired (60s) without new commands.*',
 }
 
 descriptions = {
@@ -421,6 +448,7 @@ descriptions = {
     'hourly': 'Claim your hourly USD reward with streak combo bonus.',
     'contract': 'Consult, accept, or collect guaranteed work contracts for USD.',
     'rmd': 'Schedule, view, or cancel time-based reminders.',
+    'macro': 'Create, delete, or run automated sequences of actions.',
 }
 
 labels = {
@@ -465,4 +493,5 @@ labels = {
     'act_hack': '⚔️ PvP Attack',
     'act_contract': '💼 Work Contracts',
     'act_rmd': '⏱️ Reminder & Alert',
+    'act_macro': '🤖 Sequential Macro',
 }

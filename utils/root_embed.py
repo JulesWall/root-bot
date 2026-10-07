@@ -44,6 +44,7 @@ ACTION_EMOJIS = {
     'hack': 'root_operations',
     'contract': 'root_operations',
     'rmd': 'root_temps',
+    'macro': 'root_logiciels',
 }
 
 
@@ -72,6 +73,7 @@ class RootEmbed(discord.Embed):
         'hourly':      discord.Color.from_rgb(52, 152, 219),   # Bleu azur (Récompense horaire)
         'contract':    discord.Color.from_rgb(0, 168, 204),    # Bleu canard (Root CyberSec)
         'rmd':         discord.Color.from_rgb(155, 89, 182),   # Violet / Améthyste (Rappels)
+        'macro':       discord.Color.from_rgb(84, 226, 209),   # Turquoise Root OS (Macros)
     }
 
     def __init__(

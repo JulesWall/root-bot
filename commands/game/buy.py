@@ -461,7 +461,7 @@ class Buy(BaseGameCog):
             default=1,
         ) = 1,
         confirm: discord.Option(
-            str, choices=['confirm'],
+            str, choices=['confirm', 'oui', 'true'],
             description=desc['confirm'],
             description_localizations=desc_loc['confirm'],
             required=False, default=None,

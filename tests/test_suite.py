@@ -106,6 +106,9 @@ class MockTransaction:
         self.prefixes = {}
         self.user_prefixes = {}
         self.event_availability_logs = []
+        self.macros = {}
+        self.macro_steps = []
+        self.macro_runs = []
         self.executed_queries = []
         self.acquired_locks = []
 
@@ -177,6 +180,18 @@ class MockTransaction:
             for r in self.reminders:
                 if r["discord_id"] == uid and r["reminder_type"] == "claim":
                     return dict(r)
+            return None
+
+        if "FROM MACROS WHERE DISCORD_ID" in q and "COUNT(*)" in q:
+            uid = int(params[0])
+            count = sum(1 for m in self.macros.values() if m["discord_id"] == uid)
+            return {"count": count}
+
+        if "FROM MACROS WHERE DISCORD_ID =" in q and "NAME =" in q:
+            uid, name = int(params[0]), str(params[1]).strip().lower()
+            for m in self.macros.values():
+                if m["discord_id"] == uid and m["name"] == name:
+                    return dict(m)
             return None
 
         if "SELECT PREFIX FROM GUILD_PREFIXES WHERE GUILD_ID" in q:
@@ -463,6 +478,27 @@ class MockTransaction:
             res = [dict(r) for r in self.reminders if r["remind_at"] <= self.now]
             res.sort(key=lambda x: x["remind_at"])
             return res
+
+        if "FROM MACROS" in q and "COUNT(S.POSITION)" in q:
+            uid = int(params[0])
+            user_macros = [dict(m) for m in self.macros.values() if m["discord_id"] == uid]
+            for m in user_macros:
+                m["steps_count"] = sum(1 for s in self.macro_steps if s["macro_id"] == m["id"])
+            user_macros.sort(key=lambda x: x["name"])
+            return user_macros
+
+        if "FROM MACRO_STEPS WHERE MACRO_ID =" in q:
+            mid = int(params[0])
+            steps = [dict(s) for s in self.macro_steps if s["macro_id"] == mid]
+            steps.sort(key=lambda x: x["position"])
+            return steps
+
+        if "FROM MACRO_RUNS WHERE DISCORD_ID =" in q:
+            uid = int(params[0])
+            cutoff = params[1] if len(params) > 1 else None
+            runs = [dict(r) for r in self.macro_runs if r["discord_id"] == uid and (not cutoff or r["started_at"] >= cutoff)]
+            runs.sort(key=lambda x: x["started_at"], reverse=True)
+            return runs
 
         return []
 
@@ -832,6 +868,57 @@ class MockTransaction:
         if "DELETE FROM USER_PREFIXES" in q:
             self.user_prefixes.pop(params[0], None)
             return 1
+
+        if "INSERT INTO MACROS" in q:
+            mid = max([m["id"] for m in self.macros.values()], default=0) + 1
+            row = {
+                "id": mid,
+                "discord_id": int(params[0]),
+                "name": str(params[1]).strip().lower(),
+                "created_at": params[2],
+                "updated_at": params[3],
+            }
+            self.macros[mid] = row
+            return mid
+
+        if "INSERT INTO MACRO_STEPS" in q:
+            row = {
+                "macro_id": int(params[0]),
+                "position": int(params[1]),
+                "method": str(params[2]),
+                "args_json": params[3],
+            }
+            self.macro_steps.append(row)
+            return len(self.macro_steps)
+
+        if "DELETE FROM MACRO_STEPS WHERE MACRO_ID =" in q:
+            mid = int(params[0])
+            before = len(self.macro_steps)
+            self.macro_steps = [s for s in self.macro_steps if s["macro_id"] != mid]
+            return before - len(self.macro_steps)
+
+        if "DELETE FROM MACROS WHERE ID =" in q:
+            mid = int(params[0])
+            if mid in self.macros:
+                del self.macros[mid]
+                return 1
+            return 0
+
+        if "DELETE FROM MACRO_RUNS WHERE DISCORD_ID =" in q and "STARTED_AT <" in q:
+            uid = int(params[0])
+            cutoff = params[1]
+            before = len(self.macro_runs)
+            self.macro_runs = [r for r in self.macro_runs if not (r["discord_id"] == uid and r["started_at"] < cutoff)]
+            return before - len(self.macro_runs)
+
+        if "INSERT INTO MACRO_RUNS" in q:
+            rid = len(self.macro_runs) + 1
+            self.macro_runs.append({
+                "id": rid,
+                "discord_id": int(params[0]),
+                "started_at": params[1],
+            })
+            return rid
 
         return 0
 
@@ -10811,6 +10898,297 @@ class TestMathCommand(unittest.IsolatedAsyncioTestCase):
         mock_ctx.respond.assert_called_once()
         err_content_fr = mock_ctx.respond.call_args.args[0]
         self.assertIn("Division par zéro impossible", err_content_fr)
+
+
+class TestMacros(unittest.TestCase):
+    """Suite de tests unitaires pour le système de macros (DAO, validation, service, exécution, rate limits)."""
+
+    def setUp(self):
+        self.tx = MockTransaction()
+        # Création d'un joueur fictif
+        self.player_id = 123456789
+        self.tx.execute(
+            "INSERT INTO players (discord_id, dollars, created_at) VALUES (%s, %s, %s)",
+            (self.player_id, Decimal("1000.00"), self.tx.now),
+        )
+
+    def test_macro_name_validation(self):
+        """Vérifie la conformité et le rejet des noms invalides ou réservés."""
+        from game.db.macros import validate_macro_name
+
+        self.assertEqual(validate_macro_name("routine_1"), "routine_1")
+        self.assertEqual(validate_macro_name("FARM-ABC"), "farm-abc")
+
+        # Noms invalides
+        with self.assertRaises(GameError) as ctx:
+            validate_macro_name("invalid name with spaces")
+        self.assertEqual(ctx.exception.key, "macro_name_invalid")
+
+        with self.assertRaises(GameError) as ctx:
+            validate_macro_name("bad$char!")
+        self.assertEqual(ctx.exception.key, "macro_name_invalid")
+
+        # Noms réservés
+        for reserved in ("create", "delete", "list", "view", "edit", "run", "help"):
+            with self.assertRaises(GameError) as ctx:
+                validate_macro_name(reserved)
+            self.assertEqual(ctx.exception.key, "macro_name_reserved")
+
+    def test_macro_catalog_and_excluded_commands(self):
+        """Vérifie le catalogue des commandes et l'interdiction stricte des commandes exclues."""
+        from game.macro_catalog import MACRO_CATALOG, EXCLUDED_COMMANDS, validate_step_args
+
+        # Commandes d'événements et hourly_save doivent être exclues
+        for cmd in ("event", "hash", "pin", "decode", "anomaly", "buffer", "signal", "packet", "hourly_save", "macro"):
+            self.assertIn(cmd, EXCLUDED_COMMANDS)
+            with self.assertRaises(GameError) as ctx:
+                validate_step_args(cmd, {})
+            self.assertEqual(ctx.exception.key, "macro_excluded")
+
+        # Commandes de devis doivent forcer confirm=True
+        upg_args = validate_step_args("upgrade", {})
+        self.assertTrue(upg_args.get("confirm"))
+
+        buy_args = validate_step_args("buy", {"kind": "mining", "tier": "1", "count": 2})
+        self.assertTrue(buy_args.get("confirm"))
+        self.assertEqual(buy_args["kind"], "mining")
+        self.assertEqual(buy_args["tier"], 1)
+        self.assertEqual(buy_args["count"], 2)
+
+        buy_all_args = validate_step_args("buy", {"kind": "mining", "tier": 2, "count": "all"})
+        self.assertTrue(buy_all_args.get("confirm"))
+        self.assertTrue(buy_all_args.get("all"))
+
+    def test_macros_dao_crud(self):
+        """Vérifie la création, consultation et suppression de macros via MacrosDB."""
+        from game.db.macros import MacrosDB
+
+        # 1. Création macro 1
+        steps = [
+            {"method": "claim", "args": {}},
+            {"method": "hourly", "args": {}},
+        ]
+        created = MacrosDB.create_macro(self.tx, self.player_id, "routine", steps)
+        self.assertEqual(created["name"], "routine")
+        self.assertEqual(len(created["steps"]), 2)
+
+        # 2. Doublon de nom -> GameError('macro_name_taken')
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "routine", steps)
+        self.assertEqual(ctx.exception.key, "macro_name_taken")
+
+        # 3. Limite de 3 macros par joueur
+        MacrosDB.create_macro(self.tx, self.player_id, "routine_2", [{"method": "claim", "args": {}}])
+        MacrosDB.create_macro(self.tx, self.player_id, "routine_3", [{"method": "claim", "args": {}}])
+
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "routine_4", [{"method": "claim", "args": {}}])
+        self.assertEqual(ctx.exception.key, "macro_limit")
+
+        # 4. Liste
+        m_list = MacrosDB.list_user_macros(self.tx, self.player_id)
+        self.assertEqual(len(m_list), 3)
+
+        # 5. Suppression
+        self.assertTrue(MacrosDB.delete_macro(self.tx, self.player_id, "routine_2"))
+        self.assertEqual(MacrosDB.count_user_macros(self.tx, self.player_id), 2)
+        self.assertFalse(MacrosDB.delete_macro(self.tx, self.player_id, "routine_2"))
+
+    def test_macro_steps_limit(self):
+        """Vérifie la limite stricte de 1 à 5 étapes par macro."""
+        from game.db.macros import MacrosDB
+
+        # Macro vide -> GameError('macro_empty')
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "test_empty", [])
+        self.assertEqual(ctx.exception.key, "macro_empty")
+
+        # 6 étapes -> GameError('macro_steps_limit')
+        too_many = [{"method": "claim", "args": {}}] * 6
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "test_six", too_many)
+        self.assertEqual(ctx.exception.key, "macro_steps_limit")
+
+    def test_macro_rate_limits_cooldown_and_quota(self):
+        """Vérifie le cooldown de 15s et le quota glissant de 60 runs par heure."""
+        from game.db.macros import MacrosDB
+
+        # 1er run OK
+        res1 = MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(res1["runs_in_last_hour"], 1)
+
+        # 2e run immédiat (0s) -> GameError('macro_cooldown')
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(ctx.exception.key, "macro_cooldown")
+        self.assertEqual(ctx.exception.values.get("remaining"), 15)
+
+        # Avance le temps de 16 secondes -> 2e run OK
+        self.tx.now += timedelta(seconds=16)
+        res2 = MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(res2["runs_in_last_hour"], 2)
+
+        # Remplissage jusqu'à 60 runs
+        for i in range(3, 61):
+            self.tx.now += timedelta(seconds=16)
+            MacrosDB.reserve_run(self.tx, self.player_id)
+
+        # 61e run dans l'heure -> GameError('macro_quota')
+        self.tx.now += timedelta(seconds=16)
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(ctx.exception.key, "macro_quota")
+
+        # Avance au-delà d'une heure depuis les premiers runs -> de nouveaux slots se libèrent
+        self.tx.now += timedelta(hours=1, seconds=10)
+        res_new = MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertIsNotNone(res_new)
+
+    def test_macro_service_step_execution_and_stop_on_error(self):
+        """Vérifie l'exécution séquentielle pas-à-pas et l'arrêt à la première erreur."""
+        import asyncio
+
+        # Création d'un mock database enveloppant notre transaction
+        mock_db = MagicMock()
+        mock_db.now = self.tx.now
+
+        async def run_fn(callback, locks=None, readonly=False, resource=None):
+            return callback(self.tx)
+
+        mock_db.run = AsyncMock(side_effect=run_fn)
+
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+
+        root_service = RootService(database=mock_db)
+        macro_service = MacroService(root_service)
+        root_service.macro_service = macro_service
+
+        # Enregistrement d'une macro :
+        # Étape 1 : claim (réussit)
+        # Étape 2 : buy avec quantité invalide ou ressource insuffisante
+        # Étape 3 : hourly
+        loop = asyncio.new_event_loop()
+        try:
+            steps = [
+                {"method": "claim", "args": {}},
+                {"method": "buy", "args": {"kind": "mining", "tier": "6", "amount": 999999}},
+                {"method": "hourly", "args": {}},
+            ]
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "combo_test", steps))
+
+            # Exécution de la macro
+            # Mock de execute sur RootService
+            async def fake_execute(actor, guild, method, **kwargs):
+                if method == "claim":
+                    return {"claimed": True, "amount": Decimal("1.0")}
+                elif method == "buy":
+                    raise GameError("insufficient_dollars", required="1000000000", current="1000")
+                elif method == "hourly":
+                    return {"reward": Decimal("50.0")}
+                raise GameError("invalid_selection")
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "combo_test"))
+
+            # Vérifications :
+            self.assertEqual(run_result["macro_name"], "combo_test")
+            self.assertEqual(run_result["total_steps"], 3)
+            self.assertEqual(run_result["executed_steps"], 2)  # S'est arrêté à l'étape 2
+            self.assertEqual(run_result["stopped_at"], 2)
+            self.assertEqual(run_result["error"]["key"], "insufficient_dollars")
+
+            # L'étape 1 a réussi
+            self.assertTrue(run_result["steps"][0]["success"])
+            self.assertEqual(run_result["steps"][0]["method"], "claim")
+
+            # L'étape 2 a échoué
+            self.assertFalse(run_result["steps"][1]["success"])
+            self.assertEqual(run_result["steps"][1]["method"], "buy")
+
+            # L'étape 3 n'a pas été appelée
+            self.assertEqual(root_service.execute.call_count, 2)
+        finally:
+            loop.close()
+
+    def test_macro_service_step_execution_skips_cooldown_errors(self):
+        """Vérifie que les délais d'attente (hourly, claim, etc.) sont ignorés sans faire échouer la macro."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from decimal import Decimal
+        from game.game_error import GameError
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+
+        mock_db = MagicMock()
+        mock_db.now = self.tx.now
+
+        async def run_fn(callback, locks=None, readonly=False, resource=None):
+            return callback(self.tx)
+
+        mock_db.run = AsyncMock(side_effect=run_fn)
+
+        root_service = RootService(database=mock_db)
+        macro_service = MacroService(root_service)
+        root_service.macro_service = macro_service
+
+        loop = asyncio.new_event_loop()
+        try:
+            steps = [
+                {"method": "claim", "args": {}},
+                {"method": "hourly", "args": {}},
+                {"method": "contract", "args": {"action": "collect"}},
+                {"method": "buy", "args": {"kind": "mining", "tier": "1", "count": 1}},
+            ]
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "daily_farm", steps))
+
+            async def fake_execute(actor, guild, method, **kwargs):
+                if method == "claim":
+                    return {"claimed": True, "amount": Decimal("1.0")}
+                elif method == "hourly":
+                    raise GameError("hourly_cooldown", remaining="45m 10s", ts=123456789)
+                elif method == "contract":
+                    raise GameError("contract_in_progress", remaining="1h 20m", ts=123456789)
+                elif method == "buy":
+                    return {"bought": True, "tier": 1, "count": 1}
+                raise GameError("invalid_selection")
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "daily_farm"))
+
+            # Vérifications :
+            self.assertEqual(run_result["macro_name"], "daily_farm")
+            self.assertEqual(run_result["total_steps"], 4)
+            self.assertEqual(run_result["executed_steps"], 4)
+            self.assertIsNone(run_result["stopped_at"])
+            self.assertIsNone(run_result["error"])
+
+            # Étape 1 : Réussie
+            self.assertTrue(run_result["steps"][0]["success"])
+            self.assertFalse(run_result["steps"][0].get("skipped", False))
+            self.assertEqual(run_result["steps"][0]["method"], "claim")
+
+            # Étape 2 : Hourly en cooldown -> ignorée
+            self.assertFalse(run_result["steps"][1]["success"])
+            self.assertTrue(run_result["steps"][1]["skipped"])
+            self.assertEqual(run_result["steps"][1]["error"]["key"], "hourly_cooldown")
+
+            # Étape 3 : Contrat en cours -> ignorée
+            self.assertFalse(run_result["steps"][2]["success"])
+            self.assertTrue(run_result["steps"][2]["skipped"])
+            self.assertEqual(run_result["steps"][2]["error"]["key"], "contract_in_progress")
+
+            # Étape 4 : Achat -> Réussie
+            self.assertTrue(run_result["steps"][3]["success"])
+            self.assertFalse(run_result["steps"][3].get("skipped", False))
+            self.assertEqual(run_result["steps"][3]["method"], "buy")
+
+            # Toutes les 4 étapes ont bien été tentées
+            self.assertEqual(root_service.execute.call_count, 4)
+        finally:
+            loop.close()
 
 
 if __name__ == '__main__':

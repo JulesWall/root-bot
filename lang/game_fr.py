@@ -396,6 +396,33 @@ text = {
     'g_error_invalid_duration': '> ⚠️ **Format de durée invalide** · Exemples valides : `30s`, `15min`, `2h`, `1h30m`, `1d`.',
     'g_error_duration_out_of_range': '> ⚠️ **Durée hors limites** · La durée doit être comprise entre 10 secondes et 30 jours.',
     'g_error_reminder_not_found': '> ❌ **Rappel introuvable** ou déjà expiré.',
+    'g_macro_header': '🤖 **SYSTÈME DE MACROS ROOT OS**',
+    'g_macro_list_title': '📋 **Tes Macros Enregistrées** ({count}/3)',
+    'g_macro_list_empty': '> ℹ️ Tu ne possèdes aucune macro pour le moment.\n> Utilise `{prefix}macro create` ou `/macro-create` pour en créer une !',
+    'g_macro_list_item': '> • **`{name}`** · `{steps_count}` étape(s)',
+    'g_macro_created': '> ✅ **Macro `{name}` créée avec succès !** ({steps_count} étape(s) programmée(s)).',
+    'g_macro_deleted': '> 🗑️ **Macro `{name}` supprimée** avec succès.',
+    'g_macro_run_header': '⚡ **EXÉCUTION DE LA MACRO `{name}`**',
+    'g_macro_step_ok': '> ✅ **Étape {pos}/{total}** (`{command}`) : Exécutée avec succès.',
+    'g_macro_step_skipped': '> ⏳ **Étape {pos}/{total}** (`{command}`) : Non disponible ({reason}) · Étape ignorée.',
+    'g_macro_step_fail': '> ❌ **Étape {pos}/{total}** (`{command}`) : Échec · {reason}',
+    'g_macro_summary': '📊 **Résumé :** `{success_count}/{total}` étape(s) complétée(s).',
+    'g_error_macro_not_found': '> ❌ **Macro `{name}` introuvable**.',
+    'g_error_macro_limit': '> ⛔ **Limite atteinte** · Tu possèdes déjà {max_macros} macros. Supprime-en une avec `{prefix}macro delete <nom>` pour continuer.',
+    'g_error_macro_name_invalid': '> ⚠️ **Nom de macro invalide** · Utilise 1 à 32 caractères alphanumériques minuscules, tirets ou underscores (ex: `farming_routine`).',
+    'g_error_macro_name_reserved': '> ⚠️ **Nom réservé** · Le nom `{name}` est un mot-clé système réservé.',
+    'g_error_macro_name_taken': '> ⚠️ **Nom déjà utilisé** · Tu as déjà une macro nommée `{name}`.',
+    'g_error_macro_empty': '> ⚠️ **Macro vide** · Une macro doit contenir entre 1 et 5 étapes.',
+    'g_error_macro_steps_limit': '> ⚠️ **Limite d\'étapes dépassée** · Une macro peut contenir au maximum {max_steps} étapes.',
+    'g_error_macro_excluded': '> ⛔ **Commande non admissible** · La commande `{command}` ne peut pas être automatisée en macro.',
+    'g_error_macro_unknown_command': '> ❌ **Commande inconnue** · `{command}` ne fait pas partie du catalogue des macros.',
+    'g_error_macro_invalid_args': '> ⚠️ **Paramètre invalide** pour l\'étape `{param}` : {reason}.',
+    'g_error_macro_cooldown': '> ⏳ **Cadence respectée** · Cooldown global de sécurité actif sur tes macros. Réessaie dans **{remaining}s**.',
+    'g_error_macro_quota': '> ⛔ **Quota d\'exécution dépassé** · Limite de {max_runs} lancements par heure atteinte. Prochain slot libre dans **{remaining}s**.',
+    'g_error_macro_step_failed': '> ❌ **Échec à l\'étape {pos}** (`{command}`) : {reason}.',
+    'g_macro_listen_title': '🎧 **ÉCOUTE ACTIVE · CRÉATION RAPIDE DE MACRO**',
+    'g_macro_listen_desc': 'Envoie tes commandes de jeu dans ce salon (1 commande par message ou séparées par `;`).\nLe bot interceptera chaque commande et l\'ajoutera directement comme étape de ta macro.\n\n• **Macro :** `{name}`\n• **Étapes :** `{count}/5`\n• ⏱️ **Délai :** 60 secondes d\'inactivité\n\n*Clique sur **Sauvegarder** ou tape `done` pour finaliser ta macro.*',
+    'g_macro_listen_timeout': '⏱️ *Délai d\'écoute de 60s expiré sans nouvelle commande.*',
 }
 
 descriptions = {
@@ -421,6 +448,7 @@ descriptions = {
     'hourly': 'Réclamer sa récompense horaire en USD avec bonus de combo.',
     'contract': 'Consulter, accepter ou récupérer des contrats de travail garantis en USD.',
     'rmd': 'Programmer, consulter ou annuler un rappel automatique ou personnalisé.',
+    'macro': 'Créer, supprimer ou exécuter des séquences automatisées d\'actions.',
 }
 
 labels = {
@@ -465,4 +493,5 @@ labels = {
     'act_hack': '⚔️ Attaque PvP',
     'act_contract': '💼 Contrats de Travail',
     'act_rmd': '⏱️ Rappel & Alerte',
+    'act_macro': '🤖 Macro Séquentielle',
 }

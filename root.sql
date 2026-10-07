@@ -456,8 +456,35 @@ CREATE TABLE IF NOT EXISTS reminders (
 --   INDEX idx_reminders_remind_at (remind_at),
 --   INDEX idx_reminders_discord (discord_id),
 --   FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
--- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- ====================================================================
 
+-- 15. Table des Macros Joueur (/macro)
+CREATE TABLE IF NOT EXISTS macros (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id  BIGINT UNSIGNED NOT NULL,
+    name        VARCHAR(32) NOT NULL,
+    created_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_macro_owner_name (discord_id, name),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 16. Table des Étapes de Macros (1 à 5 étapes par macro)
+CREATE TABLE IF NOT EXISTS macro_steps (
+    macro_id  BIGINT UNSIGNED NOT NULL,
+    position  TINYINT UNSIGNED NOT NULL,
+    method    VARCHAR(32) NOT NULL,
+    args_json JSON NOT NULL,
+    PRIMARY KEY (macro_id, position),
+    FOREIGN KEY (macro_id) REFERENCES macros(id) ON DELETE CASCADE,
+    CHECK (position BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 17. Table du Suivi des Exécutions de Macros (limite 60/h et cooldown 15s)
+CREATE TABLE IF NOT EXISTS macro_runs (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id  BIGINT UNSIGNED NOT NULL,
+    started_at  DATETIME(6) NOT NULL,
+    INDEX idx_macro_runs_owner_time (discord_id, started_at),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

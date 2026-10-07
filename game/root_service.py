@@ -46,6 +46,8 @@ class RootService:
     def __init__(self, database=None):
         import os
         self.database = database or Database()
+        from game.macro_service import MacroService
+        self.macro_service = MacroService(self)
         # Activation du suivi économique (lire explicitement, bool("false") vaut True)
         raw = os.getenv('ECONOMY_REPORTS_ENABLED', 'false').strip().lower()
         self.economy_enabled: bool = raw == 'true'
