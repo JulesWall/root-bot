@@ -138,16 +138,34 @@ def _parse_command_line_to_step(line: str) -> dict | None:
     tokens = parts[1:]
 
     if cmd_name == "buy":
-        # Parsing de buy : [kind] [tier] [count|all]
-        if tokens:
-            args["kind"] = tokens[0].lower()
-        if len(tokens) > 1:
-            if tokens[1].isdigit():
-                args["tier"] = tokens[1]
-        if len(tokens) > 2:
-            args["count"] = tokens[2].lower()
-        elif len(tokens) == 2 and not tokens[1].isdigit():
-            args["count"] = tokens[1].lower()
+        # Parsing de buy : [kind] [tier] [count|all] ou [kind] [count|all]
+        _ALL = ("all", "max", "tout")
+        clean_tokens = [t.lower() for t in tokens if t.lower() not in ("confirm", "confirmer", "valider")]
+        if clean_tokens:
+            args["kind"] = clean_tokens[0]
+        if len(clean_tokens) == 2:
+            if clean_tokens[1].isdigit():
+                args["tier"] = clean_tokens[1]
+                args["count"] = "1"
+            elif clean_tokens[1] in _ALL:
+                args["tier"] = "1"
+                args["count"] = "all"
+            else:
+                args["tier"] = "1"
+                args["count"] = clean_tokens[1]
+        elif len(clean_tokens) >= 3:
+            if clean_tokens[1].isdigit():
+                args["tier"] = clean_tokens[1]
+                args["count"] = clean_tokens[2]
+            elif clean_tokens[1] in _ALL:
+                args["tier"] = clean_tokens[2] if clean_tokens[2].isdigit() else "1"
+                args["count"] = "all"
+            else:
+                args["tier"] = "1"
+                args["count"] = clean_tokens[1]
+        elif len(clean_tokens) == 1:
+            args["tier"] = "1"
+            args["count"] = "1"
 
     elif cmd_name == "contract":
         # Parsing contract : [action] [duration]
@@ -562,6 +580,13 @@ class Macro(BaseGameCog):
             required=False,
             default=None,
         ) = None,
+        display: discord.Option(
+            bool,
+            description="Afficher les réponses de chaque commande (mode verbeux / d)",
+            description_localizations={"fr": "Afficher les réponses de chaque commande (mode verbeux / d)"},
+            required=False,
+            default=False,
+        ) = False,
     ):
         """Lancer une macro enregistrée ou lister ses macros."""
         await self._prefetch_lang(ctx.author.id)
@@ -575,8 +600,11 @@ class Macro(BaseGameCog):
                 ctx.guild.id if ctx.guild else None,
                 nom,
             )
-            content = _format_macro_run_content(ctx, result)
-            await self._send_embed(ctx, "macro", content)
+            if display:
+                await self._display_macro_steps(ctx, nom, result)
+            else:
+                content = _format_macro_run_content(ctx, result)
+                await self._send_embed(ctx, "macro", content)
         except GameError as error:
             await self._send_error(ctx, error)
 
@@ -636,16 +664,26 @@ class Macro(BaseGameCog):
     # ── Commande Préfixe ─────────────────────────────────────────────────────
     @commands.command(name="macro", aliases=["mac"], help=FR["macro"])
     async def prefix_macro(self, ctx, *args):
-        """Commande préfixe !macro [create [nom] | listen [nom] | delete <nom> | <nom> | list]."""
+        """Commande préfixe !macro [create [nom] | listen [nom] | delete <nom> | <nom> [d] | list]."""
         await self._prefetch_lang(ctx.author.id)
-        if not args or args[0].lower() in ("list", "liste"):
+        tokens = list(args)
+        display_flags = {"d", "display", "-d", "--display", "v", "verbose"}
+        display_steps = False
+        remaining_tokens = []
+        for t in tokens:
+            if t.lower().strip() in display_flags:
+                display_steps = True
+            else:
+                remaining_tokens.append(t)
+
+        if not remaining_tokens or remaining_tokens[0].lower() in ("list", "liste"):
             await self._show_macro_list(ctx)
             return
 
-        action = args[0].strip().lower()
+        action = remaining_tokens[0].strip().lower()
 
         if action in ("create", "creer", "new"):
-            default_name = args[1].strip().lower() if len(args) > 1 else None
+            default_name = remaining_tokens[1].strip().lower() if len(remaining_tokens) > 1 else None
             view = MacroWizardView(self, ctx, default_name=default_name)
             embed = RootEmbed(ctx, "macro", view._render_summary())
             msg = await ctx.send(embed=embed, view=view)
@@ -653,7 +691,7 @@ class Macro(BaseGameCog):
             return
 
         if action in ("listen", "ecoute", "quick"):
-            default_name = args[1].strip().lower() if len(args) > 1 else None
+            default_name = remaining_tokens[1].strip().lower() if len(remaining_tokens) > 1 else None
             view = MacroWizardView(self, ctx, default_name=default_name)
             listen_desc = text.get(
                 ctx,
@@ -668,10 +706,10 @@ class Macro(BaseGameCog):
             return
 
         if action in ("delete", "suppr", "remove", "del"):
-            if len(args) < 2:
+            if len(remaining_tokens) < 2:
                 await ctx.send(f"⚠️ Syntaxe : `{ctx.prefix}macro delete <nom>`")
                 return
-            target_name = args[1].strip().lower()
+            target_name = remaining_tokens[1].strip().lower()
             try:
                 await self.macro_service.delete_macro(ctx.author.id, target_name)
                 msg = text.get(ctx, "g_macro_deleted", name=target_name)
@@ -680,18 +718,100 @@ class Macro(BaseGameCog):
                 await self._send_error(ctx, error)
             return
 
+        if action in ("run", "exec"):
+            if len(remaining_tokens) < 2:
+                await ctx.send(f"⚠️ Syntaxe : `{ctx.prefix}macro run <nom> [d]`")
+                return
+            macro_name = remaining_tokens[1].strip().lower()
+        else:
+            macro_name = action
+
         # Par défaut : exécution de la macro spécifiée par son nom
-        macro_name = action
         try:
             result = await self.macro_service.run_macro(
                 ctx.author.id,
                 ctx.guild.id if ctx.guild else None,
                 macro_name,
             )
-            content = _format_macro_run_content(ctx, result)
-            await self._send_embed(ctx, "macro", content)
+            if display_steps:
+                await self._display_macro_steps(ctx, macro_name, result)
+            else:
+                content = _format_macro_run_content(ctx, result)
+                await self._send_embed(ctx, "macro", content)
         except GameError as error:
             await self._send_error(ctx, error)
+
+    async def _display_macro_steps(self, ctx, macro_name: str, result: dict):
+        """Affiche les réponses individuelles de chaque commande comme si le joueur les avait tapées."""
+        steps = result.get("steps", [])
+        total = result.get("total_steps", len(steps))
+        success_count = 0
+        skipped_count = 0
+
+        method_cog_map = {
+            "claim": "Claim",
+            "claim_auto": "Claim",
+            "claim_cancel": "Claim",
+            "hourly": "Hourly",
+            "hourly_save_combo": "Hourly",
+            "buy": "Buy",
+            "upgrade": "Upgrade",
+            "convert": "Convert",
+            "compile": "Compile",
+            "contract": "Contract",
+            "network": "Network",
+            "reputation": "Rep",
+            "scan": "Scan",
+            "hack": "Hack",
+            "trade": "Trade",
+            "rmd": "Reminder",
+        }
+
+        for idx, s in enumerate(steps, start=1):
+            method = s.get("method", "command")
+            if s.get("success"):
+                success_count += 1
+                res = s.get("result", {})
+                cog_name = method_cog_map.get(method)
+                cog = self.bot.get_cog(cog_name) if (self.bot and cog_name) else None
+                displayed = False
+                if cog and hasattr(cog, "_send"):
+                    try:
+                        await cog._send(ctx, method, res)
+                        displayed = True
+                    except Exception:
+                        logger.exception("Erreur lors de l'affichage de l'étape %s via %s", method, cog_name)
+                if not displayed:
+                    await self._send_embed(ctx, method or "macro", f"> 🟢 **Étape {idx}/{total}** (`{method}`) · Exécutée avec succès.")
+            elif s.get("skipped"):
+                skipped_count += 1
+                err = s.get("error", {})
+                err_key = err.get("key", "error")
+                err_vals = err.get("values", {})
+                reason_msg = text.get(ctx, "g_error_" + err_key, **err_vals)
+                if getattr(ctx, "interaction", None):
+                    await ctx.respond(reason_msg, allowed_mentions=discord.AllowedMentions.none())
+                else:
+                    await ctx.send(reason_msg, allowed_mentions=discord.AllowedMentions.none())
+            else:
+                err = s.get("error", {})
+                err_key = err.get("key", "error")
+                err_vals = err.get("values", {})
+                reason_msg = text.get(ctx, "g_error_" + err_key, **err_vals)
+                if getattr(ctx, "interaction", None):
+                    await ctx.respond(reason_msg, allowed_mentions=discord.AllowedMentions.none())
+                else:
+                    await ctx.send(reason_msg, allowed_mentions=discord.AllowedMentions.none())
+
+        # Bilan final
+        summary = f"📊 **Macro `{macro_name}`** · `{success_count}/{total}` étape(s) complétée(s)"
+        if skipped_count > 0:
+            summary += f" *({skipped_count} ignorée(s) car en attente)*"
+        summary += "."
+        if getattr(ctx, "interaction", None):
+            await ctx.respond(summary, allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await ctx.send(summary, allowed_mentions=discord.AllowedMentions.none())
 
     async def _show_macro_list(self, ctx):
         """Affiche la liste des macros possédées par le joueur avec style Root OS."""

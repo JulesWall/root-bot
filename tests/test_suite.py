@@ -11190,6 +11190,78 @@ class TestMacros(unittest.TestCase):
         finally:
             loop.close()
 
+    def test_macro_buy_all_preserves_all_on_execution(self):
+        """Vérifie que 'all' dans buy est bien conservé lors de l'enregistrement ET de l'exécution."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from game.macro_catalog import validate_step_args
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+
+        # 1. Validation initiale
+        step1 = validate_step_args("buy", {"kind": "mining", "tier": "1", "count": "all"})
+        self.assertTrue(step1.get("all"))
+        self.assertTrue(step1.get("confirm"))
+
+        # 2. Re-validation (celle effectuée lors de run_macro)
+        step1_reval = validate_step_args("buy", step1)
+        self.assertTrue(step1_reval.get("all"), "La re-validation ne doit pas écraser 'all' en 1")
+
+        # 3. Validation sans tier spécifié
+        step_no_tier = validate_step_args("buy", {"kind": "mining", "count": "all"})
+        self.assertEqual(step_no_tier.get("tier"), 1)
+        self.assertTrue(step_no_tier.get("all"))
+
+        # 4. Exécution complète via MacroService
+        mock_db = MagicMock()
+        mock_db.now = self.tx.now
+
+        async def run_fn(callback, locks=None, readonly=False, resource=None):
+            return callback(self.tx)
+
+        mock_db.run = AsyncMock(side_effect=run_fn)
+
+        root_service = RootService(database=mock_db)
+        macro_service = MacroService(root_service)
+        root_service.macro_service = macro_service
+
+        loop = asyncio.new_event_loop()
+        try:
+            steps = [{"method": "buy", "args": {"kind": "mining", "tier": "1", "count": "all"}}]
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "buy_all_farm", steps))
+
+            executed_kwargs = {}
+
+            async def fake_execute(actor, guild, method, **kwargs):
+                executed_kwargs.update(kwargs)
+                return {"bought": True, "count": 25, "tier": 1}
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "buy_all_farm"))
+            self.assertEqual(run_result["executed_steps"], 1)
+            self.assertTrue(executed_kwargs.get("all"), "L'appel à execute doit avoir reçu all=True")
+            self.assertTrue(executed_kwargs.get("confirm"))
+        finally:
+            loop.close()
+
+    def test_macro_prefix_parsing_display_flag(self):
+        """Vérifie la détection du flag d / display dans la commande préfixe !macro et le parsing de buy."""
+        from commands.game.macro import _parse_command_line_to_step
+
+        # Parsing de buy mining all
+        parsed = _parse_command_line_to_step("buy mining all")
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["method"], "buy")
+        self.assertTrue(parsed["args"].get("all"))
+        self.assertEqual(parsed["args"].get("tier"), 1)
+
+        # Parsing de buy mining 2 all
+        parsed2 = _parse_command_line_to_step("buy mining 2 all")
+        self.assertIsNotNone(parsed2)
+        self.assertEqual(parsed2["args"].get("tier"), 2)
+        self.assertTrue(parsed2["args"].get("all"))
+
 
 if __name__ == '__main__':
     unittest.main()

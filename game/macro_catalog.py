@@ -97,6 +97,8 @@ MACRO_CATALOG: dict[str, MacroCommandSpec] = {
                 label_fr="Tier (1-6)",
                 label_en="Tier (1-6)",
                 choices=["1", "2", "3", "4", "5", "6"],
+                required=False,
+                default="1",
             ),
             ParamSpec(
                 name="count",
@@ -413,26 +415,32 @@ def validate_step_args(method: str, raw_args: dict | None) -> dict:
 
     # Cas particulier : commande buy
     if clean_method == "buy":
-        raw_cnt = raw.get("count", raw.get("amount", validated.get("count", "1")))
-        raw_cnt_str = str(raw_cnt).strip().lower()
-        if raw_cnt_str in ("all", "max", "tout"):
+        is_all = (
+            bool(raw.get("all"))
+            or str(raw.get("count", "")).strip().lower() in ("all", "max", "tout")
+            or str(raw.get("amount", "")).strip().lower() in ("all", "max", "tout")
+            or str(validated.get("count", "")).strip().lower() in ("all", "max", "tout")
+        )
+        if is_all:
             validated["all"] = True
-            validated.pop("count", None)
+            validated["count"] = "all"
         else:
+            raw_cnt = raw.get("count", raw.get("amount", validated.get("count", "1")))
             try:
-                cnt_int = int(raw_cnt_str)
+                cnt_int = int(str(raw_cnt).strip())
                 validated["count"] = max(1, cnt_int)
-                validated.pop("all", None)
             except (ValueError, TypeError):
                 validated["count"] = 1
-                validated.pop("all", None)
+            validated.pop("all", None)
 
         # conversion de tier en entier si possible
-        if "tier" in validated:
+        if "tier" in validated and validated["tier"] is not None:
             try:
                 validated["tier"] = int(validated["tier"])
             except (ValueError, TypeError):
                 validated["tier"] = 1
+        else:
+            validated["tier"] = 1
 
     # Forcer les arguments prioritaires du catalogue (ex: confirm=True)
     validated.update(spec.force_args)
