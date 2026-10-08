@@ -22,6 +22,7 @@ from lang.game_fr import descriptions as FR
 from utils import text
 from utils.confirmation import Confirmation
 from utils.logger import Logger
+from utils.root_embed import RootEmbed
 
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,9 @@ class Compile(BaseGameCog):
                     readonly=True,
                 ) or 'fr'
                 content = text.get_for_lang(lang, 'g_compile_delivered_dm', atk=atk)
-                await user.send(content)
+                dm_title = "Compilation terminée" if lang == 'fr' else "Compilation Complete"
+                embed = RootEmbed.notification(lang, dm_title, content)
+                await embed.send_to(user)
                 return
             except discord.Forbidden as exc:
                 # MP fermés / bot bloqué : inutile de réessayer.
@@ -237,18 +240,19 @@ class Compile(BaseGameCog):
             await self._send_embed(ctx, 'compile', content, view=view)
             return
 
+        ts = result.get('timestamp', 0)
+        dur = result.get('duration', '')
         content = text.get(
             ctx, 'g_compile_started',
             method=method_label,
             atk=atk,
             rtm=rtm,
-            timestamp=result.get('timestamp', 0),
+            timestamp=ts,
+            ts=ts,
+            duration=dur,
+            remaining=dur,
         )
-        kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-        if getattr(ctx, 'interaction', None):
-            await ctx.respond(**kwargs)
-        else:
-            await ctx.send(**kwargs)
+        await self._send_embed(ctx, 'compile', content)
         await self._log_blockchain(ctx, method_key, result.get('rtm_paid'))
 
     async def _log_blockchain(self, ctx, method_key: str, rtm_paid):
@@ -263,10 +267,13 @@ class Compile(BaseGameCog):
         if not bot_logger:
             bot_logger = Logger(self.bot)
         try:
+            author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+            author_name = (getattr(author, 'display_name', None) or getattr(author, 'name', None)) if author else None
             await bot_logger.log_blockchain_transaction(
                 from_id=ctx.author.id,
                 to_address=to_address,
                 rtm_amount=rtm_val,
+                from_name=author_name,
             )
         except Exception:
             pass

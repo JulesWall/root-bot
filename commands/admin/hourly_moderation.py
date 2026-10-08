@@ -4,9 +4,9 @@ Cog d'administration et surveillance : Rapport quotidien 24h et audit des récol
 Fonctionnalités :
 1. Tâche planifiée automatique (tasks.loop) déclenchée chaque nuit à 00:00 (heure de Paris).
 2. Envoie le classement dans le salon LOG_MODERATION_HOURLY_STATS_CHANNEL_ID.
-3. Purge les enregistrements de plus de 48 heures après un envoi réussi. Le combo joueur est conservé.
+3. Purge les enregistrements de plus de 24 heures (glissantes) après un envoi réussi. Le combo joueur est conservé.
 4. Commande préfixe réservée aux OP :
-   - !hourlyaudit <@joueur|id> : audit sur l'historique conservé (48h).
+   - !hourlyaudit <@joueur|id> : audit sur l'historique conservé (24h glissantes).
 """
 
 import asyncio
@@ -116,7 +116,7 @@ class HourlyModeration(commands.Cog):
             logger.exception("Erreur lors du rattrapage du rapport quotidien hourly")
 
     async def _run_daily_report(self) -> str:
-        """Envoie le rapport 24h dans le salon configuré, puis purge les logs > 48h.
+        """Envoie le rapport 24h dans le salon configuré, puis purge les logs > 24h.
 
         Retourne 'busy' si un rapport est déjà en cours, 'success' après la purge.
         Lève une exception si l'envoi échoue : l'historique est alors conservé.
@@ -132,7 +132,7 @@ class HourlyModeration(commands.Cog):
                     tx,
                     limit_users=50,
                     since_dt=tx.now - timedelta(hours=24),
-                    claims_since_dt=tx.now - timedelta(hours=48),
+                    claims_since_dt=tx.now - timedelta(hours=24),
                 ),
                 readonly=True,
             )
@@ -141,26 +141,29 @@ class HourlyModeration(commands.Cog):
             today_str = _get_paris_today_str()
 
             def _purge_and_update_date(tx):
-                cutoff_48h = tx.now - timedelta(hours=48)
-                HourlyStatsDB.purge_older_than(tx, cutoff_48h)
+                cutoff_24h = tx.now - timedelta(hours=24)
+                HourlyStatsDB.purge_older_than(tx, cutoff_24h)
                 HourlyStatsDB.set_last_report_date(tx, today_str, tx.now)
 
             await database.run(_purge_and_update_date)
-            logger.info("Rapport hourly 24h envoyé, historique > 48h purgé, date mise à jour (%s).", today_str)
+            logger.info("Rapport hourly 24h envoyé, historique > 24h purgé, date mise à jour (%s).", today_str)
             return "success"
 
     # ── Commandes Préfixes OP ────────────────────────────────────────────────
     @commands.command(name="hourlyaudit")
     async def audit_player_hourly(self, ctx, user: discord.User):
-        """Audite en direct les récoltes horaires d'un joueur suspect (historique 48h, réservé aux OP)."""
+        """Audite en direct les récoltes horaires d'un joueur suspect (historique 24h glissante, réservé aux OP)."""
         if not await self.check.is_op(self.bot, ctx.author.id):
             return
 
         database = self.bot.root_service.database
-        logs = await database.run(lambda tx: HourlyStatsDB.get_user_hourly_logs(tx, user.id, limit=100), readonly=True)
+        logs = await database.run(
+            lambda tx: HourlyStatsDB.get_user_hourly_logs(tx, user.id, limit=100, since_dt=tx.now - timedelta(hours=24)),
+            readonly=True,
+        )
 
         if not logs:
-            await ctx.send(f"ℹ️ Aucun historique de /hourly sur les dernières 48h pour {user.mention} (`{user.id}`).")
+            await ctx.send(f"ℹ️ Aucun historique de /hourly sur les dernières 24h pour {user.mention} (`{user.id}`).")
             return
 
         player = await database.run(
@@ -200,7 +203,7 @@ class HourlyModeration(commands.Cog):
         )
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="Joueur", value=f"{user.mention} (`{user.id}`)", inline=True)
-        embed.add_field(name="Récoltes (48h)", value=f"`{claim_count}` claims (`{total_usd}`)", inline=True)
+        embed.add_field(name="Récoltes (24h)", value=f"`{claim_count}` claims (`{total_usd}`)", inline=True)
         embed.add_field(name="Niveau de Risque", value=f"{badge} **{analysis['risk_level']}**", inline=True)
         embed.add_field(name="Série actuelle / max", value=f"{current_streak_str} · Max : 🔥 `{max_streak}`", inline=True)
         embed.add_field(name="Bonus actuel / max", value=f"{current_bonus_str} · Max : ⚡ `+{max_bonus:.1f}%`", inline=True)

@@ -16,6 +16,7 @@ from game.events_manager import EventsManager
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
+from utils.time_format import format_duration
 
 
 class Event(BaseGameCog):
@@ -78,7 +79,8 @@ class Event(BaseGameCog):
 
         blocks = []
         if fw_mult is not None:
-            blocks.append(text.get(ctx, "g_event_fw_banner", fw_mult=fw_mult, fw_lvl=fw_lvl))
+            fw_mult_str = f"{fw_mult:g}" if isinstance(fw_mult, (int, float)) else str(fw_mult)
+            blocks.append(text.get(ctx, "g_event_fw_banner", fw_mult=fw_mult_str, fw_lvl=fw_lvl))
         for event_key, event_info in sorted_events:
             lines = []
             lines.append(text.get(ctx, f"g_event_{event_key}_name", prefix=prefix))
@@ -98,8 +100,9 @@ class Event(BaseGameCog):
                     rem_sec = event_info.get("remaining_seconds", 0)
                     ts = int(discord.utils.utcnow().timestamp()) + rem_sec
 
-                time_display = f"<t:{ts}:T> (<t:{ts}:R>)"
-                lines.append(text.get(ctx, "g_event_status_cooldown", timestamp=ts, remaining=time_display))
+                dur_sec = event_info.get("remaining_seconds", 0) or max(0, ts - int(discord.utils.utcnow().timestamp()))
+                dur_str = format_duration(dur_sec)
+                lines.append(text.get(ctx, "g_event_status_cooldown", timestamp=ts, remaining=dur_str, duration=dur_str))
 
                 if event_info.get("last_found_by"):
                     user_id = event_info["last_found_by"]

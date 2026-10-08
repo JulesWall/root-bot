@@ -32,6 +32,7 @@ from utils import text
 from utils.check import Check
 from utils.confirmation import Confirmation
 from utils.root_embed import RootEmbed
+from utils.root_emojis import get_button_emoji
 
 
 def _is_confirm(val):
@@ -96,7 +97,7 @@ def _get_purchasable_options(ctx, kind: str, player_data: dict) -> list[discord.
             bonus = f"+{pw} DEF"
 
         is_fr = text.get_locale(ctx) == 'fr'
-        desc_text = f"Coût : {price_str} │ {bonus} (FW {required_firewall}+)" if is_fr else f"Cost: {price_str} │ {bonus} (FW {required_firewall}+)"
+        desc_text = f"Coût : {price_str} │ {bonus} (Infrastructure {required_firewall} min)" if is_fr else f"Cost: {price_str} │ {bonus} (Infrastructure {required_firewall} min)"
         options.append(
             discord.SelectOption(
                 label=f"{kind_label} T{tier} — {price_str}",
@@ -137,7 +138,7 @@ def _get_shop_options(ctx) -> list[discord.SelectOption]:
 
             req_fw = max(int(settings.get('beta', {}).get('required_firewall', {}).get(kind_key if kind_key != 'defense' else 'bay_defense', 0)), tier - 1)
             is_fr = text.get_locale(ctx) == 'fr'
-            desc_text = f"Coût : {price_str} │ {bonus} (FW {req_fw}+)" if is_fr else f"Cost: {price_str} │ {bonus} (FW {req_fw}+)"
+            desc_text = f"Coût : {price_str} │ {bonus} (Infrastructure {req_fw} min)" if is_fr else f"Cost: {price_str} │ {bonus} (Infrastructure {req_fw} min)"
 
             options.append(
                 discord.SelectOption(
@@ -341,11 +342,21 @@ class Buy(BaseGameCog):
     def _build_main_shop_embed(self, ctx, player_data: dict) -> discord.Embed:
         """Construit l'Embed d'accueil du catalogue détaillant les 3 filières."""
         prefix = '/' if getattr(ctx, 'interaction', None) else (getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!'))
+        from utils.root_theme import COLOR_TURQUOISE, build_footer_text
         embed = discord.Embed(
             title=text.get(ctx, 'g_shop_title'),
             description=text.get(ctx, 'g_shop_description'),
-            color=discord.Color.from_rgb(0, 220, 200),
+            color=COLOR_TURQUOISE,
+            timestamp=discord.utils.utcnow(),
         )
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        if author and hasattr(author, 'display_name'):
+            avatar_url = author.display_avatar.url if hasattr(author, 'display_avatar') and author.display_avatar else None
+            embed.set_author(name=f"ROOT OS // {author.display_name.upper()}", icon_url=avatar_url)
+        bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
+        bot_icon = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
+        embed.set_footer(text=build_footer_text('Boutique' if text.get_locale(ctx) == 'fr' else 'Shop'), icon_url=bot_icon)
+
         embed.add_field(
             name=text.get(ctx, 'g_shop_field_mining'),
             value=text.get(ctx, 'g_shop_field_mining_desc', prefix=prefix),
@@ -370,11 +381,21 @@ class Buy(BaseGameCog):
         desc = text.get(ctx, f'g_shop_cat_{kind}_desc')
         syntax = text.get(ctx, f'g_shop_syntax_{kind}', prefix=prefix)
 
+        from utils.root_theme import COLOR_TURQUOISE, build_footer_text
         embed = discord.Embed(
             title=title,
             description=desc,
-            color=discord.Color.from_rgb(0, 220, 200),
+            color=COLOR_TURQUOISE,
+            timestamp=discord.utils.utcnow(),
         )
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        if author and hasattr(author, 'display_name'):
+            avatar_url = author.display_avatar.url if hasattr(author, 'display_avatar') and author.display_avatar else None
+            embed.set_author(name=f"ROOT OS // {author.display_name.upper()}", icon_url=avatar_url)
+        bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
+        bot_icon = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
+        embed.set_footer(text=build_footer_text(title), icon_url=bot_icon)
+
         embed.add_field(
             name=text.get(ctx, 'g_shop_syntax_field'),
             value=syntax,
@@ -397,7 +418,7 @@ class Buy(BaseGameCog):
         options = _get_purchasable_options(ctx, kind, player_data)
         if not options:
             embed.add_field(
-                name="ℹ️",
+                name=f"{get_emoji('root_terminal', True)}Info",
                 value=text.get(ctx, 'g_shop_no_affordable_hint'),
                 inline=False,
             )
@@ -440,7 +461,7 @@ class Buy(BaseGameCog):
             default=1,
         ) = 1,
         confirm: discord.Option(
-            str, choices=['confirm'],
+            str, choices=['confirm', 'oui', 'true'],
             description=desc['confirm'],
             description_localizations=desc_loc['confirm'],
             required=False, default=None,
@@ -633,11 +654,7 @@ class Buy(BaseGameCog):
                     stat_current_formatted=stat_cur_fmt,
                     stat_new_formatted=stat_new_fmt,
                 )
-            kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-            if getattr(ctx, 'interaction', None):
-                await ctx.respond(**kwargs)
-            else:
-                await ctx.send(**kwargs)
+            await self._send_embed(ctx, 'buy', content)
 
             # Log blockchain lore-friendly pour l'achat de module d'attaque (RTM)
             if kind == 'attack' and rtm_val > 0:
@@ -646,10 +663,13 @@ class Buy(BaseGameCog):
                     from utils.logger import Logger
                     bot_logger = Logger(self.bot)
                 try:
+                    author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+                    author_name = getattr(author, 'display_name', None) or getattr(author, 'name', None)
                     await bot_logger.log_blockchain_transaction(
                         from_id=ctx.author.id,
                         to_address="0xROOT_BLACK_MARKET",
                         rtm_amount=rtm_val,
+                        from_name=author_name,
                     )
                 except Exception:
                     pass

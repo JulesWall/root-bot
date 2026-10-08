@@ -9,7 +9,7 @@ Ce module implémente les classes d'accès aux données (DAO / Repository) et la
 - Player : Opérations de jeu conservées (network, buy, upgrade, reputation, top, set_language, get_language).
 """
 
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import random
 
@@ -32,7 +32,7 @@ from game.db.upgrades import UpgradesDB
 from game.game_error import GameError
 from game.math_config import MathConfig
 from utils.text import format_usd
-from utils.time_format import format_duration, format_remaining_time
+from utils.time_format import format_duration, format_remaining_time, to_utc_timestamp
 
 
 def _calculate_module_price(column: str, tier: int = 1) -> tuple[Decimal, Decimal]:
@@ -169,6 +169,7 @@ class UpdatePlayer:
             'hourly_last_at', 'hourly_combo_bonus', 'hourly_streak',
             'hourly_lost_streak', 'hourly_lost_bonus', 'combo_saver_credits',
             'contract_fidelity', 'contracts_completed', 'contract_grace_until',
+            'critical_lock_until',
         } | {f'{kind}_t{tier}' for kind in ('mining', 'attack', 'bay_defense') for tier in range(1, 7)}
 
         if not values or any(key not in allowed for key in values):
@@ -181,6 +182,28 @@ class UpdatePlayer:
 
 class Player:
     """Opérations et règles métier interactives liées au joueur."""
+
+    @staticmethod
+    def get_critical_lock_expiration(player_row: dict | None, now=None) -> datetime | None:
+        """Renvoie la date d'expiration si le joueur est sous verrouillage critique actif, sinon None.
+        
+        Une date passée ou absente signifie que le joueur est actif (aucun verrou).
+        """
+        if not player_row:
+            return None
+        until = player_row.get('critical_lock_until')
+        if not until:
+            return None
+
+        now_dt = now or datetime.now(timezone.utc)
+        if getattr(until, 'tzinfo', None) is not None and getattr(now_dt, 'tzinfo', None) is None:
+            now_dt = now_dt.replace(tzinfo=timezone.utc)
+        elif getattr(until, 'tzinfo', None) is None and getattr(now_dt, 'tzinfo', None) is not None:
+            until = until.replace(tzinfo=now_dt.tzinfo)
+
+        if until > now_dt:
+            return until
+        return None
 
     @staticmethod
     def network(tx, actor: int) -> dict:
@@ -199,6 +222,8 @@ class Player:
         retaliations = ConsequenceDB.get_for_victim(tx, actor)
         if retaliations:
             row['retaliations'] = retaliations
+        outgoing_attacks = PvpDB.get_active_for_attacker(tx, actor)
+        row['outgoing_pvp_attacks'] = outgoing_attacks if outgoing_attacks else []
 
         stats = MathConfig.calculate_player_stats(row)
         if int(row.get('network_defense') or 0) != stats['network_defense']:
@@ -444,7 +469,8 @@ class Player:
                 elapsed = (now_ref - ref).total_seconds()
                 if elapsed < cooldown:
                     remaining = format_duration(cooldown - elapsed)
-                    raise GameError('claim_cooldown', remaining=remaining, time=remaining)
+                    ts = to_utc_timestamp(ref + timedelta(seconds=cooldown))
+                    raise GameError('claim_cooldown', remaining=remaining, time=remaining, ts=ts, timestamp=ts, next_ts=ts)
 
         stats = MathConfig.calculate_player_stats(p)
         state = MathConfig.compute_mining_progress(p, stats, tx.now)
@@ -519,7 +545,6 @@ class Player:
         reminder_rescheduled = False
         sec_to_fill = state.get('seconds_to_fill_total', 0)
         if sec_to_fill > 0:
-            from datetime import timedelta
             from game.db.reminders import RemindersDB
             new_remind_at = tx.now + timedelta(seconds=sec_to_fill)
             rescheduled_count = RemindersDB.reschedule_claim_reminder(tx, actor, new_remind_at)
@@ -631,15 +656,18 @@ class Player:
         active = HackDB.get_active(tx, actor)
         if active:
             exp = active.get('expires_at')
-            ts = 0
-            if exp is not None and hasattr(exp, 'timestamp'):
-                aware = exp.replace(tzinfo=timezone.utc) if exp.tzinfo is None else exp
-                ts = int(aware.timestamp())
+            ts = to_utc_timestamp(exp)
+            now_ts = to_utc_timestamp(tx.now)
+            rem_sec = max(0, ts - now_ts)
+            remaining = format_duration(rem_sec)
             raise GameError(
                 'compile_in_progress',
                 method=active.get('method') or method,
                 atk=int(active.get('atk_yield') or 0),
                 timestamp=ts,
+                ts=ts,
+                remaining=remaining,
+                duration=remaining,
             )
 
         stats = MathConfig.calculate_player_stats(p)
@@ -762,6 +790,17 @@ class Player:
             if not ConsequenceDB.check(tx, victim_id=actor, attacker_id=target_id):
                 raise GameError('scan_target_protected')
 
+        # Verrouillage critique de profil (procédure de sauvegarde)
+        scanner_lock = Player.get_critical_lock_expiration(scanner, tx.now)
+        if scanner_lock:
+            ts = to_utc_timestamp(scanner_lock)
+            raise GameError('scan_self_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(scanner_lock, tx.now))
+
+        target_lock = Player.get_critical_lock_expiration(target, tx.now)
+        if target_lock:
+            ts = to_utc_timestamp(target_lock)
+            raise GameError('scan_target_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(target_lock, tx.now))
+
         # Stock ATK requis
         if int(scanner.get('attack_points') or 0) == 0:
             raise GameError('scan_no_atk')
@@ -770,11 +809,11 @@ class Player:
         active_scan = HackDB.get_active(tx, actor, type='scan')
         if active_scan:
             exp = active_scan.get('expires_at')
-            ts = 0
-            if exp is not None and hasattr(exp, 'timestamp'):
-                aware = exp.replace(tzinfo=timezone.utc) if exp.tzinfo is None else exp
-                ts = int(aware.timestamp())
-            raise GameError('scan_in_progress', timestamp=ts)
+            ts = to_utc_timestamp(exp)
+            now_ts = to_utc_timestamp(tx.now)
+            rem_sec = max(0, ts - now_ts)
+            remaining = format_duration(rem_sec)
+            raise GameError('scan_in_progress', timestamp=ts, ts=ts, remaining=remaining, duration=remaining)
 
         # Calcul probabilités estimées pour le devis
         atk = int(scanner.get('attack_points') or 0)
@@ -888,6 +927,17 @@ class Player:
         if target_fw < attacker_fw:
             if not ConsequenceDB.check(tx, victim_id=actor, attacker_id=target_id):
                 raise GameError('hack_target_protected')
+
+        # Verrouillage critique de profil (procédure de sauvegarde)
+        attacker_lock = Player.get_critical_lock_expiration(attacker, tx.now)
+        if attacker_lock:
+            ts = to_utc_timestamp(attacker_lock)
+            raise GameError('hack_self_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(attacker_lock, tx.now))
+
+        target_lock = Player.get_critical_lock_expiration(target, tx.now)
+        if target_lock:
+            ts = to_utc_timestamp(target_lock)
+            raise GameError('hack_target_critical_locked', timestamp=ts, ts=ts, remaining=format_remaining_time(target_lock, tx.now))
 
         # Vérifier si la victime subit déjà une attaque en cours
         if PvpDB.get_active_for_victim(tx, target_id):
@@ -1045,7 +1095,7 @@ class Player:
         if active:
             remaining = format_remaining_time(active['expires_at'], tx.now)
             ts = int(active['expires_at'].replace(tzinfo=timezone.utc).timestamp())
-            raise GameError('upgrade_in_progress', level=active['target_level'], remaining=remaining, timestamp=ts)
+            raise GameError('upgrade_in_progress', level=active['target_level'], remaining=remaining, duration=remaining, timestamp=ts, ts=ts)
 
         p = PlayerData.get(tx, actor)
         current_level = int(p.get('firewall_level', 0))
@@ -1125,7 +1175,8 @@ class Player:
 
         if not bypass_cooldown and giver.get('next_reputation_at') and giver['next_reputation_at'] > tx.now:
             remaining = format_remaining_time(giver['next_reputation_at'], tx.now)
-            raise GameError('cooldown', time=remaining, remaining=remaining, until=remaining)
+            ts = to_utc_timestamp(giver['next_reputation_at'])
+            raise GameError('cooldown', time=remaining, remaining=remaining, until=remaining, ts=ts, timestamp=ts, next_ts=ts)
 
         UpdatePlayer.set(tx, target, reputation=int(recipient['reputation']) + 1)
         if not bypass_cooldown:
@@ -1327,7 +1378,8 @@ class Player:
             if interval_seconds < cooldown_sec:
                 remaining_sec = cooldown_sec - interval_seconds
                 remaining_str = format_duration(remaining_sec)
-                raise GameError('hourly_cooldown', remaining=remaining_str, time=remaining_str, remaining_seconds=remaining_sec)
+                ts = to_utc_timestamp(ref + timedelta(seconds=cooldown_sec))
+                raise GameError('hourly_cooldown', remaining=remaining_str, time=remaining_str, remaining_seconds=remaining_sec, ts=ts, timestamp=ts, next_ts=ts)
 
             # 2. Vérification de la fenêtre de combo (60m à 80m)
             if interval_seconds <= max_combo_sec:
@@ -1356,9 +1408,9 @@ class Player:
             lost_streak = 0
             lost_bonus = Decimal('0.00')
 
-        # Multiplicateur lié au niveau de pare-feu : (firewall_level + 1)
+        # Multiplicateur lié au niveau de l'infrastructure
         fw_level = int(p.get('firewall_level', 0) or 0)
-        fw_mult = Decimal(str(max(0, fw_level) + 1))
+        fw_mult = Decimal(str(MathConfig.get_event_firewall_multiplier(fw_level)))
 
         # Tirage aléatoire uniforme du gain de base
         base_gain = (Decimal(str(random.randint(reward_min, reward_max))) * fw_mult).quantize(Decimal('0.01'))
@@ -1395,8 +1447,8 @@ class Player:
 
         next_avail_dt = tx.now + timedelta(seconds=cooldown_sec)
         combo_dead_dt = tx.now + timedelta(seconds=max_combo_sec)
-        next_ts = int(next_avail_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(next_avail_dt, 'tzinfo', None) is None else int(next_avail_dt.timestamp())
-        combo_ts = int(combo_dead_dt.replace(tzinfo=timezone.utc).timestamp()) if getattr(combo_dead_dt, 'tzinfo', None) is None else int(combo_dead_dt.timestamp())
+        next_ts = to_utc_timestamp(next_avail_dt)
+        combo_ts = to_utc_timestamp(combo_dead_dt)
 
         can_save = (lost_streak > 1 or lost_bonus > Decimal('0.00'))
         combo_saver_credits = int(p.get('combo_saver_credits', 0) or 0)
@@ -1416,7 +1468,7 @@ class Player:
             'next_available_ts': next_ts,
             'combo_deadline_ts': combo_ts,
             'firewall_level': fw_level,
-            'firewall_multiplier': int(fw_mult),
+            'firewall_multiplier': float(fw_mult) if float(fw_mult) % 1 != 0 else int(fw_mult),
             'can_save_combo': can_save,
             'lost_streak': lost_streak,
             'lost_bonus': lost_bonus,
@@ -1462,12 +1514,12 @@ class Player:
         }
 
     @staticmethod
-    def contract(tx, actor: int, action: str = 'view', duration: str | None = None) -> dict:
+    def contract(tx, actor: int, action: str = 'view', duration: str | None = None, **kwargs) -> dict:
         """Gère les contrats de travail (/contract).
 
         Actions supportées :
         - 'view' : consulte les offres ou le contrat en cours
-        - 'start' : accepte et lance une offre selon sa durée ('short', 'medium', 'long')
+        - 'start' : accepte et lance une offre selon son profil ou ses paramètres personnalisés
         - 'collect' : récupère le paiement d'un contrat arrivé à échéance
         """
         from game.db.contracts import ContractsDB
@@ -1476,9 +1528,10 @@ class Player:
         if action == 'view':
             return ContractsDB.get_status(tx, actor)
         elif action == 'start':
-            if not duration:
+            choice = duration or kwargs.get('target') or kwargs.get('offer_id')
+            if not choice and not kwargs.get('duration_seconds'):
                 raise GameError('invalid_contract_duration')
-            return ContractsDB.start(tx, actor, duration)
+            return ContractsDB.start(tx, actor, duration_type=choice, **kwargs)
         elif action == 'collect':
             return ContractsDB.collect(tx, actor)
         else:

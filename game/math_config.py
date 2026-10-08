@@ -59,29 +59,33 @@ class MathConfig:
         return values
 
     @classmethod
-    def get_event_firewall_multiplier(cls, firewall_level: int) -> int:
-        """Calcule le multiplicateur de gains d'événements conféré par le pare-feu.
+    def get_event_firewall_multiplier(cls, firewall_level: int) -> float | int:
+        """Calcule le multiplicateur de gains conféré par l'infrastructure (firewall).
         
-        Suit le barème par niveau de data/math.json (actuellement x1 à x6).
-        Le repli par défaut est (niveau + 1).
+        Suit le barème exponentiel de data/math.json (base 1.5^niveau : 1.0, 1.5, 2.25, 3.375, 5.0625, 7.59375).
         """
         rules = cls.load()
         multipliers = rules.get("event_firewall_multipliers")
         if isinstance(multipliers, dict):
             lvl_key = str(int(firewall_level or 0))
             if lvl_key in multipliers:
-                return max(1, int(multipliers[lvl_key]))
+                val = float(multipliers[lvl_key])
+                return int(val) if val.is_integer() else val
 
         # Rétrocompatibilité avec l'ancien format 'event_firewall_multiplier'
         legacy_cfg = rules.get("event_firewall_multiplier")
         if isinstance(legacy_cfg, dict) and "base" in legacy_cfg:
-            base = int(legacy_cfg.get("base", 1))
-            per_level = int(legacy_cfg.get("per_level", 1))
-            return max(1, base + (int(firewall_level or 0) * per_level))
+            base = float(legacy_cfg.get("base", 1))
+            per_level = float(legacy_cfg.get("per_level", 1))
+            val = base + (int(firewall_level or 0) * per_level)
+            return int(val) if val.is_integer() else val
 
-        # Fallback standard : niveau + 1 (1, 2, 3, 4, 5, 6...)
+        # Fallback standard : 1.5 ** lvl (1, 1.5, 2.25, 3.375, 5.0625, 7.59375...)
         lvl = max(0, int(firewall_level or 0))
-        return lvl + 1
+        val = 1.5 ** lvl
+        return int(val) if float(val).is_integer() else round(val, 5)
+
+    get_firewall_multiplier = get_event_firewall_multiplier
 
     @classmethod
     def get_module_stat(cls, kind: str, tier: int) -> int:
@@ -536,4 +540,18 @@ class MathConfig:
             return 1
         extra = int(Decimal(str(delta)) // threshold)
         return max(1, 1 + extra)
+
+    @classmethod
+    def get_pvp_critical_damage_cap_percent(cls) -> int:
+        """Retourne le pourcentage maximal de modules pouvant être perdus lors d'une attaque PvP (0 à 100)."""
+        rules = cls.load()
+        val = int(rules.get('pvp', {}).get('critical_damage_cap_percent', 60))
+        return max(0, min(100, val))
+
+    @classmethod
+    def get_pvp_critical_lock_duration_hours(cls) -> int:
+        """Retourne la durée en heures du verrouillage de sauvegarde en cas de dégâts critiques."""
+        rules = cls.load()
+        val = int(rules.get('pvp', {}).get('critical_lock_duration_hours', 48))
+        return max(1, val)
 

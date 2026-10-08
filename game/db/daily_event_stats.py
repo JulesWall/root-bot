@@ -92,7 +92,7 @@ class DailyEventStatsDB:
 
     @staticmethod
     def purge_older_than(tx, cutoff_date_str: str) -> None:
-        """Supprime les statistiques antérieures à la date limite (rétention 48h)."""
+        """Supprime les statistiques antérieures à la date limite (rétention 24h glissante)."""
         try:
             tx.execute("DELETE FROM daily_event_stats WHERE date_key < %s", (cutoff_date_str,))
         except Exception:
@@ -100,7 +100,7 @@ class DailyEventStatsDB:
 
     @staticmethod
     def get_user_event_stats(tx, discord_id: int, since_date_str: str | None = None) -> dict:
-        """Retourne le cumul des victoires et participations d'un joueur (sur les 48h retenues)."""
+        """Retourne le cumul des victoires et participations d'un joueur (sur les 24h retenues)."""
         if since_date_str:
             try:
                 row = tx.one(

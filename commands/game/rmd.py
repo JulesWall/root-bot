@@ -32,7 +32,8 @@ from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
-from utils.time_format import format_duration, parse_duration, to_utc_timestamp
+from utils.root_embed import RootEmbed
+from utils.time_format import format_duration, format_remaining_time, parse_duration, to_utc_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -344,12 +345,15 @@ class Reminder(BaseGameCog):
                 for r in reminders:
                     remind_at = r.get("remind_at")
                     ts = to_utc_timestamp(remind_at)
+                    dur_str = format_remaining_time(remind_at)
                     items.append(
                         text.get(
                             ctx,
                             "g_rmd_list_item",
                             id=r.get("id"),
                             ts=ts,
+                            duration=dur_str,
+                            remaining=dur_str,
                             type=r.get("reminder_type"),
                             message=r.get("message"),
                         )
@@ -396,7 +400,8 @@ class Reminder(BaseGameCog):
                     lines.append(text.get(ctx, "g_rmd_created_all_available", target_name=t_name, cmd=cmd))
                 elif item_status == "already_scheduled":
                     ts = to_utc_timestamp(item.get("remind_at"))
-                    lines.append(text.get(ctx, "g_rmd_created_all_already", target_name=t_name, ts=ts))
+                    dur_str = format_remaining_time(item.get("remind_at"))
+                    lines.append(text.get(ctx, "g_rmd_created_all_already", target_name=t_name, ts=ts, duration=dur_str, remaining=dur_str))
                 elif item_status == "no_miner":
                     lines.append(text.get(ctx, "g_rmd_created_all_no_miner", target_name=t_name))
 
@@ -437,7 +442,17 @@ class Reminder(BaseGameCog):
             else:
                 target = result.get("target", "")
                 target_event = result.get("target_event")
-                target_label = f"Événement {target_event}" if target_event else target.capitalize()
+                is_fr = text.get_locale(ctx) == "fr"
+                smart_name_map = {
+                    "hourly": "Hourly",
+                    "claim": "Claim RAM",
+                    "events": "Événements" if is_fr else "Events",
+                }
+                if target_event:
+                    prefix_ev = "Événement" if is_fr else "Event"
+                    target_label = f"{prefix_ev} {target_event}"
+                else:
+                    target_label = smart_name_map.get(target, target.capitalize() if target else "Rappel")
                 content = text.get(
                     ctx,
                     "g_rmd_created_smart",

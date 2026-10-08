@@ -128,7 +128,7 @@ class Confirmation(discord.ui.View):
         await self.acknowledge(interaction)
         async with self.lock:
             if self.done:
-                await interaction.followup.send(text.get(self.ctx, 'g_already_handled'))
+                await interaction.followup.send(text.get(self.ctx, 'g_already_handled'), ephemeral=True)
                 return
             self.done = True
             self.stop()
@@ -147,7 +147,7 @@ class Confirmation(discord.ui.View):
                 except Exception:
                     pass
             if not edited:
-                await interaction.followup.send(cancelled_text)
+                await interaction.followup.send(cancelled_text, ephemeral=True)
 
     def _clear_original(self):
         try:
@@ -168,5 +168,6 @@ class Confirmation(discord.ui.View):
                 await self.ctx.interaction.edit_original_response(view=self)
             elif self.message:
                 await self.message.edit(view=self)
-        except discord.HTTPException:
+        except Exception:
             pass
+

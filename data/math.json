@@ -28,15 +28,15 @@
     "dm_retry_attempts": 3,
     "methods": {
       "unskilled": {
-        "rtm_per_atk": 0.0002,
-        "duration_multiplier": 75.0
+        "rtm_per_atk": 0.00009,
+        "duration_multiplier": 90.0
       },
       "skilled": {
-        "rtm_per_atk": 0.0008,
-        "duration_multiplier": 20.0
+        "rtm_per_atk": 0.0005,
+        "duration_multiplier": 25.0
       },
       "ai": {
-        "rtm_per_atk": 1e-05,
+        "rtm_per_atk": 7e-06,
         "duration_multiplier": 180.0
       }
     }
@@ -98,11 +98,11 @@
   "reputation_gift_points": 1,
   "event_firewall_multipliers": {
     "0": 1,
-    "1": 2,
+    "1": 1.75,
     "2": 3,
-    "3": 4,
-    "4": 5,
-    "5": 6
+    "3": 5.25,
+    "4": 9,
+    "5": 15
   },
   "hash_challenge": {
     "range_size": 1000,
@@ -208,7 +208,9 @@
     "retaliation_window_hours": 72,
     "overrun_multiplier": 10,
     "overrun_time_factor": 30,
-    "overrun_formula": "pvp_overrun_threshold"
+    "overrun_formula": "pvp_overrun_threshold",
+    "critical_damage_cap_percent": 60,
+    "critical_lock_duration_hours": 48
   },
   "hourly": {
     "reward_min_usd": 60,
@@ -221,6 +223,47 @@
     "fidelity_threshold": 5,
     "special_bonus_multiplier": 1.4,
     "grace_period_seconds": 2700,
+    "offers_count": 4,
+    "profiles": {
+      "quick": {
+        "duration_min_seconds": 1200,
+        "duration_max_seconds": 3600,
+        "reward_min_usd": 50,
+        "reward_max_usd": 120
+      },
+      "intermediate": {
+        "duration_min_seconds": 5400,
+        "duration_max_seconds": 14400,
+        "reward_min_usd": 150,
+        "reward_max_usd": 350
+      },
+      "extended": {
+        "duration_min_seconds": 18000,
+        "duration_max_seconds": 43200,
+        "reward_min_usd": 400,
+        "reward_max_usd": 900
+      }
+    },
+    "missions": [
+      "Audit de sécurité d'un réseau interne",
+      "Analyse d'une tentative d'intrusion",
+      "Sécurisation d'une plateforme de paiement",
+      "Migration vers une infrastructure cloud",
+      "Enquête sur une fuite de données",
+      "Vérification des accès d'un système industriel",
+      "Renforcement de la protection d'une base clients",
+      "Surveillance d'un déploiement informatique"
+    ],
+    "companies": [
+      "Novacore Systems",
+      "Asterion Bank",
+      "Helix Medical",
+      "Northstar Logistics",
+      "Vantage Cloud",
+      "Meridian Energy",
+      "BluePeak Telecom",
+      "Orbis Retail"
+    ],
     "tiers": {
       "short": {
         "duration_seconds": 1800,

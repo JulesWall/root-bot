@@ -143,11 +143,7 @@ class Convert(BaseGameCog):
             usd_total=text.format_usd(result.get('new_dollars', 0)),
             rtm_total=text.format_rtm(result.get('new_rootium', 0)),
         )
-        kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-        if getattr(ctx, 'interaction', None):
-            await ctx.respond(**kwargs)
-        else:
-            await ctx.send(**kwargs)
+        await self._send_embed(ctx, 'convert', content)
 
         await self._log_blockchain(ctx, result)
 

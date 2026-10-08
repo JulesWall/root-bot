@@ -24,9 +24,10 @@ from utils.text import get_locale
 
 logger = logging.getLogger(__name__)
 
-# Liste canonique des 27 commandes publiques autorisées
+# Liste canonique des 29 commandes publiques autorisées
 PUBLIC_COMMANDS = [
     "network", "buy", "claim", "hourly", "contract", "convert", "upgrade",
+    "macro",
     "compile", "scan", "hack",
     "event", "hash", "pin", "decode", "anomaly", "buffer", "signal", "packet",
     "rep", "trade", "attest", "top",
@@ -58,10 +59,13 @@ def render_help_embed(
     lang = _get_help_module(locale)
     ui = lang.UI
 
+    from utils.root_theme import COLOR_TURQUOISE
     embed = discord.Embed(
-        color=discord.Color.from_rgb(0, 220, 200),
+        color=COLOR_TURQUOISE,
         timestamp=discord.utils.utcnow(),
     )
+    author_title = "ROOT OS // MANUEL DU SYSTÈME" if locale == 'fr' else "ROOT OS // SYSTEM MANUAL"
+    embed.set_author(name=author_title)
 
     if unknown_query is not None:
         embed.title = f"❓ {ui['unknown_command_title']}"

@@ -80,8 +80,10 @@ class Upgrade(BaseGameCog):
                     readonly=True,
                 ) or 'fr'
                 content = text.get_for_lang(lang, 'g_upgrade_delivered_dm', level=level)
-                await user.send(content)
-                logger.info("Notification MP envoyée à %s pour le pare-feu niveau %s", discord_id, level)
+                from utils.root_embed import RootEmbed
+                embed = RootEmbed.notification(lang, "Infrastructure", content)
+                await user.send(embed=embed)
+                logger.info("Notification MP envoyée à %s pour l'infrastructure niveau %s", discord_id, level)
         except (discord.Forbidden, discord.HTTPException) as exc:
             logger.warning("Impossible d'envoyer le MP de livraison à %s (MP désactivés ou bloqués) : %s", discord_id, exc)
         except Exception:
@@ -149,9 +151,10 @@ class Upgrade(BaseGameCog):
             else:
                 rem_usd = f"**{text.format_usd(rem_usd_val)} USD**"
 
-            income_mult = next_lvl + 1
-            cur_income_mult = cur_lvl + 1
-            cur_multiplier = MathConfig.get_event_firewall_multiplier(cur_lvl)
+            next_mult = MathConfig.get_event_firewall_multiplier(next_lvl)
+            cur_mult = MathConfig.get_event_firewall_multiplier(cur_lvl)
+            next_mult_str = f"{next_mult:g}"
+            cur_mult_str = f"{cur_mult:g}"
 
             unlocked_modules = text.get(ctx, f'g_upgrade_modules_{next_lvl}')
 
@@ -177,12 +180,12 @@ class Upgrade(BaseGameCog):
                 cur_usd=cur_usd,
                 rem_usd=rem_usd,
                 duration=result.get('duration', '5h'),
-                multiplier=event_multiplier,
-                cur_multiplier=cur_multiplier,
+                multiplier=next_mult_str,
+                cur_multiplier=cur_mult_str,
                 defense_gain=def_gain_fmt,
                 defense_next=def_next_fmt,
-                income_mult=income_mult,
-                cur_income_mult=cur_income_mult,
+                income_mult=next_mult_str,
+                cur_income_mult=cur_mult_str,
                 unlocked_modules=unlocked_modules,
                 perks=perks_str,
             )
@@ -190,26 +193,23 @@ class Upgrade(BaseGameCog):
             view = Confirmation(self._send, self.service, ctx, 'upgrade', {'confirm': True})
             await self._send_embed(ctx, 'upgrade', content, view=view)
         elif result.get('upgrade_started'):
-            # ── 2. Amélioration en cours (différée - hors Embed) ────────────────
+            # ── 2. Amélioration en cours (différée) ─────────────────────────────
+            ts = result.get('timestamp', 0)
+            dur = result.get('duration', '')
             content = text.get(
                 ctx, 'g_upgrade_started',
                 level=result.get('level', 1),
                 usd=usd,
-                timestamp=result.get('timestamp', 0),
+                timestamp=ts,
+                ts=ts,
+                duration=dur,
+                remaining=dur,
             )
-            kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-            if getattr(ctx, 'interaction', None):
-                await ctx.respond(**kwargs)
-            else:
-                await ctx.send(**kwargs)
+            await self._send_embed(ctx, 'upgrade', content)
         else:
-            # ── 3. Amélioration immédiate (fallback legacy - hors Embed) ────────
+            # ── 3. Amélioration immédiate (fallback legacy) ─────────────────────
             content = text.get(ctx, 'g_upgrade_success', level=result.get('level', 1), usd=usd)
-            kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-            if getattr(ctx, 'interaction', None):
-                await ctx.respond(**kwargs)
-            else:
-                await ctx.send(**kwargs)
+            await self._send_embed(ctx, 'upgrade', content)
 
 
 def setup(bot):

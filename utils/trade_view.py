@@ -23,6 +23,7 @@ from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
+from utils.root_theme import COLOR_AMBER, VisualState
 from utils.ui_components import create_trade_buttons
 
 
@@ -118,7 +119,7 @@ class TradeView(discord.ui.View):
             receive_lines=receive_lines,
             validation_status=status_line,
         )
-        return RootEmbed(self.ctx, 'trade', desc_content)
+        return RootEmbed(self.ctx, 'trade', desc_content, color=COLOR_AMBER)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Seuls l'initiateur et la cible peuvent interagir avec les boutons."""
@@ -191,7 +192,7 @@ class TradeView(discord.ui.View):
             self.stop()
 
             cancel_msg = text.get(self.ctx, 'g_trade_cancelled')
-            embed = RootEmbed(self.ctx, 'trade', cancel_msg)
+            embed = RootEmbed(self.ctx, 'trade', cancel_msg, state=VisualState.CANCELLED)
             await self._edit_message(embed=embed, view=None)
 
     async def on_timeout(self):
@@ -203,7 +204,7 @@ class TradeView(discord.ui.View):
             self.stop()
 
             timeout_msg = text.get(self.ctx, 'g_trade_timeout')
-            embed = RootEmbed(self.ctx, 'trade', timeout_msg)
+            embed = RootEmbed(self.ctx, 'trade', timeout_msg, state=VisualState.ATTENTION)
             await self._edit_message(embed=embed, view=None)
 
     async def _edit_message(self, embed: discord.Embed, view: discord.ui.View | None):
@@ -217,8 +218,14 @@ class TradeView(discord.ui.View):
         if self.message:
             try:
                 await self.message.edit(embed=embed, view=view)
+                return
             except Exception:
                 pass
+        try:
+            if hasattr(self.ctx, 'send'):
+                await self.ctx.send(embed=embed)
+        except Exception:
+            pass
 
     async def _delete_message(self):
         """Supprime le message d'échange du salon de manière sûre."""
@@ -249,8 +256,15 @@ class TradeView(discord.ui.View):
                 receive_rtm=self.receive_rtm,
             )
 
-            # 2. Suppression de l'affichage dans le salon (la validation n'a pas lieu d'être publique)
-            await self._delete_message()
+            # 2. Affichage de la confirmation dans le salon
+            success_msg = text.get(
+                self.ctx,
+                'g_trade_success_summary',
+                initiator=self.initiator.id,
+                target=self.target.id,
+            )
+            embed = RootEmbed(self.ctx, 'trade', success_msg, state=VisualState.SUCCESS)
+            await self._edit_message(embed=embed, view=None)
 
             # 3. Blockchain log si Rootium transféré
             logger = Logger(self.bot)
@@ -308,20 +322,24 @@ class TradeView(discord.ui.View):
             )
 
             try:
-                await self.initiator.send(init_dm_text)
+                dm_title = "Échange" if init_lang == "fr" else "Trade"
+                embed_init = RootEmbed.notification(init_lang, dm_title, init_dm_text)
+                await embed_init.send_to(self.initiator)
             except Exception:
                 pass
 
             try:
-                await self.target.send(target_dm_text)
+                dm_title = "Échange" if target_lang == "fr" else "Trade"
+                embed_target = RootEmbed.notification(target_lang, dm_title, target_dm_text)
+                await embed_target.send_to(self.target)
             except Exception:
                 pass
 
         except GameError as err:
             err_text = text.get(self.ctx, 'g_error_' + err.key, **err.values)
-            err_embed = RootEmbed(self.ctx, 'trade', err_text)
+            err_embed = RootEmbed.error(self.ctx, err_text, rubrique='trade')
             await self._edit_message(embed=err_embed, view=None)
         except Exception:
             err_text = text.get(self.ctx, 'command_error')
-            err_embed = RootEmbed(self.ctx, 'trade', err_text)
+            err_embed = RootEmbed.error(self.ctx, err_text, rubrique='trade')
             await self._edit_message(embed=err_embed, view=None)

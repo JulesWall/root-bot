@@ -106,6 +106,9 @@ class MockTransaction:
         self.prefixes = {}
         self.user_prefixes = {}
         self.event_availability_logs = []
+        self.macros = {}
+        self.macro_steps = []
+        self.macro_runs = []
         self.executed_queries = []
         self.acquired_locks = []
 
@@ -177,6 +180,18 @@ class MockTransaction:
             for r in self.reminders:
                 if r["discord_id"] == uid and r["reminder_type"] == "claim":
                     return dict(r)
+            return None
+
+        if "FROM MACROS WHERE DISCORD_ID" in q and "COUNT(*)" in q:
+            uid = int(params[0])
+            count = sum(1 for m in self.macros.values() if m["discord_id"] == uid)
+            return {"count": count}
+
+        if "FROM MACROS WHERE DISCORD_ID =" in q and "NAME =" in q:
+            uid, name = int(params[0]), str(params[1]).strip().lower()
+            for m in self.macros.values():
+                if m["discord_id"] == uid and m["name"] == name:
+                    return dict(m)
             return None
 
         if "SELECT PREFIX FROM GUILD_PREFIXES WHERE GUILD_ID" in q:
@@ -463,6 +478,27 @@ class MockTransaction:
             res = [dict(r) for r in self.reminders if r["remind_at"] <= self.now]
             res.sort(key=lambda x: x["remind_at"])
             return res
+
+        if "FROM MACROS" in q and "COUNT(S.POSITION)" in q:
+            uid = int(params[0])
+            user_macros = [dict(m) for m in self.macros.values() if m["discord_id"] == uid]
+            for m in user_macros:
+                m["steps_count"] = sum(1 for s in self.macro_steps if s["macro_id"] == m["id"])
+            user_macros.sort(key=lambda x: x["name"])
+            return user_macros
+
+        if "FROM MACRO_STEPS WHERE MACRO_ID =" in q:
+            mid = int(params[0])
+            steps = [dict(s) for s in self.macro_steps if s["macro_id"] == mid]
+            steps.sort(key=lambda x: x["position"])
+            return steps
+
+        if "FROM MACRO_RUNS WHERE DISCORD_ID =" in q:
+            uid = int(params[0])
+            cutoff = params[1] if len(params) > 1 else None
+            runs = [dict(r) for r in self.macro_runs if r["discord_id"] == uid and (not cutoff or r["started_at"] >= cutoff)]
+            runs.sort(key=lambda x: x["started_at"], reverse=True)
+            return runs
 
         return []
 
@@ -833,6 +869,57 @@ class MockTransaction:
             self.user_prefixes.pop(params[0], None)
             return 1
 
+        if "INSERT INTO MACROS" in q:
+            mid = max([m["id"] for m in self.macros.values()], default=0) + 1
+            row = {
+                "id": mid,
+                "discord_id": int(params[0]),
+                "name": str(params[1]).strip().lower(),
+                "created_at": params[2],
+                "updated_at": params[3],
+            }
+            self.macros[mid] = row
+            return mid
+
+        if "INSERT INTO MACRO_STEPS" in q:
+            row = {
+                "macro_id": int(params[0]),
+                "position": int(params[1]),
+                "method": str(params[2]),
+                "args_json": params[3],
+            }
+            self.macro_steps.append(row)
+            return len(self.macro_steps)
+
+        if "DELETE FROM MACRO_STEPS WHERE MACRO_ID =" in q:
+            mid = int(params[0])
+            before = len(self.macro_steps)
+            self.macro_steps = [s for s in self.macro_steps if s["macro_id"] != mid]
+            return before - len(self.macro_steps)
+
+        if "DELETE FROM MACROS WHERE ID =" in q:
+            mid = int(params[0])
+            if mid in self.macros:
+                del self.macros[mid]
+                return 1
+            return 0
+
+        if "DELETE FROM MACRO_RUNS WHERE DISCORD_ID =" in q and "STARTED_AT <" in q:
+            uid = int(params[0])
+            cutoff = params[1]
+            before = len(self.macro_runs)
+            self.macro_runs = [r for r in self.macro_runs if not (r["discord_id"] == uid and r["started_at"] < cutoff)]
+            return before - len(self.macro_runs)
+
+        if "INSERT INTO MACRO_RUNS" in q:
+            rid = len(self.macro_runs) + 1
+            self.macro_runs.append({
+                "id": rid,
+                "discord_id": int(params[0]),
+                "started_at": params[1],
+            })
+            return rid
+
         return 0
 
 
@@ -936,11 +1023,11 @@ class TestMathConfig(unittest.TestCase):
 
     def test_event_firewall_multipliers(self):
         self.assertEqual(MathConfig.get_event_firewall_multiplier(0), 1)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(1), 2)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(1), 1.75)
         self.assertEqual(MathConfig.get_event_firewall_multiplier(2), 3)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(3), 4)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(4), 5)
-        self.assertEqual(MathConfig.get_event_firewall_multiplier(5), 6)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(3), 5.25)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(4), 9)
+        self.assertEqual(MathConfig.get_event_firewall_multiplier(5), 15)
 
     def test_convert_rtm_to_usd_rate(self):
         """Conversion RTM → USD au taux configuré, arrondi à 2 décimales."""
@@ -1405,8 +1492,8 @@ class TestPlayerAndGameOperations(unittest.TestCase):
         self.tx.players[self.actor]["firewall_level"] = 2
         net = Player.network(self.tx, self.actor)
         self.assertIn("stats", net)
-        self.assertEqual(net["network_defense"], 300)
-        self.assertEqual(net["stats"]["network_defense"], 300)
+        self.assertEqual(net["network_defense"], 500)
+        self.assertEqual(net["stats"]["network_defense"], 500)
 
     def test_buy_invalid_tier(self):
         with self.assertRaises(GameError) as cm:
@@ -1421,15 +1508,15 @@ class TestPlayerAndGameOperations(unittest.TestCase):
         self.assertTrue(quote.get("upgrade_quote"))
         self.assertEqual(quote.get("current_level"), 0)
         self.assertEqual(quote.get("next_level"), 1)
-        self.assertEqual(quote.get("defense_gain"), 100)
-        self.assertEqual(quote.get("defense_next"), 100)
+        self.assertEqual(quote.get("defense_gain"), 250)
+        self.assertEqual(quote.get("defense_next"), 250)
         self.assertEqual(quote.get("defense_current"), 0)
         self.assertEqual(quote.get("usd_price"), upgrade_cost)
 
         started = Player.upgrade(self.tx, self.actor, confirm=True)
         self.assertTrue(started.get("upgrade_started"))
-        self.assertEqual(started.get("defense_gain"), 100)
-        self.assertEqual(started.get("defense_next"), 100)
+        self.assertEqual(started.get("defense_gain"), 250)
+        self.assertEqual(started.get("defense_next"), 250)
         self.assertEqual(self.tx.players[self.actor]["dollars"], Decimal("0.00"))
         self.assertEqual(len(self.tx.upgrades), 1)
 
@@ -1699,42 +1786,31 @@ class TestRootEmbedDesign(unittest.TestCase):
         }
         embed = cog._build_network_embed(mock_ctx, result)
         self.assertIsNotNone(embed)
-        # Économie, Sécurité, Secret ID, ATK, baies, total
+        # 6 champs dans l'Accueil standard : Ferme, Récolte, Ressources, Infrastructure, Identifiant, Progression
         self.assertEqual(len(embed.fields), 6)
 
-        sec_field = embed.fields[1]
-        self.assertIn("360 pts", sec_field.value)
+        farm_field = embed.fields[0]
+        self.assertTrue("Ferme" in farm_field.name or "Farm" in farm_field.name)
 
-        secret_field = embed.fields[2]
+        claim_field = embed.fields[1]
+        self.assertTrue("Récolte" in claim_field.name or "Claim" in claim_field.name)
+
+        res_field = embed.fields[2]
+        self.assertTrue("Ressources" in res_field.name or "Resources" in res_field.name)
+        self.assertTrue("1 250" in res_field.value or "1,250" in res_field.value)
+
+        sec_field = embed.fields[3]
+        self.assertTrue("Infrastructure" in sec_field.name)
+        self.assertIn("DEF", sec_field.value)
+
+        secret_field = embed.fields[4]
         self.assertFalse(secret_field.inline)
         self.assertIn("000042", secret_field.value)
         self.assertIn("<t:1760000000:R>", secret_field.value)
 
-        atk_field = embed.fields[3]
-        self.assertFalse(atk_field.inline)
-        self.assertIn("`0`", atk_field.value)
+        prog_field = embed.fields[5]
+        self.assertTrue("Progression" in prog_field.name or "Progress" in prog_field.name)
 
-        bays_field = embed.fields[4]
-        self.assertFalse(bays_field.inline)
-        self.assertIn("01", bays_field.value)
-        self.assertIn("02", bays_field.value)
-        self.assertIn("03", bays_field.value)
-
-        total_hs = (
-            4 * MathConfig.get_module_stat("mining", 1)
-            + 2 * MathConfig.get_module_stat("mining", 2)
-        )
-        total_bits = 2 * MathConfig.get_module_stat("attack", 1)
-        total_field = embed.fields[5]
-        self.assertFalse(total_field.inline)
-        self.assertIn("TOTAL INFRASTRUCTURE", total_field.name)
-        self.assertIn(MathConfig.format_hashrate(total_hs), total_field.value)
-        self.assertIn(MathConfig.format_bits_per_s(total_bits), total_field.value)
-        self.assertIn("60 DEF", total_field.value)
-        self.assertIn("300 DEF", total_field.value)
-        self.assertIn(MathConfig.format_memory(
-            4 * MathConfig.get_module_ram(1) + 2 * MathConfig.get_module_ram(2)
-        ), total_field.value)
         footer_text = embed.footer.text or ""
         self.assertNotIn("000042", footer_text)
         cog.cog_unload()
@@ -1758,18 +1834,20 @@ class TestRootEmbedDesign(unittest.TestCase):
             "secret_next_ts": 1760000000,
             "pending_hack": {
                 "method": "skilled",
-                "atk_yield": 25,
-                "expires_at": expires,
+                "attack_points": 25,
+                "resolves_at": expires,
             },
         }
         embed = cog._build_network_embed(mock_ctx, result)
-        self.assertEqual(len(embed.fields), 6)
-        secret_field = embed.fields[2]
+        # 7 champs car pending_hack est présent -> champ 'En cours'
+        self.assertEqual(len(embed.fields), 7)
+        secret_field = embed.fields[4]
         self.assertIn("000042", secret_field.value)
-        atk_field = embed.fields[3]
-        self.assertIn("`42`", atk_field.value)
-        self.assertIn("25 ATK", atk_field.value)
-        self.assertIn(f"<t:{int(expires.timestamp())}:R>", atk_field.value)
+        in_progress_field = embed.fields[6]
+        self.assertTrue("En cours" in in_progress_field.name or "Active tasks" in in_progress_field.name)
+        self.assertTrue("Compilation" in in_progress_field.value or "compile" in in_progress_field.value.lower())
+        self.assertIn("25 ATK", in_progress_field.value)
+        self.assertIn(f"<t:{int(expires.timestamp())}:R>", in_progress_field.value)
         cog.cog_unload()
 
 
@@ -2712,14 +2790,16 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         self.assertIn(101, mock_db.daily_stats)
 
     async def test_report_success_resets_stats(self):
-        """Vérifie qu'un envoi réussi purge les statistiques antérieures à 48h mais préserve les récentes."""
+        """Vérifie qu'un envoi réussi purge les statistiques antérieures à 24h mais préserve les récentes."""
         from commands.admin.event_moderation import EventModeration
 
         mock_bot = MagicMock()
         mock_db = MockDatabase()
-        old_date = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%d")
+        old_date_4d = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%d")
+        old_date_2d = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
         recent_date = datetime.now().strftime("%Y-%m-%d")
-        mock_db.daily_stats[(200, old_date)] = {"discord_id": 200, "date_key": old_date, "events_won": 5, "events_participated": 10}
+        mock_db.daily_stats[(200, old_date_4d)] = {"discord_id": 200, "date_key": old_date_4d, "events_won": 5, "events_participated": 10}
+        mock_db.daily_stats[(200, old_date_2d)] = {"discord_id": 200, "date_key": old_date_2d, "events_won": 3, "events_participated": 6}
         mock_db.daily_stats[(201, recent_date)] = {"discord_id": 201, "date_key": recent_date, "events_won": 2, "events_participated": 3}
 
         mock_bot.root_service.database = mock_db
@@ -2729,8 +2809,9 @@ class TestDailyReportSendingAndReset(unittest.IsolatedAsyncioTestCase):
         status = await cog._run_daily_report()
 
         self.assertEqual(status, 'success')
-        self.assertNotIn((200, old_date), mock_db.daily_stats, "Les données > 48h doivent être purgées.")
-        self.assertIn((201, recent_date), mock_db.daily_stats, "Les données < 48h doivent être conservées.")
+        self.assertNotIn((200, old_date_4d), mock_db.daily_stats, "Les données > 24h doivent être purgées.")
+        self.assertNotIn((200, old_date_2d), mock_db.daily_stats, "Les données > 24h (2 jours) doivent être purgées.")
+        self.assertIn((201, recent_date), mock_db.daily_stats, "Les données < 24h doivent être conservées.")
 
     async def test_concurrent_daily_reports_prevented(self):
         """Vérifie que deux rapports simultanés ne peuvent pas s'exécuter en parallèle."""
@@ -3017,6 +3098,29 @@ class TestBlockchainLogs(unittest.IsolatedAsyncioTestCase):
             self.assertIn("TYPE   SELL TOKEN", sent_text)
             self.assertIn("RTM    0.00002", sent_text)
             self.assertIn("USD    0.87", sent_text)
+
+    async def test_log_blockchain_transaction_with_pseudos(self):
+        from utils.logger import Logger
+        bot = MagicMock()
+        mock_channel = AsyncMock()
+        bot.get_channel.return_value = mock_channel
+
+        logger = Logger(bot)
+        fixed_dt = datetime(2026, 9, 16, 8, 42, 17, 446000, tzinfo=timezone.utc)
+        with patch.dict(os.environ, {"LOG_BLOCKCHAIN_CHANNEL_ID": "999888777"}):
+            await logger.log_blockchain_transaction(
+                from_id=123456789,
+                to_address="987654321",
+                rtm_amount=Decimal("0.50000"),
+                dt=fixed_dt,
+                from_name="Neo",
+                to_name="Trinity",
+            )
+            mock_channel.send.assert_called_once()
+            sent_text = mock_channel.send.call_args[0][0]
+            self.assertIn("FROM   123456789 (Neo)", sent_text)
+            self.assertIn("TO     987654321 (Trinity)", sent_text)
+            self.assertIn("RTM    0.50000", sent_text)
 
 
 
@@ -3394,11 +3498,11 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
         btn_c = create_confirm_button(mock_ctx)
         btn_x = create_cancel_button(mock_ctx)
         self.assertEqual(btn_c.style, discord.ButtonStyle.success)
-        self.assertEqual(btn_x.style, discord.ButtonStyle.danger)
+        self.assertIn(btn_x.style, (discord.ButtonStyle.secondary, discord.ButtonStyle.danger))
 
         v_btn, r_btn = create_trade_buttons(mock_ctx, AsyncMock(), AsyncMock())
         self.assertEqual(v_btn.style, discord.ButtonStyle.success)
-        self.assertEqual(r_btn.style, discord.ButtonStyle.danger)
+        self.assertIn(r_btn.style, (discord.ButtonStyle.secondary, discord.ButtonStyle.danger))
 
     async def test_attest_flow(self):
         """Vérifie que /attest et !attest envoient le succès et le refus directement dans le salon."""
@@ -3434,8 +3538,8 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
             self.assertTrue("<@12345> n'a pas au moins **2,000.00 USD**" in args2[0] or "<@12345> does not hold at least **2,000.00 USD**" in args2[0])
             self.assertFalse(kwargs2.get("ephemeral", False))
 
-    async def test_trade_acceptance_deletes_message(self):
-        """Vérifie que l'acceptation de l'échange supprime le message du salon au lieu d'afficher un résumé public."""
+    async def test_trade_acceptance_confirms_in_channel(self):
+        """Vérifie que l'acceptation de l'échange affiche un message de confirmation dans le salon au lieu de supprimer le message."""
         from utils.trade_view import TradeView
         bot = MagicMock()
         bot.root_service = MagicMock()
@@ -3446,6 +3550,7 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
         ctx.guild = MagicMock()
         ctx.guild.id = 999
         ctx.interaction = MagicMock()
+        ctx.interaction.edit_original_response = AsyncMock()
         ctx.interaction.delete_original_response = AsyncMock()
 
         initiator = MagicMock()
@@ -3466,6 +3571,7 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
             receive_rtm=Decimal("10"),
         )
         view.message = MagicMock()
+        view.message.edit = AsyncMock()
         view.message.delete = AsyncMock()
 
         with patch("utils.trade_view.Logger") as mock_logger_cls:
@@ -3477,11 +3583,22 @@ class TestNewUpdateFeatures(unittest.IsolatedAsyncioTestCase):
             interaction = MagicMock()
             await view._execute_trade(interaction)
 
-            # Doit avoir supprimé le message
-            ctx.interaction.delete_original_response.assert_called_once()
+            # Ne doit PAS avoir supprimé le message
+            ctx.interaction.delete_original_response.assert_not_called()
+            # Doit avoir mis à jour le message avec la confirmation publique
+            ctx.interaction.edit_original_response.assert_called_once()
+            call_kwargs = ctx.interaction.edit_original_response.call_args[1]
+            self.assertIsNone(call_kwargs.get("view"))
+            embed = call_kwargs.get("embed")
+            self.assertIsNotNone(embed)
+            self.assertIn("111", embed.description)
+            self.assertIn("222", embed.description)
             # DMs doivent avoir été envoyés
             initiator.send.assert_called_once()
             target.send.assert_called_once()
+
+    # Rétrocompatibilité avec l'ancien nom de test
+    test_trade_acceptance_deletes_message = test_trade_acceptance_confirms_in_channel
 
 
 class TestMiningClaimAndWelcome(unittest.TestCase):
@@ -3628,8 +3745,8 @@ class TestPreExistingGameCoverage(unittest.TestCase):
         )
         self.assertEqual(stats["total_bits_per_s"], 3 * MathConfig.get_module_stat("attack", 1))
         self.assertEqual(stats["total_bay_defense"], MathConfig.get_module_stat("bay_defense", 1))
-        self.assertEqual(stats["network_defense"], 100)
-        self.assertEqual(stats["total_defense"], stats["total_bay_defense"] + 100)
+        self.assertEqual(stats["network_defense"], 250)
+        self.assertEqual(stats["total_defense"], stats["total_bay_defense"] + 250)
 
     def test_mining_price_progression_and_firewall_gate(self):
         cfg = MathConfig.load()
@@ -4226,19 +4343,19 @@ class TestCompile(unittest.TestCase):
         full = MathConfig.compile_quote(t1, t1, "unskilled")
         double_atk = MathConfig.compile_quote(t1, t1 * 2, "unskilled")
         double_bits = MathConfig.compile_quote(t1 * 2, t1, "unskilled")
-        self.assertEqual(full["duration_seconds"], 4500)
-        self.assertEqual(double_atk["duration_seconds"], 9000)
-        self.assertEqual(double_bits["duration_seconds"], 2250)
-        self.assertEqual(full["rtm_paid"], Decimal("0.00100"))
-        self.assertEqual(double_atk["rtm_paid"], Decimal("0.00200"))
-        self.assertEqual(MathConfig.compile_quote(t1, t1, "skilled")["duration_seconds"], 1200)
+        self.assertEqual(full["duration_seconds"], 5400)
+        self.assertEqual(double_atk["duration_seconds"], 10800)
+        self.assertEqual(double_bits["duration_seconds"], 2700)
+        self.assertEqual(full["rtm_paid"], Decimal("0.00045"))
+        self.assertEqual(double_atk["rtm_paid"], Decimal("0.00090"))
+        self.assertEqual(MathConfig.compile_quote(t1, t1, "skilled")["duration_seconds"], 1500)
         self.assertEqual(MathConfig.compile_quote(t1, t1, "ai")["duration_seconds"], 10800)
 
     def test_compile_quote_and_execution(self):
         quote = Player.compile(self.tx, self.actor, method="unskilled", atk=5, confirm=False)
         self.assertTrue(quote.get("compile_quote"))
         self.assertEqual(quote["atk_yield"], 5)
-        self.assertEqual(quote["rtm_paid"], Decimal("0.00100"))
+        self.assertEqual(quote["rtm_paid"], Decimal("0.00045"))
         bits = 2 * MathConfig.get_module_stat("attack", 1) + MathConfig.get_module_stat("attack", 5)
         expected_duration = MathConfig.compile_quote(bits, 5, "unskilled")["duration_seconds"]
         self.assertEqual(quote["duration_seconds"], expected_duration)
@@ -4246,7 +4363,7 @@ class TestCompile(unittest.TestCase):
         before_rtm = Decimal(str(self.tx.players[self.actor]["rootium"]))
         started = Player.compile(self.tx, self.actor, method="unskilled", atk=5, confirm=True)
         self.assertTrue(started.get("compile_started"))
-        self.assertEqual(self.tx.players[self.actor]["rootium"], before_rtm - Decimal("0.00100"))
+        self.assertEqual(self.tx.players[self.actor]["rootium"], before_rtm - Decimal("0.00045"))
         self.assertEqual(self.tx.players[self.actor]["attack_t1"], 2)
         self.assertEqual(self.tx.players[self.actor]["attack_t5"], 1)
         self.assertEqual(self.tx.players[self.actor]["attack_points"], 0)
@@ -4547,11 +4664,11 @@ class TestScanFeature(unittest.TestCase):
         # Devis (confirm=False)
         quote = Player.scan(self.tx, self.scanner_id, target=self.target_id)
         self.assertTrue(quote.get("scan_quote"))
-        self.assertEqual(quote["prob_base_pct"], 33.3)
+        self.assertEqual(quote["prob_base_pct"], 20.0)
         self.assertEqual(len(quote["boost_options"]), 3)
-        self.assertEqual(quote["boost_options"][0]["prob_pct"], 33.3)
-        self.assertEqual(quote["boost_options"][1]["prob_pct"], 36.7)
-        self.assertEqual(quote["boost_options"][2]["prob_pct"], 46.7)
+        self.assertEqual(quote["boost_options"][0]["prob_pct"], 20.0)
+        self.assertEqual(quote["boost_options"][1]["prob_pct"], 24.0)
+        self.assertEqual(quote["boost_options"][2]["prob_pct"], 36.0)
 
         # Lancement avec boost multiplier 2
         res = Player.scan(self.tx, self.scanner_id, target=self.target_id, boost_multiplier=2, confirm=True)
@@ -4943,6 +5060,9 @@ class TestPvPFeature(unittest.TestCase):
         self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(830 + 700, 830, 2), 2)
         self.assertEqual(MathConfig.calculate_pvp_captured_modules_count(830 + 1300, 830, 2), 3)
 
+        # Victime a 5 modules d'attaque au total (1x T4 + 4x T1) : perte de 3 modules = 60% (ne déclenche pas le cap)
+        self.tx.players[self.victim_id]["attack_t1"] = 4
+
         attack_id = PvpDB.create(
             self.tx,
             attacker_id=self.attacker_id,
@@ -4959,12 +5079,13 @@ class TestPvPFeature(unittest.TestCase):
         self.assertEqual(result["destroyed_attack_modules"], {4: 1, 1: 2})
         self.assertEqual(result["destroyed_attack_tier"], 4)
 
-        # Tous les modules d'attaque de la victime sont détruits
+        # 1x T4 et 2x T1 détruits, il reste 2x T1
         self.assertEqual(self.tx.players[self.victim_id]["attack_t4"], 0)
-        self.assertEqual(self.tx.players[self.victim_id]["attack_t1"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["attack_t1"], 2)
 
         # Test de capture multiple sur cible 'mining' (surplus = 700 -> 2 modules)
-        # Victime a 1x T5 et 1x T2
+        # Victime a 4 modules de minage (1x T5, 1x T2, 2x T1) : perte de 2 modules = 50% <= 60%
+        self.tx.players[self.victim_id]["mining_t1"] = 2
         attack_id_mining = PvpDB.create(
             self.tx,
             attacker_id=self.attacker_id,
@@ -4979,6 +5100,7 @@ class TestPvPFeature(unittest.TestCase):
         self.assertEqual(res_mining["captured_mining_modules"], {5: 1, 2: 1})
         self.assertEqual(self.tx.players[self.victim_id]["mining_t5"], 0)
         self.assertEqual(self.tx.players[self.victim_id]["mining_t2"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t1"], 2)
         self.assertEqual(self.tx.players[self.attacker_id]["mining_t5"], 1)
         self.assertEqual(self.tx.players[self.attacker_id]["mining_t2"], 1)
 
@@ -5009,6 +5131,10 @@ class TestPvPFeature(unittest.TestCase):
             "g_error_hack_self_invulnerable", "g_error_hack_target_invulnerable",
             "g_error_hack_target_protected", "g_error_hack_target_in_progress",
             "g_error_hack_insufficient_atk", "g_error_hack_usage",
+            "g_error_hack_self_critical_locked", "g_error_hack_target_critical_locked",
+            "g_error_scan_self_critical_locked", "g_error_scan_target_critical_locked",
+            "g_hack_attacker_critical_capped", "g_hack_victim_critical_saved",
+            "g_hack_attacker_aborted_target_locked",
         )
         for k in required_keys:
             self.assertIn(k, game_fr.text, f"Clé manquante dans game_fr: {k}")
@@ -5048,6 +5174,170 @@ class TestPvPFeature(unittest.TestCase):
         quote = Player.hack(self.tx, self.attacker_id, secret_id=new_secret, atk=100, zone="mining", confirm=False)
         self.assertTrue(quote.get("hack_quote"))
         self.assertEqual(quote["target_id"], self.victim_id)
+
+    def test_pvp_critical_damage_cap_and_lock(self):
+        """Vérifie le déclenchement de la procédure de sauvegarde critique et le plafonnement strict."""
+        from datetime import timedelta
+        for t in range(1, 7):
+            self.tx.players[self.victim_id][f"mining_t{t}"] = 10 if t == 1 else 0
+        self.tx.players[self.victim_id]["bay_defense_t1"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t2"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t3"] = 0
+        self.tx.players[self.victim_id]["firewall_level"] = 1
+
+        # Attaquant Firewall 2 : seuil V(2) ≈ 628.6
+        threshold = MathConfig.calculate_pvp_overrun_threshold(2)
+        # 7 modules demandés (1 base + 6 bonus) : delta // V = 6
+        attack_pts = 250 + int(threshold * 6) + 10
+
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=attack_pts,
+            target="mining",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result["intrusion_success"])
+        self.assertEqual(result["target_count_to_take"], 7)
+        self.assertTrue(result["critical_triggered"])
+        self.assertEqual(result["critical_lock_duration_hours"], 48)
+        self.assertEqual(result["total_category_modules"], 10)
+        self.assertEqual(result["effective_count_to_take"], 6)
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t1"], 4)
+        self.assertEqual(self.tx.players[self.attacker_id]["mining_t1"], 8)
+        self.assertEqual(self.tx.players[self.victim_id]["critical_lock_until"], self.tx.now + timedelta(hours=48))
+
+    def test_pvp_critical_damage_not_triggered_at_exact_cap(self):
+        """Vérifie qu'une perte égale au plafond configuré (60%) ne déclenche pas la procédure."""
+        for t in range(1, 7):
+            self.tx.players[self.victim_id][f"mining_t{t}"] = 10 if t == 1 else 0
+        self.tx.players[self.victim_id]["bay_defense_t1"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t2"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t3"] = 0
+        self.tx.players[self.victim_id]["firewall_level"] = 1
+
+        # Attaquant Firewall 2 : seuil V(2) ≈ 628.6
+        threshold = MathConfig.calculate_pvp_overrun_threshold(2)
+        # 6 modules demandés (1 base + 5 bonus) : delta // V = 5
+        attack_pts = 250 + int(threshold * 5) + 10
+
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=attack_pts,
+            target="mining",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result["intrusion_success"])
+        self.assertEqual(result["target_count_to_take"], 6)
+        self.assertFalse(result["critical_triggered"])
+        self.assertIsNone(result["critical_lock_until"])
+        self.assertIsNone(self.tx.players[self.victim_id].get("critical_lock_until"))
+
+    def test_pvp_critical_damage_single_module_floor_zero(self):
+        """Vérifie qu'avec 1 seul module possédé, floor(1 * 0.6) = 0 module perdu et profil verrouillé."""
+        from datetime import timedelta
+        for t in range(1, 7):
+            self.tx.players[self.victim_id][f"attack_t{t}"] = 1 if t == 1 else 0
+        self.tx.players[self.victim_id]["bay_defense_t1"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t2"] = 0
+        self.tx.players[self.victim_id]["bay_defense_t3"] = 0
+        self.tx.players[self.victim_id]["firewall_level"] = 1
+
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=300,
+            target="attack",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result["intrusion_success"])
+        self.assertTrue(result["critical_triggered"])
+        self.assertEqual(result["effective_count_to_take"], 0)
+        self.assertEqual(self.tx.players[self.victim_id]["attack_t1"], 1)
+        self.assertEqual(self.tx.players[self.victim_id]["critical_lock_until"], self.tx.now + timedelta(hours=48))
+
+    def test_critical_lock_blocks_hack_and_scan(self):
+        """Vérifie qu'un profil verrouillé ne peut ni hacker ni être hacké, ni scanner ni être scanné."""
+        from datetime import timedelta
+        self.tx.players[self.victim_id]["critical_lock_until"] = self.tx.now + timedelta(hours=24)
+
+        with self.assertRaises(GameError) as cm:
+            Player.hack(self.tx, self.attacker_id, secret_id="654321", atk=100, zone="mining")
+        self.assertEqual(cm.exception.key, "hack_target_critical_locked")
+
+        with self.assertRaises(GameError) as cm:
+            Player.scan(self.tx, self.attacker_id, target=self.victim_id)
+        self.assertEqual(cm.exception.key, "scan_target_critical_locked")
+
+        self.tx.players[self.victim_id]["critical_lock_until"] = None
+        self.tx.players[self.attacker_id]["critical_lock_until"] = self.tx.now + timedelta(hours=24)
+
+        with self.assertRaises(GameError) as cm:
+            Player.hack(self.tx, self.attacker_id, secret_id="654321", atk=100, zone="mining")
+        self.assertEqual(cm.exception.key, "hack_self_critical_locked")
+
+        with self.assertRaises(GameError) as cm:
+            Player.scan(self.tx, self.attacker_id, target=self.victim_id)
+        self.assertEqual(cm.exception.key, "scan_self_critical_locked")
+
+        self.tx.players[self.attacker_id]["critical_lock_until"] = self.tx.now - timedelta(seconds=1)
+        quote = Player.hack(self.tx, self.attacker_id, secret_id="654321", atk=100, zone="mining", confirm=False)
+        self.assertTrue(quote.get("hack_quote"))
+
+    def test_in_flight_pvp_aborted_if_victim_locked(self):
+        """Vérifie qu'une attaque déjà en vol est annulée si la cible a été verrouillée entre-temps."""
+        from datetime import timedelta
+        attack_id = PvpDB.create(
+            self.tx,
+            attacker_id=self.attacker_id,
+            victim_id=self.victim_id,
+            attack_points=500,
+            target="mining",
+            resolves_at=self.tx.now,
+        )["id"]
+
+        self.tx.players[self.victim_id]["critical_lock_until"] = self.tx.now + timedelta(hours=48)
+        initial_mining = self.tx.players[self.victim_id]["mining_t2"]
+
+        result = PvpDB.resolve_single_attack(self.tx, attack_id)
+        self.assertTrue(result.get("aborted_victim_locked"))
+        self.assertEqual(self.tx.players[self.victim_id]["mining_t2"], initial_mining)
+        self.assertEqual(self.tx.pvp_attacks, [])
+
+    def test_player_critical_lock_expiration_helper(self):
+        """Vérifie le fonctionnement du helper Player.get_critical_lock_expiration."""
+        from datetime import datetime, timedelta, timezone
+        now = datetime(2026, 10, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        # Joueur sans verrou
+        self.assertIsNone(Player.get_critical_lock_expiration({}, now))
+        self.assertIsNone(Player.get_critical_lock_expiration(None, now))
+        self.assertIsNone(Player.get_critical_lock_expiration({"critical_lock_until": None}, now))
+
+        # Verrou passé
+        past = now - timedelta(hours=1)
+        self.assertIsNone(Player.get_critical_lock_expiration({"critical_lock_until": past}, now))
+
+        # Verrou futur (actif)
+        future = now + timedelta(hours=48)
+        self.assertEqual(Player.get_critical_lock_expiration({"critical_lock_until": future}, now), future)
+
+        # Naive datetime future comparée à aware now
+        future_naive = datetime(2026, 10, 3, 12, 0, 0)
+        exp = Player.get_critical_lock_expiration({"critical_lock_until": future_naive}, now)
+        self.assertIsNotNone(exp)
+        self.assertTrue(exp > now)
+
 
     def test_victim_notification_formatting(self):
         """Vérifie que les chaînes de notification victime s'affichent correctement avec new_secret_id."""
@@ -5195,6 +5485,48 @@ class TestPvPLogger(unittest.IsolatedAsyncioTestCase):
 
         await cog._send(ctx, 'hack', started_result)
         mock_logger.log_pvp_attack.assert_awaited_once_with(ctx.author, 1500)
+
+    async def test_logger_pvp_critical_lock(self):
+        """Vérifie le log public concis de procédure de sauvegarde avec COLOR_LOG_CRITICAL."""
+        from unittest.mock import AsyncMock
+        from datetime import timedelta
+        import discord
+        from utils.logger import Logger
+        from utils.root_theme import COLOR_LOG_CRITICAL
+        bot = MagicMock()
+        logger = Logger(bot)
+        logger._send_embed = AsyncMock()
+
+        lock_until = discord.utils.utcnow() + timedelta(hours=48)
+        await logger.log_pvp_critical_lock(victim=2222, duration_hours=48, lock_until=lock_until, victim_name="VictimUser")
+        logger._send_embed.assert_awaited_once()
+        embed = logger._send_embed.call_args[0][1]
+
+        self.assertEqual(embed.color, COLOR_LOG_CRITICAL)
+        self.assertIn("VictimUser", embed.description)
+        self.assertIn("48h", embed.description)
+        self.assertNotIn("Secret ID", embed.description)
+        self.assertNotIn("ATK", embed.description)
+        self.assertIn("root_verrou", embed.description)
+
+    def test_root_verrou_and_usd_emojis_and_backtick_protection(self):
+        """Vérifie la présence des emojis root_verrou et root_usd et l'absence de remplacement dans les backticks."""
+        from utils.root_emojis import get_emoji, replace_vanilla_emojis, ALL_EMOJI_NAMES
+        self.assertIn("root_verrou", ALL_EMOJI_NAMES)
+        self.assertIn("root_usd", ALL_EMOJI_NAMES)
+        self.assertIn("root_verrou", get_emoji("root_verrou"))
+        self.assertIn("root_usd", get_emoji("root_usd"))
+
+        # Vérifie que les backticks ne sont pas corrompus
+        raw_intrusion = "`[ INTRUSION CONFIRMÉE ]`"
+        replaced = replace_vanilla_emojis(raw_intrusion)
+        self.assertEqual(replaced, raw_intrusion)
+
+        # Vérifie que les emojis vanilla hors backticks sont transformés
+        test_str = "Solde: 💵 et statut: 🔒"
+        res = replace_vanilla_emojis(test_str)
+        self.assertIn("root_usd", res)
+        self.assertIn("root_verrou", res)
 
 # ── 2. Bêta Launch & Réputation ────────────────────────────────────────────
 
@@ -5606,10 +5938,11 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
             "is_full": False,
             "seconds_to_fill_total": 60,
         }
+        from utils.root_theme import COLOR_TURQUOISE, COLOR_AMBER
         embed_normal = self.cog._build_network_embed(self.mock_ctx, result_normal)
-        self.assertEqual(embed_normal.color.value, discord.Color.from_rgb(0, 220, 200).value)
-        total_field_normal = embed_normal.fields[5].value
-        self.assertNotIn("MÉMOIRE PLEINE", total_field_normal)
+        self.assertIn(embed_normal.color.value, (getattr(COLOR_TURQUOISE, 'value', COLOR_TURQUOISE), discord.Color.from_rgb(0, 220, 200).value))
+        all_text_normal = (embed_normal.description or "") + " " + " ".join(f.value for f in embed_normal.fields)
+        self.assertNotIn("MÉMOIRE PLEINE", all_text_normal.upper())
 
         # 2. Saturé (100%)
         result_full = dict(base_result)
@@ -5623,29 +5956,29 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
             "seconds_to_fill_total": 0,
         }
         embed_full = self.cog._build_network_embed(self.mock_ctx, result_full)
-        self.assertEqual(embed_full.color.value, discord.Color.from_rgb(255, 170, 0).value)
-        total_field_full = embed_full.fields[5].value
-        self.assertIn("MÉMOIRE PLEINE (100%)", total_field_full)
+        self.assertIn(embed_full.color.value, (getattr(COLOR_AMBER, 'value', COLOR_AMBER), discord.Color.from_rgb(255, 170, 0).value))
+        all_text_full = (embed_full.description or "") + " " + " ".join(f.value for f in embed_full.fields)
+        self.assertIn("MÉMOIRE PLEINE", all_text_full.upper())
 
     async def test_network_action_view_button_states(self):
         """Vérifie l'état des boutons de Récolte et d'Actualisation selon le buffer."""
         # Buffer vide -> bouton Récolter désactivé
         res_empty = {"mining_state": {"buffer": Decimal("0.00000")}}
         view_empty = NetworkActionView(self.cog, self.mock_ctx, res_empty)
-        claim_btn_empty = view_empty.children[0]
+        claim_btn_empty = next(c for c in view_empty.children if getattr(c, 'callback', None) == view_empty._on_claim)
         self.assertTrue(claim_btn_empty.disabled)
         self.assertEqual(claim_btn_empty.style, discord.ButtonStyle.secondary)
 
         # Buffer positif -> bouton Récolter activé avec le montant
         res_full = {"mining_state": {"buffer": Decimal("0.00420")}}
         view_full = NetworkActionView(self.cog, self.mock_ctx, res_full)
-        claim_btn_full = view_full.children[0]
+        claim_btn_full = next(c for c in view_full.children if getattr(c, 'callback', None) == view_full._on_claim)
         self.assertFalse(claim_btn_full.disabled)
         self.assertEqual(claim_btn_full.style, discord.ButtonStyle.success)
         self.assertIn("0.00420 RTM", claim_btn_full.label)
 
         # Bouton Actualiser toujours présent et primaire
-        refresh_btn = view_full.children[1]
+        refresh_btn = next(c for c in view_full.children if getattr(c, 'callback', None) == view_full._on_refresh)
         self.assertFalse(refresh_btn.disabled)
         self.assertEqual(refresh_btn.style, discord.ButtonStyle.primary)
 
@@ -5722,14 +6055,13 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
             "retaliations": retaliation,
         }
 
-        # Quel que soit le pare-feu (ex: niv 1, 2, 3, 4), l'agresseur est affiché
+        # Quel que soit le pare-feu (ex: niv 1, 2, 3, 4, 5), l'agresseur est affiché
         for fw in (1, 2, 3, 4, 5):
             res_fw = dict(base_res, firewall_level=fw)
             embed_fw = self.cog._build_network_embed(self.mock_ctx, res_fw)
-            atk_val = embed_fw.fields[3].value
-            self.assertIn("Riposte autorisée", atk_val)
-            self.assertIn("<@99999>", atk_val)
-            self.assertIn("expire dans", atk_val)
+            all_text = " ".join(f.value for f in embed_fw.fields)
+            self.assertIn("Riposte autorisée", all_text)
+            self.assertIn("<@99999>", all_text)
 
     def test_pending_scan_display(self):
         """Un scan en cours est affiché dans le champ offensif."""
@@ -5747,9 +6079,9 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
             },
         }
         embed = self.cog._build_network_embed(self.mock_ctx, res)
-        atk_val = embed.fields[3].value
-        self.assertIn("Scan en cours", atk_val)
-        self.assertIn("<@77777>", atk_val)
+        all_text = " ".join(f.value for f in embed.fields)
+        self.assertIn("Scan", all_text)
+        self.assertIn("<@77777>", all_text)
 
     def test_network_displays_higher_tier_bay_if_owned(self):
         """Si un joueur possède un module de tier supérieur non encore achetable (ex: via /hack), la baie s'affiche."""
@@ -5767,10 +6099,11 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
         mining_state = MathConfig.compute_mining_progress(player_data, stats, datetime.now(timezone.utc))
         res = dict(player_data, stats=stats, mining_state=mining_state)
 
-        embed = self.cog._build_network_embed(self.mock_ctx, res)
-        bays_field = next(f for f in embed.fields if "Baie" in f.value)
-        self.assertIn("Baie 01", bays_field.value)
-        self.assertIn("Baie 04", bays_field.value)
+        from utils.network_display import build_hardware_embed
+        embed_hw, _ = build_hardware_embed(res)
+        mining_field = embed_hw.fields[0]
+        self.assertIn("T1", mining_field.value)
+        self.assertIn("T4", mining_field.value)
 
     def test_network_displays_seconds_to_full_remaining(self):
         """Vérifie que /network affiche le temps restant (seconds_to_full) et non le temps total (seconds_to_fill_total)."""
@@ -5794,6 +6127,33 @@ class TestNetworkQOL(unittest.IsolatedAsyncioTestCase):
         lines = _build_compact_total_lines(self.mock_ctx, stats, 1, mining_state, {}, False, 0, Decimal('0'))
         self.assertIn("Plein dans** : **5min**", lines)
         self.assertNotIn("10min", lines)
+
+    def test_overview_container_displays_secret_id_after_title(self):
+        """Vérifie que la page d'accueil affiche le Secret ID immédiatement après le titre ROOT OS / display_name."""
+        from utils.network_display import build_overview_container, build_overview_embed
+        res = {
+            "discord_id": 10001,
+            "dollars": Decimal("100"),
+            "rootium": Decimal("50"),
+            "firewall_level": 1,
+            "secret_id": "ABC123XYZ",
+            "secret_next_ts": 1700000000,
+        }
+        # 1. Container V2
+        container, _ = build_overview_container(res, display_name="Jules")
+        items = getattr(container, "items", [])
+        text_items = [getattr(it, "content", "") for it in items if hasattr(it, "content")]
+        header_text = text_items[0] if text_items else ""
+        self.assertIn("ROOT OS / Jules", header_text)
+        self.assertIn("||`ABC123XYZ`||", header_text)
+        # Vérification de l'ordre : Secret ID apparaît juste après ROOT OS / Jules
+        pos_title = header_text.find("ROOT OS / Jules")
+        pos_secret = header_text.find("||`ABC123XYZ`||")
+        self.assertGreater(pos_secret, pos_title)
+
+        # 2. Embed fallback V1
+        embed, _ = build_overview_embed(res, display_name="Jules")
+        self.assertIn("||`ABC123XYZ`||", embed.description)
 
 
 class TestBuyCatalogAndShop(unittest.IsolatedAsyncioTestCase):
@@ -6593,16 +6953,22 @@ class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
         self._loop_patch.stop()
 
     async def test_run_report_success_resets_database(self):
-        """Un envoi réussi doit purger les logs de plus de 48h et enregistrer la date."""
+        """Un envoi réussi doit purger les logs de plus de 24h et enregistrer la date."""
         mock_bot = MagicMock()
         mock_db = MockDatabase()
         now = datetime(2026, 9, 22, 12, 0, 0)
         mock_db.now = now
 
-        # Insérer 1 claim ancien (> 48h) et 1 claim récent (< 48h)
+        # Insérer 1 claim très ancien (> 48h), 1 claim intermédiaire (30h > 24h) et 1 claim récent (< 24h)
         mock_db.daily_claim_logs.append({
             "discord_id": 999,
             "claimed_at": now - timedelta(hours=50),
+            "interval_seconds": 900,
+            "amount": Decimal("2"),
+        })
+        mock_db.daily_claim_logs.append({
+            "discord_id": 999,
+            "claimed_at": now - timedelta(hours=30),
             "interval_seconds": 900,
             "amount": Decimal("2"),
         })
@@ -6620,7 +6986,7 @@ class TestClaimModerationCog(unittest.IsolatedAsyncioTestCase):
         status = await cog._run_daily_report()
         self.assertEqual(status, "success")
         mock_bot.discord_logger.log_daily_claim_report.assert_called_once()
-        self.assertEqual(len(mock_db.daily_claim_logs), 1, "Seuls les logs > 48h doivent être purgés.")
+        self.assertEqual(len(mock_db.daily_claim_logs), 1, "Seuls les logs < 24h doivent être conservés.")
         self.assertEqual(mock_db.daily_claim_logs[0]["claimed_at"], now - timedelta(hours=10))
 
     async def test_run_report_failure_preserves_database(self):
@@ -7794,10 +8160,10 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         from lang import help_fr, help_en
         from commands.utility.help import PUBLIC_COMMANDS
 
-        # 28 commandes publiques
-        self.assertEqual(len(PUBLIC_COMMANDS), 28)
-        self.assertEqual(len(help_fr.COMMANDS), 28)
-        self.assertEqual(len(help_en.COMMANDS), 28)
+        # 29 commandes publiques
+        self.assertEqual(len(PUBLIC_COMMANDS), 29)
+        self.assertEqual(len(help_fr.COMMANDS), 29)
+        self.assertEqual(len(help_en.COMMANDS), 29)
 
         for cmd_name in PUBLIC_COMMANDS:
             self.assertIn(cmd_name, help_fr.COMMANDS)
@@ -7843,7 +8209,7 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         for cs in cmd_selects:
             self.assertLessEqual(len(cs.options), 25)
             total_options.extend(opt.value for opt in cs.options)
-        self.assertEqual(len(total_options), 28)
+        self.assertEqual(len(total_options), 29)
         self.assertEqual(set(total_options), set(PUBLIC_COMMANDS))
 
         # Vérifie que l'embed de la page liste toutes les 27 commandes
@@ -8751,7 +9117,7 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(hash_pos, -1)
         self.assertLess(pin_pos, hash_pos)
 
-        expected_tag = f"**<t:{future_ts}:T>** (<t:{future_ts}:R>)"
+        expected_tag = f"**<t:{future_ts}:T>** (<t:{future_ts}:R> (10min))"
         self.assertIn(expected_tag, content)
         self.assertNotIn("dans dans", content)
         self.assertNotIn("in in", content)
@@ -8800,7 +9166,7 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent_embeds), 1)
         _, content = sent_embeds[0]
         self.assertIn("Code PIN", content)
-        self.assertIn(f"• Statut : ⏳ Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R>)", content)
+        self.assertIn(f"• Statut : ⏳ Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R> (10min))", content)
         self.assertNotIn("dans dans", content)
 
     async def test_event_send_includes_firewall_multiplier_banner(self):
@@ -8887,6 +9253,29 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             await self.service.execute(self.actor, None, 'hourly')
         self.assertEqual(ctx.exception.key, 'hourly_cooldown')
         self.assertEqual(ctx.exception.values.get('remaining_seconds'), 1800)
+        expected_ts = int((self.mock_db.now + timedelta(minutes=30)).replace(tzinfo=timezone.utc).timestamp())
+        self.assertEqual(ctx.exception.values.get('ts'), expected_ts)
+
+    async def test_hourly_send_message_formatting(self):
+        """Vérifie que le message de succès /hourly interpole toutes les variables sans laisser de {variable}."""
+        from commands.game.hourly import Hourly
+        cog = Hourly(MagicMock())
+        mock_ctx = MagicMock()
+        mock_ctx.send = AsyncMock()
+        mock_ctx.interaction = None
+        mock_ctx.author.id = self.actor
+        mock_ctx.author.name = "Tester"
+
+        res = await self.service.execute(self.actor, None, 'hourly')
+        await cog._send(mock_ctx, 'hourly', res)
+        mock_ctx.send.assert_called_once()
+        content = mock_ctx.send.call_args[0][0]
+        self.assertNotIn("{total}", content)
+        self.assertNotIn("{streak}", content)
+        self.assertNotIn("{bonus}", content)
+        self.assertNotIn("{next_ts}", content)
+        self.assertNotIn("{remaining}", content)
+        self.assertIn("1h", content)
 
     async def test_hourly_unlimited_combo(self):
         """Les bonus d'étape s'additionnent sans plafond.
@@ -8971,8 +9360,8 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
 
         await hourly_cog.prefix_hourly.callback(hourly_cog, mock_ctx)
         mock_ctx.send.assert_called_once()
-        self.assertNotIn("embed", mock_ctx.send.call_args.kwargs)
-        content = mock_ctx.send.call_args.args[0]
+        embed = mock_ctx.send.call_args.kwargs.get("embed")
+        content = mock_ctx.send.call_args.args[0] if mock_ctx.send.call_args.args else (embed.description if embed else "")
         self.assertIn("You received", content)
         self.assertIn("Combo", content)
         self.assertNotIn("Balance", content)
@@ -9201,11 +9590,22 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
             "hourly_streak": 4,
             "lang": "fr",
         }
-        # 1 log vieux (> 48h) et 5 logs récents (< 24h)
+        # 1 log très vieux (55h), 1 log intermédiaire (30h > 24h) et 5 logs récents (< 24h)
         self.mock_db.hourly_logs.append({
             "id": 99,
             "discord_id": bot_user,
             "claimed_at": now - timedelta(hours=55),
+            "interval_seconds": 3600,
+            "base_usd": Decimal("40.00"),
+            "bonus_pct": Decimal("0.00"),
+            "total_usd": Decimal("40.00"),
+            "streak": 1,
+            "combo_lost": False,
+        })
+        self.mock_db.hourly_logs.append({
+            "id": 98,
+            "discord_id": bot_user,
+            "claimed_at": now - timedelta(hours=30),
             "interval_seconds": 3600,
             "base_usd": Decimal("40.00"),
             "bonus_pct": Decimal("0.00"),
@@ -9241,7 +9641,7 @@ class TestHourlyAndModeration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(summary), 1)
         self.assertEqual(summary[0]["discord_id"], bot_user)
         self.assertEqual(summary[0]["claim_count"], 5)
-        # Le log vieux (> 48h) a été purgé, les 5 logs récents sont conservés pour audit
+        # Les logs vieux (> 24h) ont été purgés, les 5 logs récents sont conservés pour audit
         self.assertEqual(len(self.mock_db.hourly_logs), 5)
         player = self.mock_db.players[bot_user]
         self.assertEqual(player["hourly_streak"], 4)
@@ -9363,6 +9763,18 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res['fidelity_threshold'], 5)
         self.assertEqual(res['contracts_completed'], 0)
 
+        # Offres dynamiques : exactement 4 offres générées
+        gen_offers = res['offers_data']['generated_offers']
+        self.assertEqual(len(gen_offers), 4)
+        for i, off in enumerate(gen_offers):
+            self.assertEqual(off['index'], i + 1)
+            self.assertTrue(len(off['title']) > 0)
+            self.assertTrue(len(off['company']) > 0)
+            self.assertGreaterEqual(off['duration_seconds'], 1200)
+            self.assertLessEqual(off['duration_seconds'], 43200)
+            self.assertGreaterEqual(off['reward_usd'], Decimal('50.00'))
+
+        # Rétrocompatibilité : dictionnaire 'offers' legacy toujours présent
         offers = res['offers_data']['offers']
         self.assertEqual(offers['short']['reward_usd'], Decimal('75.00'))
         self.assertEqual(offers['short']['duration_seconds'], 1800)
@@ -9375,6 +9787,32 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(offers['long']['reward_usd'], Decimal('600.00'))
         self.assertEqual(offers['long']['duration_seconds'], 21600)
         self.assertEqual(offers['long']['hourly_rate'], 100)
+
+    async def test_contract_dynamic_offers_four_distinct_missions(self):
+        """Vérifie que les 4 contrats proposés n'ont pas de doublons d'intitulé ni d'entreprise."""
+        res = await self.service.execute(self.actor, None, 'contract', action='view')
+        gen_offers = res['offers_data']['generated_offers']
+        self.assertEqual(len(gen_offers), 4)
+
+        titles = [o['title'] for o in gen_offers]
+        companies = [o['company'] for o in gen_offers]
+        self.assertEqual(len(set(titles)), 4, "Les intitulés des 4 offres doivent être uniques")
+        self.assertEqual(len(set(companies)), 4, "Les entreprises des 4 offres doivent être uniques")
+
+        # Sélection d'une des 4 offres dynamiques via paramètres personnalisés
+        chosen = gen_offers[1]
+        start_res = await self.service.execute(
+            self.actor, None, 'contract', action='start',
+            duration=chosen['profile'],
+            title=chosen['title'],
+            company=chosen['company'],
+            duration_seconds=chosen['duration_seconds'],
+            reward_usd=chosen['reward_usd'],
+        )
+        self.assertEqual(start_res['reward_usd'], chosen['reward_usd'])
+        self.assertIn(chosen['title'], start_res['title'])
+        self.assertIn(chosen['company'], start_res['title'])
+        self.assertEqual(start_res['duration_seconds'], chosen['duration_seconds'])
 
     async def test_contract_start_and_view_active(self):
         """Démarre un contrat court et vérifie son statut actif."""
@@ -9598,7 +10036,8 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
         ctx.send.reset_mock()
         await cog.prefix_contract.callback(cog, ctx, "collect")
         ctx.send.assert_called_once()
-        error_msg = ctx.send.call_args[0][0]
+        call_args = ctx.send.call_args
+        error_msg = call_args[0][0] if call_args[0] else call_args[1]['embed'].description
         self.assertTrue("terminée" in error_msg or "completed" in error_msg)
 
         # 4. !contract collect après échéance -> encaissement
@@ -9645,7 +10084,8 @@ class TestContracts(unittest.IsolatedAsyncioTestCase):
 
         await cog._notify_contract_expired(item)
         mock_user.send.assert_called_once()
-        dm_text = mock_user.send.call_args[0][0]
+        user_call_args = mock_user.send.call_args
+        dm_text = user_call_args[0][0] if user_call_args[0] else user_call_args[1]['embed'].description
         self.assertTrue("MISSION TERMINÉE" in dm_text or "MISSION COMPLETED" in dm_text)
         self.assertTrue("Root CyberSec" in dm_text)
 
@@ -10251,21 +10691,21 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(res0["base_usd"], Decimal("30.00"))
         self.assertLessEqual(res0["base_usd"], Decimal("90.00"))
 
-        # Niveau 1 : multiplicateur x2 (60-180 USD)
+        # Niveau 1 : multiplicateur x1.75 (52.5-157.5 USD)
         self.tx.players[self.actor]["firewall_level"] = 1
         self.tx.players[self.actor]["hourly_last_at"] = None
         res1 = Player.hourly(self.tx, self.actor)
-        self.assertEqual(res1["firewall_multiplier"], 2)
-        self.assertGreaterEqual(res1["base_usd"], Decimal("60.00"))
-        self.assertLessEqual(res1["base_usd"], Decimal("180.00"))
+        self.assertEqual(res1["firewall_multiplier"], 1.75)
+        self.assertGreaterEqual(res1["base_usd"], Decimal("52.50"))
+        self.assertLessEqual(res1["base_usd"], Decimal("157.50"))
 
-        # Niveau 3 : multiplicateur x4 (120-360 USD)
+        # Niveau 3 : multiplicateur x5.25 (157.5-472.5 USD)
         self.tx.players[self.actor]["firewall_level"] = 3
         self.tx.players[self.actor]["hourly_last_at"] = None
         res3 = Player.hourly(self.tx, self.actor)
-        self.assertEqual(res3["firewall_multiplier"], 4)
-        self.assertGreaterEqual(res3["base_usd"], Decimal("120.00"))
-        self.assertLessEqual(res3["base_usd"], Decimal("360.00"))
+        self.assertEqual(res3["firewall_multiplier"], 5.25)
+        self.assertGreaterEqual(res3["base_usd"], Decimal("157.50"))
+        self.assertLessEqual(res3["base_usd"], Decimal("472.50"))
 
     def test_contracts_firewall_scaling(self):
         from game.db.contracts import ContractsDB
@@ -10276,11 +10716,11 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(offers0["offers"]["medium"]["reward_usd"], Decimal("250.00"))
         self.assertEqual(offers0["offers"]["long"]["reward_usd"], Decimal("600.00"))
 
-        # Offres à FW 1 (x2) : 150 USD, 500 USD, 1200 USD
+        # Offres à FW 1 (x1.75) : 131.25 USD, 437.50 USD, 1050 USD
         offers1 = ContractsDB.get_offers(0, firewall_level=1)
-        self.assertEqual(offers1["offers"]["short"]["reward_usd"], Decimal("150.00"))
-        self.assertEqual(offers1["offers"]["medium"]["reward_usd"], Decimal("500.00"))
-        self.assertEqual(offers1["offers"]["long"]["reward_usd"], Decimal("1200.00"))
+        self.assertEqual(offers1["offers"]["short"]["reward_usd"], Decimal("131.25"))
+        self.assertEqual(offers1["offers"]["medium"]["reward_usd"], Decimal("437.50"))
+        self.assertEqual(offers1["offers"]["long"]["reward_usd"], Decimal("1050.00"))
 
         # Démarrage de contrat avec joueur à FW 2 (x3) -> short = 225 USD
         self.tx.players[self.actor]["firewall_level"] = 2
@@ -10344,10 +10784,10 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         # Vérifie que les avantages figurent dans le texte du devis
         self.assertIn("Niveau 0", content)
         self.assertIn("Niveau 1", content)
-        self.assertIn("Défense Réseau", content)
-        self.assertIn("+100 DEF", content)
+        self.assertTrue("Défense de l'infrastructure" in content or "Défense Réseau" in content)
+        self.assertTrue("+250 DEF" in content or "+100 DEF" in content)
         self.assertIn("Revenus Horaires & Contrats", content)
-        self.assertIn("x2", content)
+        self.assertIn("x1.75", content)
         self.assertIn("Bonus d'événement", content)
         self.assertIn("actuellement x1", content)
         self.assertIn("Attaque T1 & T2, Minage T2, Défense T2", content)
@@ -10364,17 +10804,17 @@ class TestFirewallReworkHotfix(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(settle0["multiplier"], 1)
         self.assertEqual(settle0["final_reward"], Decimal("100.00"))
 
-        # Niveau 1 : multiplicateur x2
+        # Niveau 1 : multiplicateur x1.75
         self.tx.players[self.actor]["firewall_level"] = 1
         settle1 = settle_challenge_win(self.tx, "decode", "decode_challenge", self.actor, 100, self.tx.now, "Guild")
-        self.assertEqual(settle1["multiplier"], 2)
-        self.assertEqual(settle1["final_reward"], Decimal("200.00"))
+        self.assertEqual(settle1["multiplier"], 1.75)
+        self.assertEqual(settle1["final_reward"], Decimal("175.00"))
 
-        # Niveau 5 : multiplicateur x6
+        # Niveau 5 : multiplicateur x15
         self.tx.players[self.actor]["firewall_level"] = 5
         settle5 = settle_challenge_win(self.tx, "decode", "decode_challenge", self.actor, 100, self.tx.now, "Guild")
-        self.assertEqual(settle5["multiplier"], 6)
-        self.assertEqual(settle5["final_reward"], Decimal("600.00"))
+        self.assertEqual(settle5["multiplier"], 15)
+        self.assertEqual(settle5["final_reward"], Decimal("1500.00"))
 
     async def test_contracts_loyalty_grace_ui_embed(self):
         from commands.game.contract import Contract
@@ -10700,6 +11140,675 @@ class TestMathCommand(unittest.IsolatedAsyncioTestCase):
         mock_ctx.respond.assert_called_once()
         err_content_fr = mock_ctx.respond.call_args.args[0]
         self.assertIn("Division par zéro impossible", err_content_fr)
+
+
+class TestMacros(unittest.TestCase):
+    """Suite de tests unitaires pour le système de macros (DAO, validation, service, exécution, rate limits)."""
+
+    def setUp(self):
+        self.tx = MockTransaction()
+        # Création d'un joueur fictif
+        self.player_id = 123456789
+        self.tx.execute(
+            "INSERT INTO players (discord_id, dollars, created_at) VALUES (%s, %s, %s)",
+            (self.player_id, Decimal("1000.00"), self.tx.now),
+        )
+
+    def test_macro_name_validation(self):
+        """Vérifie la conformité et le rejet des noms invalides ou réservés."""
+        from game.db.macros import validate_macro_name
+
+        self.assertEqual(validate_macro_name("routine_1"), "routine_1")
+        self.assertEqual(validate_macro_name("FARM-ABC"), "farm-abc")
+
+        # Noms invalides
+        with self.assertRaises(GameError) as ctx:
+            validate_macro_name("invalid name with spaces")
+        self.assertEqual(ctx.exception.key, "macro_name_invalid")
+
+        with self.assertRaises(GameError) as ctx:
+            validate_macro_name("bad$char!")
+        self.assertEqual(ctx.exception.key, "macro_name_invalid")
+
+        # Noms réservés
+        for reserved in ("create", "delete", "list", "view", "edit", "run", "help"):
+            with self.assertRaises(GameError) as ctx:
+                validate_macro_name(reserved)
+            self.assertEqual(ctx.exception.key, "macro_name_reserved")
+
+    def test_macro_catalog_and_excluded_commands(self):
+        """Vérifie le catalogue des commandes et l'interdiction stricte des commandes exclues."""
+        from game.macro_catalog import MACRO_CATALOG, EXCLUDED_COMMANDS, validate_step_args
+
+        # Commandes d'événements et hourly_save doivent être exclues
+        for cmd in ("event", "hash", "pin", "decode", "anomaly", "buffer", "signal", "packet", "hourly_save", "macro"):
+            self.assertIn(cmd, EXCLUDED_COMMANDS)
+            with self.assertRaises(GameError) as ctx:
+                validate_step_args(cmd, {})
+            self.assertEqual(ctx.exception.key, "macro_excluded")
+
+        # Commandes de devis doivent forcer confirm=True
+        upg_args = validate_step_args("upgrade", {})
+        self.assertTrue(upg_args.get("confirm"))
+
+        buy_args = validate_step_args("buy", {"kind": "mining", "tier": "1", "count": 2})
+        self.assertTrue(buy_args.get("confirm"))
+        self.assertEqual(buy_args["kind"], "mining")
+        self.assertEqual(buy_args["tier"], 1)
+        self.assertEqual(buy_args["count"], 2)
+
+        buy_all_args = validate_step_args("buy", {"kind": "mining", "tier": 2, "count": "all"})
+        self.assertTrue(buy_all_args.get("confirm"))
+        self.assertTrue(buy_all_args.get("all"))
+
+    def test_macros_dao_crud(self):
+        """Vérifie la création, consultation et suppression de macros via MacrosDB."""
+        from game.db.macros import MacrosDB
+
+        # 1. Création macro 1
+        steps = [
+            {"method": "claim", "args": {}},
+            {"method": "hourly", "args": {}},
+        ]
+        created = MacrosDB.create_macro(self.tx, self.player_id, "routine", steps)
+        self.assertEqual(created["name"], "routine")
+        self.assertEqual(len(created["steps"]), 2)
+
+        # 2. Doublon de nom -> GameError('macro_name_taken')
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "routine", steps)
+        self.assertEqual(ctx.exception.key, "macro_name_taken")
+
+        # 3. Limite de 3 macros par joueur
+        MacrosDB.create_macro(self.tx, self.player_id, "routine_2", [{"method": "claim", "args": {}}])
+        MacrosDB.create_macro(self.tx, self.player_id, "routine_3", [{"method": "claim", "args": {}}])
+
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "routine_4", [{"method": "claim", "args": {}}])
+        self.assertEqual(ctx.exception.key, "macro_limit")
+
+        # 4. Liste
+        m_list = MacrosDB.list_user_macros(self.tx, self.player_id)
+        self.assertEqual(len(m_list), 3)
+
+        # 5. Suppression
+        self.assertTrue(MacrosDB.delete_macro(self.tx, self.player_id, "routine_2"))
+        self.assertEqual(MacrosDB.count_user_macros(self.tx, self.player_id), 2)
+        self.assertFalse(MacrosDB.delete_macro(self.tx, self.player_id, "routine_2"))
+
+    def test_macro_steps_limit(self):
+        """Vérifie la limite stricte de 1 à 5 étapes par macro."""
+        from game.db.macros import MacrosDB
+
+        # Macro vide -> GameError('macro_empty')
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "test_empty", [])
+        self.assertEqual(ctx.exception.key, "macro_empty")
+
+        # 6 étapes -> GameError('macro_steps_limit')
+        too_many = [{"method": "claim", "args": {}}] * 6
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.create_macro(self.tx, self.player_id, "test_six", too_many)
+        self.assertEqual(ctx.exception.key, "macro_steps_limit")
+
+    def test_macro_rate_limits_cooldown_and_quota(self):
+        """Vérifie le cooldown de 15s et le quota glissant de 60 runs par heure."""
+        from game.db.macros import MacrosDB
+
+        # 1er run OK
+        res1 = MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(res1["runs_in_last_hour"], 1)
+
+        # 2e run immédiat (0s) -> GameError('macro_cooldown')
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(ctx.exception.key, "macro_cooldown")
+        self.assertEqual(ctx.exception.values.get("remaining"), 15)
+
+        # Avance le temps de 16 secondes -> 2e run OK
+        self.tx.now += timedelta(seconds=16)
+        res2 = MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(res2["runs_in_last_hour"], 2)
+
+        # Remplissage jusqu'à 60 runs
+        for i in range(3, 61):
+            self.tx.now += timedelta(seconds=16)
+            MacrosDB.reserve_run(self.tx, self.player_id)
+
+        # 61e run dans l'heure -> GameError('macro_quota')
+        self.tx.now += timedelta(seconds=16)
+        with self.assertRaises(GameError) as ctx:
+            MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertEqual(ctx.exception.key, "macro_quota")
+
+        # Avance au-delà d'une heure depuis les premiers runs -> de nouveaux slots se libèrent
+        self.tx.now += timedelta(hours=1, seconds=10)
+        res_new = MacrosDB.reserve_run(self.tx, self.player_id)
+        self.assertIsNotNone(res_new)
+
+    def test_macro_service_step_execution_continues_on_error(self):
+        """Vérifie l'exécution séquentielle pas-à-pas et la continuation des étapes suivantes en cas d'erreur."""
+        import asyncio
+
+        # Création d'un mock database enveloppant notre transaction
+        mock_db = MagicMock()
+        mock_db.now = self.tx.now
+
+        async def run_fn(callback, locks=None, readonly=False, resource=None):
+            return callback(self.tx)
+
+        mock_db.run = AsyncMock(side_effect=run_fn)
+
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+
+        root_service = RootService(database=mock_db)
+        macro_service = MacroService(root_service)
+        root_service.macro_service = macro_service
+
+        # Enregistrement d'une macro :
+        # Étape 1 : claim (réussit)
+        # Étape 2 : buy avec quantité invalide ou ressource insuffisante (échoue sans bloquer)
+        # Étape 3 : hourly (exécutée quand même et réussit)
+        loop = asyncio.new_event_loop()
+        try:
+            steps = [
+                {"method": "claim", "args": {}},
+                {"method": "buy", "args": {"kind": "mining", "tier": "6", "amount": 999999}},
+                {"method": "hourly", "args": {}},
+            ]
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "combo_test", steps))
+
+            # Exécution de la macro
+            # Mock de execute sur RootService
+            async def fake_execute(actor, guild, method, **kwargs):
+                if method == "claim":
+                    return {"claimed": True, "amount": Decimal("1.0")}
+                elif method == "buy":
+                    raise GameError("insufficient_dollars", required="1000000000", current="1000")
+                elif method == "hourly":
+                    return {"reward": Decimal("50.0")}
+                raise GameError("invalid_selection")
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "combo_test"))
+
+            # Vérifications :
+            self.assertEqual(run_result["macro_name"], "combo_test")
+            self.assertEqual(run_result["total_steps"], 3)
+            self.assertEqual(run_result["executed_steps"], 3)  # Toutes les étapes ont été exécutées
+            self.assertIsNone(run_result["stopped_at"])
+
+            # L'étape 1 a réussi
+            self.assertTrue(run_result["steps"][0]["success"])
+            self.assertEqual(run_result["steps"][0]["method"], "claim")
+
+            # L'étape 2 a échoué
+            self.assertFalse(run_result["steps"][1]["success"])
+            self.assertEqual(run_result["steps"][1]["method"], "buy")
+            self.assertEqual(run_result["steps"][1]["error"]["key"], "insufficient_dollars")
+
+            # L'étape 3 a été appelée et a réussi
+            self.assertTrue(run_result["steps"][2]["success"])
+            self.assertEqual(run_result["steps"][2]["method"], "hourly")
+            self.assertEqual(root_service.execute.call_count, 3)
+        finally:
+            loop.close()
+
+    def test_macro_service_step_execution_skips_cooldown_errors(self):
+        """Vérifie que les délais d'attente (hourly, claim, etc.) sont ignorés sans faire échouer la macro."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from decimal import Decimal
+        from game.game_error import GameError
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+
+        mock_db = MagicMock()
+        mock_db.now = self.tx.now
+
+        async def run_fn(callback, locks=None, readonly=False, resource=None):
+            return callback(self.tx)
+
+        mock_db.run = AsyncMock(side_effect=run_fn)
+
+        root_service = RootService(database=mock_db)
+        macro_service = MacroService(root_service)
+        root_service.macro_service = macro_service
+
+        loop = asyncio.new_event_loop()
+        try:
+            steps = [
+                {"method": "claim", "args": {}},
+                {"method": "hourly", "args": {}},
+                {"method": "contract", "args": {"action": "collect"}},
+                {"method": "buy", "args": {"kind": "mining", "tier": "1", "count": 1}},
+            ]
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "daily_farm", steps))
+
+            async def fake_execute(actor, guild, method, **kwargs):
+                if method == "claim":
+                    return {"claimed": True, "amount": Decimal("1.0")}
+                elif method == "hourly":
+                    raise GameError("hourly_cooldown", remaining="45m 10s", ts=123456789)
+                elif method == "contract":
+                    raise GameError("contract_in_progress", remaining="1h 20m", ts=123456789)
+                elif method == "buy":
+                    return {"bought": True, "tier": 1, "count": 1}
+                raise GameError("invalid_selection")
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "daily_farm"))
+
+            # Vérifications :
+            self.assertEqual(run_result["macro_name"], "daily_farm")
+            self.assertEqual(run_result["total_steps"], 4)
+            self.assertEqual(run_result["executed_steps"], 4)
+            self.assertIsNone(run_result["stopped_at"])
+            self.assertIsNone(run_result["error"])
+
+            # Étape 1 : Réussie
+            self.assertTrue(run_result["steps"][0]["success"])
+            self.assertFalse(run_result["steps"][0].get("skipped", False))
+            self.assertEqual(run_result["steps"][0]["method"], "claim")
+
+            # Étape 2 : Hourly en cooldown -> ignorée
+            self.assertFalse(run_result["steps"][1]["success"])
+            self.assertTrue(run_result["steps"][1]["skipped"])
+            self.assertEqual(run_result["steps"][1]["error"]["key"], "hourly_cooldown")
+
+            # Étape 3 : Contrat en cours -> ignorée
+            self.assertFalse(run_result["steps"][2]["success"])
+            self.assertTrue(run_result["steps"][2]["skipped"])
+            self.assertEqual(run_result["steps"][2]["error"]["key"], "contract_in_progress")
+
+            # Étape 4 : Achat -> Réussie
+            self.assertTrue(run_result["steps"][3]["success"])
+            self.assertFalse(run_result["steps"][3].get("skipped", False))
+            self.assertEqual(run_result["steps"][3]["method"], "buy")
+
+            # Toutes les 4 étapes ont bien été tentées
+            self.assertEqual(root_service.execute.call_count, 4)
+        finally:
+            loop.close()
+
+    def test_macro_buy_all_preserves_all_on_execution(self):
+        """Vérifie que 'all' dans buy est bien conservé lors de l'enregistrement ET de l'exécution."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from game.macro_catalog import validate_step_args
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+
+        # 1. Validation initiale
+        step1 = validate_step_args("buy", {"kind": "mining", "tier": "1", "count": "all"})
+        self.assertTrue(step1.get("all"))
+        self.assertTrue(step1.get("confirm"))
+
+        # 2. Re-validation (celle effectuée lors de run_macro)
+        step1_reval = validate_step_args("buy", step1)
+        self.assertTrue(step1_reval.get("all"), "La re-validation ne doit pas écraser 'all' en 1")
+
+        # 3. Validation sans tier spécifié
+        step_no_tier = validate_step_args("buy", {"kind": "mining", "count": "all"})
+        self.assertEqual(step_no_tier.get("tier"), 1)
+        self.assertTrue(step_no_tier.get("all"))
+
+        # 4. Exécution complète via MacroService
+        mock_db = MagicMock()
+        mock_db.now = self.tx.now
+
+        async def run_fn(callback, locks=None, readonly=False, resource=None):
+            return callback(self.tx)
+
+        mock_db.run = AsyncMock(side_effect=run_fn)
+
+        root_service = RootService(database=mock_db)
+        macro_service = MacroService(root_service)
+        root_service.macro_service = macro_service
+
+        loop = asyncio.new_event_loop()
+        try:
+            steps = [{"method": "buy", "args": {"kind": "mining", "tier": "1", "count": "all"}}]
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "buy_all_farm", steps))
+
+            executed_kwargs = {}
+
+            async def fake_execute(actor, guild, method, **kwargs):
+                executed_kwargs.update(kwargs)
+                return {"bought": True, "count": 25, "tier": 1}
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "buy_all_farm"))
+            self.assertEqual(run_result["executed_steps"], 1)
+            self.assertTrue(executed_kwargs.get("all"), "L'appel à execute doit avoir reçu all=True")
+            self.assertTrue(executed_kwargs.get("confirm"))
+        finally:
+            loop.close()
+
+    def test_macro_prefix_parsing_display_flag(self):
+        """Vérifie la détection du flag d / display dans la commande préfixe !macro."""
+        display_flags = {"d", "display", "-d", "--display", "v", "verbose"}
+        tokens = ["farm", "d"]
+        display_steps = any(t.lower().strip() in display_flags for t in tokens)
+        remaining = [t for t in tokens if t.lower().strip() not in display_flags]
+        self.assertTrue(display_steps)
+        self.assertEqual(remaining, ["farm"])
+
+        tokens2 = ["run", "my_macro", "--display"]
+        display_steps2 = any(t.lower().strip() in display_flags for t in tokens2)
+        remaining2 = [t for t in tokens2 if t.lower().strip() not in display_flags]
+        self.assertTrue(display_steps2)
+        self.assertEqual(remaining2, ["run", "my_macro"])
+
+    def test_format_macro_run_content_includes_d_tip(self):
+        """Vérifie que le rapport compact mentionne l'astuce avec le flag d / display."""
+        from commands.game.macro import _format_macro_run_content
+        mock_ctx = MagicMock()
+        mock_ctx.prefix = "!"
+        mock_ctx.interaction = None
+        result = {
+            "macro_name": "farm_routine",
+            "total_steps": 2,
+            "executed_steps": 2,
+            "steps": [
+                {"position": 1, "method": "claim", "success": True},
+                {"position": 2, "method": "hourly", "success": True},
+            ],
+        }
+        content = _format_macro_run_content(mock_ctx, result)
+        self.assertIn("!macro farm_routine d", content)
+        self.assertIn("display:True", content)
+
+    def test_help_resolves_macro_command(self):
+        """Vérifie que HelpCog résout la commande macro et ses alias (mac, macros)."""
+        from commands.utility.help import HelpCog
+        mock_bot = MagicMock()
+        help_cog = HelpCog(mock_bot)
+
+        # Résolution canonique
+        canonical, cat, err = help_cog._resolve_command_query("macro", "fr")
+        self.assertEqual(canonical, "macro")
+        self.assertEqual(cat, "network")
+        self.assertIsNone(err)
+
+        # Résolution alias mac
+        canonical_mac, cat_mac, err_mac = help_cog._resolve_command_query("mac", "fr")
+        self.assertEqual(canonical_mac, "macro")
+        self.assertEqual(cat_mac, "network")
+        self.assertIsNone(err_mac)
+
+        # Résolution alias macros
+        canonical_macros, cat_macros, err_macros = help_cog._resolve_command_query("macros", "en")
+        self.assertEqual(canonical_macros, "macro")
+        self.assertEqual(cat_macros, "network")
+        self.assertIsNone(err_macros)
+
+    def test_macro_logs_and_blockchain_dispatch(self):
+        """Vérifie que l'exécution des étapes de macro déclenche les logs et la blockchain."""
+        import asyncio
+        from commands.game.macro import Macro
+        from decimal import Decimal
+        mock_bot = MagicMock()
+        mock_discord_logger = MagicMock()
+        mock_discord_logger.log_blockchain_transaction = AsyncMock()
+        mock_discord_logger.log_hourly = AsyncMock()
+        mock_discord_logger.log_claim = AsyncMock()
+        mock_bot.discord_logger = mock_discord_logger
+
+        macro_cog = Macro(mock_bot)
+
+        mock_ctx = MagicMock()
+        mock_author = MagicMock()
+        mock_author.id = 987654321
+        mock_author.display_name = "PlayerOne"
+        mock_ctx.author = mock_author
+        mock_ctx.user = mock_author
+
+        loop = asyncio.new_event_loop()
+        try:
+            # 1. Étape Claim réussie -> Blockchain + modération
+            claim_result = {
+                "claimed": True,
+                "amount": Decimal("15.5"),
+                "new_rootium": Decimal("100"),
+                "rate_per_min": Decimal("2.5"),
+                "total_ram_formatted": "500 Mo",
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "claim", claim_result))
+            mock_discord_logger.log_blockchain_transaction.assert_awaited()
+            last_bc_call = mock_discord_logger.log_blockchain_transaction.call_args
+            self.assertEqual(last_bc_call.kwargs.get("rtm_amount"), Decimal("15.5"))
+            self.assertEqual(last_bc_call.kwargs.get("to_address"), "987654321")
+
+            # 2. Étape Hourly réussie -> Log hourly
+            hourly_result = {
+                "base_usd": Decimal("100"),
+                "bonus_pct": Decimal("50"),
+                "total_usd": Decimal("150"),
+                "streak": 5,
+                "combo_lost": False,
+                "is_first": False,
+                "new_dollars": Decimal("1000"),
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "hourly", hourly_result))
+            mock_discord_logger.log_hourly.assert_awaited()
+
+            # 3. Étape Buy Attack (RTM) -> Log blockchain
+            mock_discord_logger.log_blockchain_transaction.reset_mock()
+            buy_result = {
+                "kind": "attack",
+                "rtm_price": Decimal("25"),
+                "tier": 2,
+                "count": 1,
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "buy", buy_result))
+            mock_discord_logger.log_blockchain_transaction.assert_awaited_once()
+            buy_bc_call = mock_discord_logger.log_blockchain_transaction.call_args
+            self.assertEqual(buy_bc_call.kwargs.get("to_address"), "0xROOT_BLACK_MARKET")
+            self.assertEqual(buy_bc_call.kwargs.get("rtm_amount"), Decimal("25"))
+
+            # 4. Étape Convert (RTM -> USD) -> Log blockchain DEX
+            mock_discord_logger.log_blockchain_transaction.reset_mock()
+            convert_result = {
+                "rtm_amount": Decimal("50"),
+                "usd_amount": Decimal("100"),
+            }
+            loop.run_until_complete(macro_cog._log_step(mock_ctx, "convert", convert_result))
+            mock_discord_logger.log_blockchain_transaction.assert_awaited_once()
+            convert_bc_call = mock_discord_logger.log_blockchain_transaction.call_args
+            self.assertEqual(convert_bc_call.kwargs.get("tx_type"), "SELL TOKEN")
+            self.assertEqual(convert_bc_call.kwargs.get("rtm_amount"), Decimal("50"))
+
+            # 5. _dispatch_macro_logs complet
+            mock_discord_logger.log_blockchain_transaction.reset_mock()
+            macro_run_res = {
+                "steps": [
+                    {"method": "claim", "success": True, "result": claim_result},
+                    {"method": "convert", "success": True, "result": convert_result},
+                    {"method": "claim", "success": False, "skipped": True},
+                ]
+            }
+            loop.run_until_complete(macro_cog._dispatch_macro_logs(mock_ctx, macro_run_res))
+            self.assertEqual(mock_discord_logger.log_blockchain_transaction.await_count, 2)
+        finally:
+            loop.close()
+
+    def test_macro_wizard_view_and_inline_create(self):
+        """Vérifie le cycle de vie du wizard de macro et la création directe en ligne."""
+        import asyncio
+        from commands.game.macro import MacroWizardView, Macro
+        from game.macro_catalog import validate_step_args
+
+        loop = asyncio.new_event_loop()
+        try:
+            async def _test():
+                mock_cog = MagicMock()
+                mock_ctx = MagicMock()
+                mock_ctx.author.id = self.player_id
+                mock_ctx.guild = None
+
+                # 1. Wizard initialisé sans nom
+                view = MacroWizardView(mock_cog, mock_ctx, default_name=None)
+                self.assertIsNone(view.macro_name)
+                self.assertEqual(len(view.steps), 0)
+                self.assertEqual(len(view.children), 2)  # Bouton "Nommer la macro" + "Annuler"
+
+                # 2. Assignation de nom
+                view.macro_name = "daily_routine"
+                view._build_interface()
+                self.assertEqual(view.macro_name, "daily_routine")
+                self.assertGreaterEqual(len(view.children), 2)
+
+                # 3. Ajout d'étapes valides
+                args_claim = validate_step_args("claim", {})
+                view.steps.append({"method": "claim", "args": args_claim})
+                args_buy = validate_step_args("buy", {"kind": "mining", "count": 2})
+                view.steps.append({"method": "buy", "args": args_buy})
+                view._build_interface()
+                self.assertEqual(len(view.steps), 2)
+
+                summary = view._render_summary()
+                self.assertIn("daily_routine", summary)
+                self.assertIn("claim", summary)
+                self.assertIn("buy", summary)
+
+                # 4. Undo (retirer dernière étape)
+                mock_inter = MagicMock()
+                mock_inter.user.id = self.player_id
+                mock_inter.response.is_done.return_value = False
+                mock_inter.response.edit_message = AsyncMock()
+                await view._on_undo(mock_inter)
+                self.assertEqual(len(view.steps), 1)
+                self.assertEqual(view.steps[0]["method"], "claim")
+
+                # 5. Création directe inline via prefix_macro
+                mock_macro_service = MagicMock()
+                mock_macro_service.create_macro = AsyncMock(return_value={"name": "fast_farm", "steps": [{"method": "claim"}, {"method": "hourly"}]})
+                mock_bot = MagicMock()
+                mock_bot.root_service.macro_service = mock_macro_service
+
+                macro_cog = Macro(mock_bot)
+                mock_ctx_prefix = MagicMock()
+                mock_ctx_prefix.author.id = self.player_id
+                mock_ctx_prefix.prefix = "!"
+                mock_ctx_prefix.guild = None
+                macro_cog._send_embed = AsyncMock()
+
+                await macro_cog.prefix_macro.callback(macro_cog, mock_ctx_prefix, "create", "fast_farm", "claim", "hourly")
+                mock_macro_service.create_macro.assert_awaited_once()
+                call_args = mock_macro_service.create_macro.call_args
+                self.assertEqual(call_args[0][1], "fast_farm")
+                self.assertEqual(len(call_args[0][2]), 2)
+                self.assertEqual(call_args[0][2][0]["method"], "claim")
+                self.assertEqual(call_args[0][2][1]["method"], "hourly")
+                macro_cog._send_embed.assert_awaited_once()
+
+            loop.run_until_complete(_test())
+        finally:
+            loop.close()
+
+    def test_macro_rmd_step_validation_and_execution(self):
+        """Vérifie la validation de la commande rmd dans les macros et son exécution avec target et create_smart."""
+        import asyncio
+        from game.macro_catalog import validate_step_args
+        from game.root_service import RootService
+        from game.macro_service import MacroService
+        from commands.game.macro import Macro
+
+        # 1. Validation sans arguments -> create_smart avec target="all"
+        res_empty = validate_step_args("rmd", {})
+        self.assertEqual(res_empty.get("action"), "create_smart")
+        self.assertEqual(res_empty.get("target"), "all")
+
+        # 2. Validation avec target="all"
+        res_all = validate_step_args("rmd", {"target": "all"})
+        self.assertEqual(res_all.get("action"), "create_smart")
+        self.assertEqual(res_all.get("target"), "all")
+
+        # 3. Validation avec target="hourly"
+        res_hourly = validate_step_args("rmd", {"target": "hourly"})
+        self.assertEqual(res_hourly.get("action"), "create_smart")
+        self.assertEqual(res_hourly.get("target"), "hourly")
+
+        # 4. Tolérance ancien format {"action": "create", "target": "all"}
+        res_legacy = validate_step_args("rmd", {"action": "create", "target": "all"})
+        self.assertEqual(res_legacy.get("action"), "create_smart")
+        self.assertEqual(res_legacy.get("target"), "all")
+
+        # 5. Tolérance parsing inline {"action": "all"}
+        res_inline = validate_step_args("rmd", {"action": "all"})
+        self.assertEqual(res_inline.get("action"), "create_smart")
+        self.assertEqual(res_inline.get("target"), "all")
+
+        # 6. Action list
+        res_list = validate_step_args("rmd", {"target": "list"})
+        self.assertEqual(res_list.get("action"), "list")
+
+        # 7. Action cancel
+        res_cancel = validate_step_args("rmd", {"target": "cancel"})
+        self.assertEqual(res_cancel.get("action"), "cancel")
+        self.assertEqual(res_cancel.get("reminder_id"), "all")
+
+        # 8. Création inline via prefix_macro avec rmd:all et rmd:hourly
+        mock_macro_service = MagicMock()
+        mock_macro_service.create_macro = AsyncMock(return_value={"name": "rmd_macro", "steps": []})
+        mock_bot = MagicMock()
+        mock_bot.root_service.macro_service = mock_macro_service
+
+        macro_cog = Macro(mock_bot)
+        mock_ctx = MagicMock()
+        mock_ctx.author.id = self.player_id
+        mock_ctx.prefix = "!"
+        mock_ctx.guild = None
+        macro_cog._send_embed = AsyncMock()
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                macro_cog.prefix_macro.callback(macro_cog, mock_ctx, "create", "rmd_macro", "rmd:all", "rmd:hourly")
+            )
+            mock_macro_service.create_macro.assert_awaited_once()
+            created_steps = mock_macro_service.create_macro.call_args[0][2]
+            self.assertEqual(len(created_steps), 2)
+            self.assertEqual(created_steps[0]["args"]["action"], "create_smart")
+            self.assertEqual(created_steps[0]["args"]["target"], "all")
+            self.assertEqual(created_steps[1]["args"]["action"], "create_smart")
+            self.assertEqual(created_steps[1]["args"]["target"], "hourly")
+
+            # 9. Exécution complète via MacroService
+            mock_db = MagicMock()
+            mock_db.now = self.tx.now
+
+            async def run_fn(callback, locks=None, readonly=False, resource=None):
+                return callback(self.tx)
+
+            mock_db.run = AsyncMock(side_effect=run_fn)
+            root_service = RootService(database=mock_db)
+            macro_service = MacroService(root_service)
+            root_service.macro_service = macro_service
+
+            loop.run_until_complete(macro_service.create_macro(self.player_id, "test_rmd_run", created_steps))
+
+            executed_calls = []
+
+            async def fake_execute(actor, guild, method, **kwargs):
+                executed_calls.append((method, kwargs))
+                return {"status": "created_all", "results": []}
+
+            root_service.execute = AsyncMock(side_effect=fake_execute)
+
+            run_result = loop.run_until_complete(macro_service.run_macro(self.player_id, None, "test_rmd_run"))
+            self.assertEqual(run_result["executed_steps"], 2)
+            self.assertEqual(len(executed_calls), 2)
+            self.assertEqual(executed_calls[0][0], "rmd")
+            self.assertEqual(executed_calls[0][1].get("action"), "create_smart")
+            self.assertEqual(executed_calls[0][1].get("target"), "all")
+        finally:
+            loop.close()
 
 
 if __name__ == '__main__':

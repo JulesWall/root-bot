@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS players (
     contracts_completed INT UNSIGNED    NOT NULL DEFAULT 0,
     contract_grace_until DATETIME(6)    NULL     DEFAULT NULL,
 
+    -- Procédure de sauvegarde et dégâts critiques PvP
+    critical_lock_until DATETIME(6)     NULL     DEFAULT NULL,
+
     -- Contraintes d'intégrité
     PRIMARY KEY (discord_id),
     UNIQUE KEY uq_players_secret_id (secret_id),
@@ -155,8 +158,8 @@ CREATE TABLE IF NOT EXISTS hack (
 -- 4bis. Table des Contrats de Travail en cours (/contract)
 CREATE TABLE IF NOT EXISTS contracts (
     discord_id       BIGINT UNSIGNED NOT NULL,
-    duration_type    VARCHAR(16)     NOT NULL,
-    title            VARCHAR(128)    NOT NULL,
+    duration_type    VARCHAR(32)     NOT NULL,
+    title            VARCHAR(255)    NOT NULL,
     reward_usd       DECIMAL(30, 2)  NOT NULL,
     is_special       TINYINT(1)      NOT NULL DEFAULT 0,
     started_at       DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -164,7 +167,6 @@ CREATE TABLE IF NOT EXISTS contracts (
     notified         TINYINT(1)      NOT NULL DEFAULT 0,
     PRIMARY KEY (discord_id),
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE,
-    CHECK (duration_type IN ('short', 'medium', 'long')),
     CHECK (reward_usd >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -457,8 +459,35 @@ CREATE TABLE IF NOT EXISTS reminders (
 --   INDEX idx_reminders_remind_at (remind_at),
 --   INDEX idx_reminders_discord (discord_id),
 --   FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
--- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- ====================================================================
 
+-- 15. Table des Macros Joueur (/macro)
+CREATE TABLE IF NOT EXISTS macros (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id  BIGINT UNSIGNED NOT NULL,
+    name        VARCHAR(32) NOT NULL,
+    created_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_macro_owner_name (discord_id, name),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 16. Table des Étapes de Macros (1 à 5 étapes par macro)
+CREATE TABLE IF NOT EXISTS macro_steps (
+    macro_id  BIGINT UNSIGNED NOT NULL,
+    position  TINYINT UNSIGNED NOT NULL,
+    method    VARCHAR(32) NOT NULL,
+    args_json JSON NOT NULL,
+    PRIMARY KEY (macro_id, position),
+    FOREIGN KEY (macro_id) REFERENCES macros(id) ON DELETE CASCADE,
+    CHECK (position BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 17. Table du Suivi des Exécutions de Macros (limite 60/h et cooldown 15s)
+CREATE TABLE IF NOT EXISTS macro_runs (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id  BIGINT UNSIGNED NOT NULL,
+    started_at  DATETIME(6) NOT NULL,
+    INDEX idx_macro_runs_owner_time (discord_id, started_at),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -250,6 +250,8 @@ def create_bot() -> commands.Bot:
         """
         await update_bot_presence(bot)
         start_presence_loop(bot)
+        from utils.root_emojis import init_emojis
+        init_emojis(bot)
         logger.info("%s connecte : %s (maintenance=%s)", data.BOT_NAME, bot.user, checks.maintenance_enabled())
         await discord_logger.log_blockchain_ready()
         # Initialisation du suivi économique (no-op si ECONOMY_REPORTS_ENABLED=false)

@@ -47,7 +47,7 @@ class DailyClaimStatsDB:
             tx: Transaction MySQL active.
             limit_users: Nombre maximum d'utilisateurs à renvoyer.
             since_dt: Borne inférieure facultative pour les totaux (ex: dernières 24h).
-            claims_since_dt: Borne inférieure facultative pour l'historique de claims (ex: dernières 48h).
+            claims_since_dt: Borne inférieure facultative pour l'historique de claims (ex: dernières 24h).
 
         Returns:
             Une liste de dictionnaires au format :
@@ -186,7 +186,7 @@ class DailyClaimStatsDB:
 
     @staticmethod
     def purge_older_than(tx, cutoff_dt: datetime) -> None:
-        """Supprime les logs antérieurs à la date limite (rétention 48h)."""
+        """Supprime les logs antérieurs à la date limite (rétention 24h glissante)."""
         tx.execute("DELETE FROM daily_claim_logs WHERE claimed_at < %s", (cutoff_dt,))
 
     @staticmethod

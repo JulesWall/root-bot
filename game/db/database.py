@@ -156,7 +156,7 @@ class Database:
         pool_key = tuple(sorted(opts.items()))
         with Database._pool_lock:
             if pool_key not in Database._pools:
-                pool_size = int(os.getenv('DB_POOL_SIZE', '10'))
+                pool_size = min(32, max(1, int(os.getenv('DB_POOL_SIZE', '20'))))
                 pool_name = f"root_pool_{len(Database._pools)}_{opts.get('database', 'root')}"
                 Database._pools[pool_key] = MySQLConnectionPool(
                     pool_name=pool_name,
@@ -168,6 +168,19 @@ class Database:
                     **opts,
                 )
             return Database._pools[pool_key]
+
+    @staticmethod
+    def _acquire_connection(pool: MySQLConnectionPool, timeout: float = 5.0):
+        """Acquiert une connexion du pool en attendant si le pool est temporairement saturé."""
+        deadline = time.time() + timeout
+        while True:
+            try:
+                return pool.get_connection()
+            except mysql.connector.errors.PoolError as err:
+                if "pool exhausted" in str(err).lower() and time.time() < deadline:
+                    time.sleep(0.05)
+                    continue
+                raise
 
     @staticmethod
     def _cleanup(call):
@@ -258,7 +271,7 @@ class Database:
             connection = None
             tx = None
             try:
-                connection = pool.get_connection()
+                connection = self._acquire_connection(pool)
                 connection.autocommit = True
                 tx = Transaction(connection, self.clock)
                 return function(tx)
@@ -278,7 +291,7 @@ class Database:
             committed = False
             commit_started = False
             try:
-                connection = pool.get_connection()
+                connection = self._acquire_connection(pool)
                 connection.autocommit = False
                 tx = Transaction(connection, self.clock)
 

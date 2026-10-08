@@ -21,6 +21,8 @@ from commands.game.commandgame import BaseGameCog
 from game.game_error import GameError
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+from utils.root_embed import RootEmbed
+from utils.root_theme import VisualState
 from utils.text import format_usd, get as text_get
 
 logger = logging.getLogger(__name__)
@@ -46,18 +48,20 @@ class HourlyComboSaverView(discord.ui.View):
         self._setup_button()
 
     def _setup_button(self):
+        from utils.root_emojis import get_button_emoji
         credits = int(self.result.get("combo_saver_credits", 0) or 0)
+        btn_emoji = get_button_emoji("root_firewall") or "🛡️"
         if credits > 0:
             btn = discord.ui.Button(
                 label=text_get(self.ctx, "g_hourly_btn_save")[:80],
-                emoji="🛡️",
+                emoji=btn_emoji,
                 style=discord.ButtonStyle.success,
             )
             btn.callback = self._on_save
         else:
             btn = discord.ui.Button(
                 label=text_get(self.ctx, "g_hourly_btn_no_credits")[:80],
-                emoji="🛡️",
+                emoji=btn_emoji,
                 style=discord.ButtonStyle.secondary,
                 disabled=True,
             )
@@ -86,10 +90,22 @@ class HourlyComboSaverView(discord.ui.View):
                 credits=save_res["remaining_credits"],
             )
             if interaction.message:
-                await interaction.response.edit_message(
-                    content=f"{interaction.message.content}\n\n{success_msg}",
-                    view=None,
-                )
+                has_embeds = bool(getattr(interaction.message, 'embeds', None)) and len(interaction.message.embeds) > 0 and getattr(interaction.message.embeds[0], 'description', None) is not None
+                if has_embeds:
+                    embed = interaction.message.embeds[0]
+                    new_embed = RootEmbed(
+                        self.ctx,
+                        "hourly",
+                        content=f"{embed.description}\n\n{success_msg}",
+                        state=VisualState.SUCCESS,
+                    )
+                    await interaction.response.edit_message(content=success_msg, embed=new_embed, view=None)
+                else:
+                    orig = getattr(interaction.message, 'content', '') or ''
+                    await interaction.response.edit_message(
+                        content=f"{orig}\n\n{success_msg}".strip(),
+                        view=None,
+                    )
             else:
                 await interaction.response.send_message(success_msg)
         except GameError as err:
@@ -142,8 +158,6 @@ class Hourly(BaseGameCog):
     # ── Rendu ────────────────────────────────────────────────────────────────
     async def _send(self, ctx, method, result):
         """Affiche le rapport de récompense horaire et déclenche la journalisation."""
-        mentions = discord.AllowedMentions.none()
-
         if method == "hourly_save_combo":
             success_msg = text_get(
                 ctx,
@@ -152,10 +166,7 @@ class Hourly(BaseGameCog):
                 bonus=_pct(result["restored_bonus"]),
                 credits=result["remaining_credits"],
             )
-            if getattr(ctx, "interaction", None):
-                await ctx.respond(success_msg, allowed_mentions=mentions)
-            else:
-                await ctx.send(success_msg, allowed_mentions=mentions)
+            await self._reply(ctx, success_msg)
             return
 
         base_usd = result["base_usd"]
@@ -175,6 +186,10 @@ class Hourly(BaseGameCog):
             "bonus": _pct(bonus_pct),
             "streak": streak,
             "next_ts": next_ts,
+            "timestamp": next_ts,
+            "ts": next_ts,
+            "remaining": "1h",
+            "duration": "1h",
         }
         if is_first:
             key = "g_hourly_first"
@@ -193,17 +208,10 @@ class Hourly(BaseGameCog):
                 lost_bonus=_pct(result.get("lost_bonus", 0)),
                 credits=result.get("combo_saver_credits", 0),
             )
-            content = f"{content}\n{saver_prompt}"
+            content = f"{content}\n\n{saver_prompt}"
             view = HourlyComboSaverView(self, ctx, result)
 
-        kwargs = {"allowed_mentions": mentions}
-        if view is not None:
-            kwargs["view"] = view
-
-        if getattr(ctx, "interaction", None):
-            await ctx.respond(content, **kwargs)
-        else:
-            await ctx.send(content, **kwargs)
+        await self._reply(ctx, content, view=view)
 
         # Journalisation Discord asynchrone
         try:
@@ -224,6 +232,21 @@ class Hourly(BaseGameCog):
                 )
         except Exception:
             pass
+
+    async def _reply(self, ctx, content: str, view: discord.ui.View | None = None):
+        """Envoie une réponse directe aérée sans embed superflu, avec gestion des interactions."""
+        kwargs: dict[str, Any] = {"allowed_mentions": discord.AllowedMentions.none()}
+        if view is not None:
+            kwargs["view"] = view
+        interaction = getattr(ctx, "interaction", None)
+        if interaction:
+            if interaction.response.is_done():
+                await interaction.followup.send(content, **kwargs)
+            else:
+                await interaction.response.send_message(content, **kwargs)
+        else:
+            await ctx.send(content, **kwargs)
+
 
 
 def setup(bot):

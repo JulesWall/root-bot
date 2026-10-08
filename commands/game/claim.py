@@ -12,6 +12,7 @@ Ce module matérialise le cœur de la boucle de minage passif de Root :
 
 from decimal import Decimal
 import logging
+import time
 
 import discord
 from discord.ext import commands, tasks
@@ -94,7 +95,9 @@ class Claim(BaseGameCog):
                     remaining_active=item.get('autoclaim_active_remaining', 0),
                     remaining_credits=item.get('autoclaim_credits_remaining', 0),
                 )
-                await user.send(content)
+                from utils.root_embed import RootEmbed
+                embed = RootEmbed.notification(lang, "Autoclaim", content)
+                await user.send(embed=embed)
                 logger.info("Notification MP d'autoclaim envoyée à %s", actor_id)
         except (discord.Forbidden, discord.HTTPException) as exc:
             logger.warning("Impossible d'envoyer le MP d'autoclaim à %s (MP bloqués/fermés) : %s", actor_id, exc)
@@ -236,7 +239,15 @@ class Claim(BaseGameCog):
             if result.get('reminder_rescheduled'):
                 sec_to_fill = result.get('seconds_to_fill_total') or result.get('seconds_to_full', 0)
                 time_to_full = format_duration(sec_to_fill)
-                rmd_hint = text.get(ctx, 'g_claim_rmd_rescheduled_hint', time_to_full=time_to_full)
+                ts = int(time.time() + (sec_to_fill or 0))
+                rmd_hint = text.get(
+                    ctx, 'g_claim_rmd_rescheduled_hint',
+                    time_to_full=time_to_full,
+                    remaining=time_to_full,
+                    duration=time_to_full,
+                    ts=ts,
+                    timestamp=ts,
+                )
 
             content = text.get(
                 ctx, 'g_claim_success',
@@ -257,24 +268,34 @@ class Claim(BaseGameCog):
         if reason == 'no_miner':
             content = text.get(ctx, 'g_claim_no_miner', prefix=prefix)
         else:
-            time_to_full = format_duration(result.get('seconds_to_full', 0))
+            sec_to_full = result.get('seconds_to_full', 0)
+            time_to_full = format_duration(sec_to_full)
+            ts = int(time.time() + (sec_to_full or 0))
             content = text.get(
                 ctx, 'g_claim_empty',
                 rate=rate_str,
                 ram_total=ram_total,
                 time_to_full=time_to_full,
+                remaining=time_to_full,
+                duration=time_to_full,
+                ts=ts,
+                timestamp=ts,
                 rep_bonus_note=rep_bonus_note,
                 credits_hint=credits_hint,
             )
         await self._reply(ctx, content)
 
     async def _reply(self, ctx, content: str):
-        """Envoie une réponse en texte brut (hors Embed) selon le contexte Slash ou préfixe."""
-        kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-        if getattr(ctx, 'interaction', None):
-            await ctx.respond(**kwargs)
+        """Envoie une réponse simple sous forme de message direct sans embed."""
+        interaction = getattr(ctx, 'interaction', None)
+        if interaction:
+            if interaction.response.is_done():
+                await interaction.followup.send(content, allowed_mentions=discord.AllowedMentions.none())
+            else:
+                await interaction.response.send_message(content, allowed_mentions=discord.AllowedMentions.none())
         else:
-            await ctx.send(**kwargs)
+            await ctx.send(content, allowed_mentions=discord.AllowedMentions.none())
+
 
     async def _log_blockchain(self, ctx, amount: Decimal):
         """Publie la récolte de minage dans le salon #blockchain (best-effort, sans casser la commande)."""

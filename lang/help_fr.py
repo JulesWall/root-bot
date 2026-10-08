@@ -54,7 +54,7 @@ CATEGORIES = [
         "id": "network",
         "emoji": "⛏️",
         "label": "Développer mon réseau",
-        "description": "Gestion du matériel, minage et pare-feu",
+        "description": "Gestion du matériel, minage et infrastructure",
     },
     {
         "id": "combat",
@@ -103,10 +103,10 @@ PAGES = {
             "**4. Finance la suite — `/convert` et `/event`**\n"
             "Convertis une partie de tes RTM en dollars et participe aux événements.\n\n"
             "**5. Développe ton réseau — `/upgrade`**\n"
-            "Améliore ton pare-feu pour débloquer du matériel avancé (attention : le niveau 1 active le PvP !).\n\n"
+            "Améliore ton infrastructure pour débloquer du matériel avancé (attention : le niveau 1 active le PvP !).\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "**Les ressources :**\n"
-            "• **USD ($)** : Monnaie pour le minage, la défense et le pare-feu.\n"
+            "• **USD ($)** : Monnaie pour le minage, la défense et l'infrastructure.\n"
             "• **RTM** : Rootium miné, requis pour l'attaque, la compilation et les scans.\n"
             "• **ATK** : Points d'attaque fabriqués avec `/compile`.\n\n"
             "💬 **Communauté & Support :** [Rejoins le serveur officiel](https://discord.gg/FtfGuyb6mv)\n\n"
@@ -124,10 +124,10 @@ PAGES = {
             "**4. Finance la suite — `{prefix}convert` et `{prefix}event`**\n"
             "Convertis une partie de tes RTM en dollars et participe aux événements.\n\n"
             "**5. Développe ton réseau — `{prefix}upgrade`**\n"
-            "Améliore ton pare-feu pour débloquer du matériel avancé (attention : le niveau 1 active le PvP !).\n\n"
+            "Améliore ton infrastructure pour débloquer du matériel avancé (attention : le niveau 1 active le PvP !).\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "**Les ressources :**\n"
-            "• **USD ($)** : Monnaie pour le minage, la défense et le pare-feu.\n"
+            "• **USD ($)** : Monnaie pour le minage, la défense et l'infrastructure.\n"
             "• **RTM** : Rootium miné, requis pour l'attaque, la compilation et les scans.\n"
             "• **ATK** : Points d'attaque fabriqués avec `{prefix}compile`.\n\n"
             "💬 **Communauté & Support :** [Rejoins le serveur officiel](https://discord.gg/FtfGuyb6mv)\n\n"
@@ -137,7 +137,7 @@ PAGES = {
     "all": {
         "title": "📜 ROOT — Toutes les commandes",
         "body_slash": (
-            "Index complet des 27 commandes publiques de Root.\n\n"
+            "Index complet des 29 commandes publiques de Root.\n\n"
             "**⛏️ Développer mon réseau**\n"
             "• **/network** — Créer ou consulter mon réseau et mes soldes\n"
             "• **/buy** — Acheter un module (minage, attaque, défense)\n"
@@ -145,7 +145,8 @@ PAGES = {
             "• **/hourly** — Réclamer ma prime horaire en dollars et faire monter le combo\n"
             "• **/contract** — Consulter et accepter des missions rémunérées avec Root CyberSec\n"
             "• **/convert** — Vendre du Rootium contre des dollars USD\n"
-            "• **/upgrade** — Améliorer le niveau de pare-feu\n\n"
+            "• **/upgrade** — Améliorer le niveau d'infrastructure\n"
+            "• **/macro** — Automatiser des routines de commandes séquentielles\n\n"
             "**⚔️ Attaquer et me défendre**\n"
             "• **/compile** — Fabriquer des points d'attaque (ATK)\n"
             "• **/scan** — Scanner un joueur pour trouver son Secret ID\n"
@@ -174,7 +175,7 @@ PAGES = {
             "👉 *Sélectionne n'importe quelle commande ci-dessous pour ouvrir sa fiche détaillée.*"
         ),
         "body_text": (
-            "Index complet des 28 commandes publiques de Root.\n\n"
+            "Index complet des 29 commandes publiques de Root.\n\n"
             "**⛏️ Développer mon réseau**\n"
             "• **{prefix}network** (alias `{prefix}n`) — Créer ou consulter mon réseau\n"
             "• **{prefix}buy** — Acheter un module (minage, attaque, défense)\n"
@@ -182,7 +183,8 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) — Réclamer ma prime horaire en dollars\n"
             "• **{prefix}contract** — Accepter des missions rémunérées garanties\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Vendre des RTM\n"
-            "• **{prefix}upgrade** — Améliorer le niveau de pare-feu\n\n"
+            "• **{prefix}upgrade** — Améliorer le niveau d'infrastructure\n"
+            "• **{prefix}macro** (alias `{prefix}mac`) — Automatiser des routines de commandes\n\n"
             "**⚔️ Attaquer et me défendre**\n"
             "• **{prefix}compile** (alias `{prefix}cp`) — Fabriquer des points ATK\n"
             "• **{prefix}scan** — Scanner un joueur pour trouver son Secret ID\n"
@@ -221,7 +223,8 @@ PAGES = {
             "• **/hourly** : Réclame ta prime horaire et fais monter ton combo pour décupler tes récompenses en USD.\n"
             "• **/contract** : Travaille pour Root CyberSec et accomplis des missions garanties pour un revenu régulier.\n"
             "• **/convert** : Convertis tes RTM en dollars USD au cours de change actuel.\n"
-            "• **/upgrade** : Lance l'amélioration de ton niveau de pare-feu.\n\n"
+            "• **/upgrade** : Lance l'amélioration de ton niveau d'infrastructure.\n"
+            "• **/macro** : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
         ),
         "body_text": (
@@ -232,7 +235,8 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) : Réclame ta prime horaire et entretiens ton combo.\n"
             "• **{prefix}contract** : Accepte des contrats de sécurité informatique rémunérés en USD.\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) : Vends tes RTM en USD.\n"
-            "• **{prefix}upgrade** : Lance l'amélioration de ton pare-feu.\n\n"
+            "• **{prefix}upgrade** : Lance l'amélioration de ton infrastructure.\n"
+            "• **{prefix}macro** (alias `{prefix}mac`) : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
         ),
     },
@@ -244,7 +248,7 @@ PAGES = {
             "• **/compile** : Produis des points d'attaque (ATK) selon la méthode et le débit choisis.\n"
             "• **/scan** : Lance un scan sur un joueur pour tenter d'obtenir son Secret ID.\n"
             "• **/hack** : Engage tes ATK contre le réseau d'un adversaire via son Secret ID.\n\n"
-            "🛡️ *Pour te protéger, achète des modules avec `/buy kind:defense` et améliore ton pare-feu avec `/upgrade`.*"
+            "🛡️ *Pour te protéger, achète des modules avec `/buy kind:defense` et améliore ton infrastructure avec `/upgrade`.*"
         ),
         "body_text": (
             "Un module d'attaque fournit un débit de production. Utilise `{prefix}compile` pour fabriquer des ATK, "
@@ -252,7 +256,7 @@ PAGES = {
             "• **{prefix}compile** (alias `{prefix}cp`) : Fabrique des points ATK avec tes RTM.\n"
             "• **{prefix}scan** : Tente d'extraire le Secret ID d'une cible.\n"
             "• **{prefix}hack** (alias `{prefix}hk`) : Lance une cyberattaque ciblée.\n\n"
-            "🛡️ *Pour te protéger, achète des modules avec `{prefix}buy defense` et améliore ton pare-feu avec `{prefix}upgrade`.*"
+            "🛡️ *Pour te protéger, achète des modules avec `{prefix}buy defense` et améliore ton infrastructure avec `{prefix}upgrade`.*"
         ),
     },
     "events": {
@@ -397,7 +401,7 @@ COMMANDS = {
         ),
         "slash_example": "/buy kind:defense tier:3 count:20",
         "text_example": "{prefix}buy defense 3 20 confirm",
-        "prerequisites": "Un réseau créé, les fonds nécessaires (USD ou RTM selon le module) et le niveau de pare-feu requis.",
+        "prerequisites": "Un réseau créé, les fonds nécessaires (USD ou RTM selon le module) et le niveau d'infrastructure requis.",
         "advice": "Ouvre `/buy` sans argument pour parcourir les modules disponibles, leurs statistiques et leurs tarifs.",
         "aliases": ["Synonyme texte : `{prefix}buy bay_defense` pour la défense"],
         "linked_commands": ["claim", "compile", "upgrade"],
@@ -476,15 +480,15 @@ COMMANDS = {
     "upgrade": {
         "name": "upgrade",
         "category": "network",
-        "title": "🛡️ `/upgrade` — Améliorer mon pare-feu",
-        "description": "Augmente le niveau de ton pare-feu pour accroître ta défense globale, débloquer du matériel avancé et multiplier tes gains (horaire, contrats et événements x(niveau + 1)).",
+        "title": "🛡️ `/upgrade` — Améliorer mon infrastructure",
+        "description": "Augmente le niveau de ton infrastructure pour accroître ta défense globale, débloquer du matériel avancé et multiplier tes gains (horaire, contrats et événements x(niveau + 1)).",
         "slash_syntax": "/upgrade [confirm:confirm]",
         "text_syntax": "{prefix}upgrade [confirm]",
         "parameters": "• `confirm` : Lance directement le chantier d'amélioration sans étape de confirmation.",
         "slash_example": "/upgrade",
         "text_example": "{prefix}upgrade",
-        "prerequisites": "Un réseau, les dollars requis et aucun chantier d'amélioration de pare-feu déjà en cours.",
-        "advice": "Chaque niveau de pare-feu multiplie tes gains (/hourly, /contract et événements) par (Niveau + 1) ! Attention : au niveau 0, tu bénéficies d'une protection spéciale contre le PvP. Passer au niveau 1 t'expose aux attaques des autres joueurs !",
+        "prerequisites": "Un réseau, les dollars requis et aucun chantier d'amélioration d'infrastructure déjà en cours.",
+        "advice": "Chaque niveau d'infrastructure multiplie tes gains (/hourly, /contract et événements) par (Niveau + 1) ! Attention : au niveau 0, tu bénéficies d'une protection spéciale contre le PvP. Passer au niveau 1 t'expose aux attaques des autres joueurs !",
         "aliases": [],
         "linked_commands": ["buy", "network"],
     },
@@ -514,13 +518,13 @@ COMMANDS = {
         "name": "scan",
         "category": "combat",
         "title": "🔍 `/scan` — Scanner un joueur",
-        "description": "Analyse le réseau d'un adversaire pour tenter de percer son pare-feu et révéler son Secret ID.",
+        "description": "Analyse le réseau d'un adversaire pour tenter de percer son infrastructure et révéler son Secret ID.",
         "slash_syntax": "/scan target:<@joueur>",
         "text_syntax": "{prefix}scan <@joueur>",
         "parameters": "• `target` : Mention ou sélection du joueur cible.",
         "slash_example": "/scan target:@Alex",
         "text_example": "{prefix}scan @Alex",
-        "prerequisites": "Un réseau créé, les réserves de RTM requises et une cible valide (pare-feu ≥ 1, pas en protection novice).",
+        "prerequisites": "Un réseau créé, les réserves de RTM requises et une cible valide (infrastructure ≥ 1, pas en protection novice).",
         "advice": "Le succès d'un scan dépend de vos statistiques respectives. Si le scan réussit, note bien le Secret ID : il est temporaire !",
         "aliases": [],
         "linked_commands": ["hack", "compile"],
@@ -552,14 +556,14 @@ COMMANDS = {
         "name": "event",
         "category": "events",
         "title": "🎯 `/event` — Voir les événements",
-        "description": "Consulte le tableau de bord des événements communautaires, les récompenses (multipliées par ton niveau de pare-feu + 1) et les mini-jeux actuellement ouverts.",
+        "description": "Consulte le tableau de bord des événements communautaires, les récompenses (multipliées par ton niveau d'infrastructure + 1) et les mini-jeux actuellement ouverts.",
         "slash_syntax": "/event",
         "text_syntax": "{prefix}event",
         "parameters": "Aucun paramètre.",
         "slash_example": "/event",
         "text_example": "{prefix}event",
         "prerequisites": "Aucun prérequis spécifique pour consulter le tableau.",
-        "advice": "Repère un événement actif, puis lance la commande du mini-jeu sans argument pour lire son défi en cours. Tes gains d'événements sont multipliés par (Niveau de pare-feu + 1) !",
+        "advice": "Repère un événement actif, puis lance la commande du mini-jeu sans argument pour lire son défi en cours. Tes gains d'événements sont multipliés par (Niveau d'infrastructure + 1) !",
         "aliases": ["{prefix}events", "{prefix}e"],
         "linked_commands": ["hash", "pin", "decode"],
     },
@@ -845,9 +849,33 @@ COMMANDS = {
         "aliases": ["{prefix}math", "{prefix}calc", "{prefix}calcul"],
         "linked_commands": [],
     },
+    "macro": {
+        "name": "macro",
+        "category": "network",
+        "title": "🤖 `/macro` — Automatisation de Macros",
+        "description": "Enregistre et exécute des séquences automatisées de 1 à 5 commandes pour piloter ton réseau en un éclair.",
+        "slash_syntax": "/macro [nom:<nom>] [display:<True|False>]\n/macro-create [nom:<nom>]\n/macro-delete nom:<nom>",
+        "text_syntax": "{prefix}macro [nom] [d]\n{prefix}macro create [nom]\n{prefix}macro delete <nom>\n{prefix}macro list",
+        "parameters": (
+            "• `nom` : Nom de la macro à exécuter (1 à 32 caractères minuscules). Laisse vide pour ouvrir le guide d'aide.\n"
+            "• `display` / `d` : **Option d'affichage détaillé** — Affiche les réponses individuelles de chaque commande comme si tu les avais tapées toi-même (par défaut : rapport de synthèse compact).\n"
+            "• `create` : Lance l'assistant pas-à-pas interactif pour concevoir ta macro.\n"
+            "• `delete` : Supprime définitivement la macro spécifiée.\n"
+            "• `list` : Affiche tes macros enregistrées et le nombre d'étapes."
+        ),
+        "slash_example": "/macro nom:farm display:True",
+        "text_example": "{prefix}macro farm d",
+        "example_note": "Ajouter `d` à la fin de `{prefix}macro <nom>` affiche chaque commande en détail dans le salon.",
+        "prerequisites": "Un réseau créé. Maximum 3 macros par joueur, 1 à 5 étapes par macro. Cooldown global de 15s et quota de 60 lancements par heure.",
+        "advice": "Idéal pour combiner `/claim`, `/hourly` et `/buy ... all` en une routine. Les commandes en attente de délai (cooldowns) sont automatiquement ignorées sans bloquer la suite.",
+        "aliases": ["{prefix}mac", "{prefix}macros"],
+        "linked_commands": ["claim", "hourly", "buy", "upgrade", "network"],
+    },
 }
 
 COMMAND_ALIASES = {
+    "mac": "macro",
+    "macros": "macro",
     "n": "network",
     "c": "claim",
     "cl": "claim",

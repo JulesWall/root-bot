@@ -75,16 +75,10 @@ class BaseGameCog(commands.Cog):
         raise NotImplementedError
 
     async def _send_error(self, ctx, error: GameError):
-        """Formate et expédie un message d'erreur de jeu localisé.
-
-        Résolution :
-        - La clé de localisation est construite sous la forme 'g_error_' + error.key.
-        - Les paramètres dynamiques de l'erreur (`error.values`) sont injectés dans le modèle de texte.
-        - Les mentions sont désactivées (`AllowedMentions.none()`) par mesure de sécurité.
-        """
+        """Formate et expédie un message d'erreur de jeu localisé sans embed."""
         msg = text.get(ctx, 'g_error_' + error.key, **error.values)
         if getattr(ctx, 'interaction', None):
-            await ctx.respond(msg, allowed_mentions=discord.AllowedMentions.none())
+            await ctx.respond(msg, allowed_mentions=discord.AllowedMentions.none(), ephemeral=True)
         else:
             await ctx.send(msg, allowed_mentions=discord.AllowedMentions.none())
 

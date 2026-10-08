@@ -29,10 +29,13 @@ from game.math_config import MathConfig
 from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+import time
 from utils import text
 from utils.check import Check
 from utils.logger import Logger
 from utils.root_embed import RootEmbed
+from utils.root_theme import VisualState
+from utils.time_format import format_duration, format_remaining_time
 
 
 logger = logging.getLogger(__name__)
@@ -287,14 +290,15 @@ class ScanBoostView(discord.ui.View):
             self.done = True
             self.stop()
             cancelled_text = text.get(self.ctx, 'g_cancelled')
+            embed = RootEmbed(self.ctx, 'scan', cancelled_text, state=VisualState.CANCELLED)
             if getattr(self.ctx, 'interaction', None):
                 try:
-                    await self.ctx.interaction.edit_original_response(content=cancelled_text, embed=None, view=None)
+                    await self.ctx.interaction.edit_original_response(embed=embed, view=None)
                 except Exception:
                     pass
             elif self.message:
                 try:
-                    await self.message.edit(content=cancelled_text, embed=None, view=None)
+                    await self.message.edit(embed=embed, view=None)
                 except Exception:
                     pass
 
@@ -419,7 +423,9 @@ class Scan(BaseGameCog):
                     alert_msg = text.get_for_lang(target_lang, 'g_scan_alert_identified', scanner=scanner_id)
                 else:
                     alert_msg = text.get_for_lang(target_lang, 'g_scan_alert_anon', level=target_fw)
-                await target_user.send(alert_msg)
+                alert_title = "Alerte de scan" if target_lang == 'fr' else "Scan Alert"
+                embed_alert = RootEmbed.notification(target_lang, alert_title, alert_msg, state=VisualState.ATTENTION)
+                await embed_alert.send_to(target_user)
             except Exception:
                 logger.warning("Impossible d'envoyer l'alerte de scan à la cible %s", target_id)
 
@@ -439,15 +445,21 @@ class Scan(BaseGameCog):
 
                     from game.db.secret_ids import next_rotation_at, unix_ts
                     now_utc = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-                    rot_ts = unix_ts(next_rotation_at(now_utc))
+                    next_rot = next_rotation_at(now_utc)
+                    rot_ts = unix_ts(next_rot)
+                    rot_rem = format_remaining_time(next_rot, now_utc)
 
                     msg = text.get_for_lang(
                         scanner_lang, 'g_scan_success_dm',
                         target=target_id,
                         secret_id=target_secret,
                         rotation_ts=rot_ts,
+                        remaining=rot_rem,
+                        duration=rot_rem,
                     )
                     target_name = getattr(target_user, 'name', str(target_id)) if target_user else str(target_id)
+                    dm_title = "Scan réussi" if scanner_lang == 'fr' else "Scan Succeeded"
+                    embed_success = RootEmbed.notification(scanner_lang, dm_title, msg, state=VisualState.SUCCESS)
 
                     view = ExposeView(
                         bot=self.bot,
@@ -457,11 +469,13 @@ class Scan(BaseGameCog):
                         secret_id=target_secret,
                         lang=scanner_lang,
                     )
-                    dm_msg = await scanner_user.send(msg, view=view)
+                    dm_msg = await scanner_user.send(embed=embed_success, view=view)
                     view.message = dm_msg
                 else:
                     msg = text.get_for_lang(scanner_lang, 'g_scan_failure_dm', target=target_id)
-                    await scanner_user.send(msg)
+                    dm_title = "Scan sans résultat" if scanner_lang == 'fr' else "Scan Failed"
+                    embed_failure = RootEmbed.notification(scanner_lang, dm_title, msg, state=VisualState.ATTENTION)
+                    await embed_failure.send_to(scanner_user)
         except Exception:
             logger.exception("Erreur lors de la notification DM au scanner %s", scanner_id)
 
@@ -523,26 +537,32 @@ class Scan(BaseGameCog):
             embed = RootEmbed(ctx, 'scan', content)
             await embed.send(ctx, view=view)
         elif result.get('scan_started'):
+            ts = result.get('timestamp', 0)
+            now_ts = int(time.time())
+            dur = format_duration(max(0, ts - now_ts))
             content = text.get(
                 ctx, 'g_scan_started',
                 target=result.get('target_id'),
                 rtm=text.format_rtm(result.get('rtm_total')),
-                timestamp=result.get('timestamp', 0),
+                timestamp=ts,
+                ts=ts,
+                duration=dur,
+                remaining=dur,
             )
-            kwargs = {'content': content, 'allowed_mentions': discord.AllowedMentions.none()}
-            if getattr(ctx, 'interaction', None):
-                await ctx.respond(**kwargs)
-            else:
-                await ctx.send(**kwargs)
+            embed = RootEmbed.action_launched(ctx, text.get(ctx, 'act_scan', fallback='Scan'), content)
+            await embed.send(ctx)
 
             # Log blockchain
             bot_logger = getattr(self.bot, 'discord_logger', None) or Logger(self.bot)
             try:
+                author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+                author_name = (getattr(author, 'display_name', None) or getattr(author, 'name', None)) if author else None
                 await bot_logger.log_blockchain_transaction(
                     from_id=ctx.author.id,
                     to_address="0xROOT_SCAN_NODE",
                     rtm_amount=result.get('rtm_total'),
                     tx_type="SCAN",
+                    from_name=author_name,
                 )
             except Exception:
                 logger.exception("Erreur lors de la journalisation blockchain pour le scan")

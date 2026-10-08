@@ -1,23 +1,22 @@
-"""Commande /network et !network (alias !n) — Consultation et initialisation du réseau joueur.
+"""
+Commande /network et !network (alias !n) — Poste de commande central Root OS.
 
-Ce module constitue l'interface principale du joueur avec son infrastructure informatique virtuelle :
-- Création automatique du compte joueur si le joueur n'existe pas encore.
-- Affichage du statut complet :
-  - Économie : solde en dollars (USD) et Rootium (RTM).
-  - Défense : niveau de Firewall avec barre graphique ASCII (ex: ▰▰▰▱▱), défense de réseau, réputation.
-  - Baies de serveurs : état des modules installés (minage, attaque, défense) pour chaque tier de 1 à 6.
-- Affichage clair et structuré en Embed Discord pleine largeur.
-
-Architecture & Règles :
-- Strictement serveur uniquement (les DMs sont bloqués en amont par le `global_check` de `main.py`).
-- Zéro SQL direct : tous les calculs et sélections passent par `service.execute(..., 'network')`.
-- Tous les textes proviennent des dictionnaires `lang/`.
+Ce module constitue l'interface principale et navigable du joueur :
+- Poste de commande navigable en 4 vues unifiées dans le même message :
+  1. Accueil : Identité, état du minage, portefeuille, protection, identifiant et progression d'infrastructure.
+  2. Ferme : Débits de hachage, production horaire, mémoire vive, détail des mineurs et automatisation.
+  3. Matériel : Inventaire complet (Minage, Attaque, Défense) regroupé par tier et accès à la boutique.
+  4. Opérations : Stock ATK consommable, détail des modules ATK/DEF par tier, préparatifs, attaques et représailles.
+- Chaque vue inclut obligatoirement la scène panoramique du niveau d'infrastructure courant.
+- Deux actions rapides permanentes : Récolter et Actualiser.
+- Actions contextuelles intégrées : Améliorer, Ouvrir la boutique, raccourcis d'opérations.
+- Création automatique du compte joueur à l'initialisation et onboarding linguistique.
 """
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 import discord
 from discord.ext import commands, tasks
@@ -25,14 +24,31 @@ from discord.ext import commands, tasks
 import data
 from commands.game.claim import log_claim_events
 from commands.game.commandgame import BaseGameCog
+from game.game_error import GameError
 from game.math_config import MathConfig
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
 from utils.check import Check
+from utils.confirmation import Confirmation
+from utils.infrastructure_display import (
+    get_infrastructure_file,
+    sanitize_level,
+)
 from utils.language_manager import set_user_language
 from utils.logger import Logger
-from utils.time_format import format_duration
+from utils.network_display import (
+    build_farm_container,
+    build_farm_embed,
+    build_hardware_container,
+    build_hardware_embed,
+    build_operations_container,
+    build_operations_embed,
+    build_overview_container,
+    build_overview_embed,
+)
+from utils.root_emojis import get_button_emoji
+from utils.root_theme import build_footer_text
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +58,17 @@ def _secret_id_check_interval() -> int:
     return int(MathConfig.load().get('secret_id', {}).get('check_interval_seconds', 30))
 
 
+def _build_compact_total_lines(ctx, stats, firewall_level, mining_state, bay_details, is_fr, rep_val, rep_pct) -> str:
+    """Helper de compatibilité pour le formatage du temps de remplissage."""
+    fill_sec = mining_state.get('seconds_to_full')
+    if fill_sec is not None:
+        m = int(fill_sec) // 60
+        s = int(fill_sec) % 60
+        dur = f"{m}min" if s == 0 else f"{m}min {s}s"
+        return f"**Plein dans** : **{dur}**"
+    return ""
+
+
 _LANG_BUTTONS = {
     'en': ('🇬🇧', 'English'),
     'fr': ('🇫🇷', 'Français'),
@@ -49,7 +76,7 @@ _LANG_BUTTONS = {
 
 
 def _slash_or_english(ctx) -> str:
-    """Langue du client slash si elle est supportée, sinon anglais (préfixe / locale inconnue)."""
+    """Langue du client slash si supportée, sinon anglais."""
     interaction = getattr(ctx, 'interaction', None)
     locale = getattr(interaction, 'locale', None) if interaction else None
     if locale:
@@ -66,41 +93,8 @@ def _command_prefix(ctx) -> str:
     return getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
 
 
-def _format_retaliation_countdown(until, now=None) -> str:
-    """Formate le compte à rebours précis sous forme '2j 23h 45min' ou '4h 12min' ou '45s'."""
-    if until is None:
-        return ""
-    if now is None:
-        now = datetime.now(timezone.utc)
-    if not hasattr(until, 'tzinfo'):
-        try:
-            until = datetime.fromisoformat(str(until))
-        except Exception:
-            return ""
-    if until.tzinfo is not None and getattr(now, 'tzinfo', None) is None:
-        until = until.replace(tzinfo=None)
-    elif until.tzinfo is None and getattr(now, 'tzinfo', None) is not None:
-        until = until.replace(tzinfo=now.tzinfo)
-
-    total_seconds = max(0, int((until - now).total_seconds()))
-    days, remainder = divmod(total_seconds, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, secs = divmod(remainder, 60)
-
-    parts = []
-    if days > 0:
-        parts.append(f"{days}j")
-    if hours > 0:
-        parts.append(f"{hours}h")
-    if minutes > 0:
-        parts.append(f"{minutes}min")
-    if not parts or (days == 0 and hours == 0):
-        parts.append(f"{secs}s")
-    return " ".join(parts)
-
-
 class WelcomeLanguageView(discord.ui.View):
-    """Sélecteur de langue au premier réseau : anglais, plus la langue du client slash si elle diffère."""
+    """Sélecteur de langue au premier réseau."""
 
     def __init__(self, author_id: int, prompt_lang: str, prefix: str):
         super().__init__(timeout=300)
@@ -164,8 +158,18 @@ class WelcomeLanguageView(discord.ui.View):
                 pass
 
 
-class NetworkActionView(discord.ui.View):
-    """Boutons interactifs sous le terminal /network : Récolte et Actualisation."""
+class NetworkActionView(discord.ui.DesignerView):
+    """Poste de commande interactif Root OS basé sur Discord Components V2.
+    
+    Structure visuelle (identique au mockup) :
+    - Image panoramique au sommet (MediaGallery)
+    - Titre >_ ROOT OS / USERNAME et séparateur
+    - Statistiques avec emojis stylisés et barre latérale turquoise/ambrée
+    - Rangée de boutons intégrée dans le conteneur :
+      * [ 📥 Récolter ({montant} RTM) ] (Vert si buffer > 0, Gris désactivé si 0)
+      * [ ⚙️ Matériel ] (Gris / Secondaire, bascule vers la vue matériel)
+      * [ 🔄 Actualiser ] (Bleu / Primaire, actualise les données)
+    """
 
     def __init__(self, cog, ctx, result):
         timeout = 180
@@ -176,52 +180,205 @@ class NetworkActionView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.cog = cog
         self.ctx = ctx
-        self.author_id = getattr(ctx, 'author', None) and ctx.author.id or (getattr(ctx, 'user', None) and ctx.user.id)
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        self.author_id = author.id if author else int(result.get('discord_id', 0))
+        self.display_name = getattr(author, 'display_name', str(self.author_id))
+        self.avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
+
+        self.last_result = result
+        self.current_view = 'overview'  # 'overview', 'hardware', 'operations'
+        self.current_file = None
+        self.current_embed = None
+        self._top_items = []
+        self._container = None
         self.lock = asyncio.Lock()
         self.message = None
-        self._update_buttons(result)
 
-    def _update_buttons(self, result):
+        self._rebuild_components()
+
+    def add_item(self, item):
+        self._top_items.append(item)
+        return super().add_item(item)
+
+    def clear_items(self):
+        self._top_items.clear()
+        super().clear_items()
+
+    def to_components(self):
+        return [item.to_component_dict() for item in self._top_items]
+
+    def is_components_v2(self) -> bool:
+        return True
+
+    def walk_children(self):
+        for item in self._top_items:
+            if hasattr(item, 'walk_items'):
+                yield from item.walk_items()
+            else:
+                yield item
+
+    @property
+    def children(self):
+        return list(self.walk_children())
+
+    @children.setter
+    def children(self, val):
+        pass
+
+    def _rebuild_components(self):
+        """Reconstruit le conteneur Discord V2 et ses boutons intégrés selon la vue active."""
         self.clear_items()
-        mining_state = result.get('mining_state') or {}
+        is_fr = (text.get_locale(self.ctx) == 'fr')
+
+        mining_state = self.last_result.get('mining_state') or {}
         buffer_val = Decimal(str(mining_state.get('buffer', 0)))
-        has_buffer = buffer_val > 0
+        has_buffer = (buffer_val > 0)
 
-        # Bouton Récolter
-        btn_claim_label = text.get(self.ctx, 'g_net_btn_claim')
+        # Label dynamique du bouton Récolter
         if has_buffer:
-            buf_str = text.format_rtm(buffer_val)
-            label = f"{btn_claim_label} ({buf_str} RTM)"
-            claim_btn = discord.ui.Button(
-                label=label[:80],
-                emoji="🪙",
-                style=discord.ButtonStyle.success,
-                disabled=False,
-            )
+            base_label = "Récolter" if is_fr else "Claim"
+            claim_label = f"{base_label} ({text.format_rtm(buffer_val)} RTM)"
         else:
-            claim_btn = discord.ui.Button(
-                label=btn_claim_label[:80],
-                emoji="🪙",
-                style=discord.ButtonStyle.secondary,
-                disabled=True,
-            )
-        claim_btn.callback = self._on_claim
-        self.add_item(claim_btn)
+            claim_label = "Récolter" if is_fr else "Claim"
 
-        # Bouton Actualiser
-        btn_refresh_label = text.get(self.ctx, 'g_net_btn_refresh')
+        claim_btn = discord.ui.Button(
+            label=claim_label,
+            emoji=get_button_emoji("root_recolter") or "📥",
+            style=discord.ButtonStyle.success if has_buffer else discord.ButtonStyle.secondary,
+            disabled=not has_buffer,
+        )
+        claim_btn.callback = self._on_claim
+
         refresh_btn = discord.ui.Button(
-            label=btn_refresh_label[:80],
-            emoji="🔄",
+            label="Actualiser" if is_fr else "Refresh",
+            emoji=get_button_emoji("root_temps") or "🔄",
             style=discord.ButtonStyle.primary,
         )
         refresh_btn.callback = self._on_refresh
-        self.add_item(refresh_btn)
 
-    async def _on_claim(self, interaction: discord.Interaction):
+        locale = text.get_locale(self.ctx)
+
+        home_btn = discord.ui.Button(
+            label="Accueil" if is_fr else "Home",
+            emoji=get_button_emoji("root_terminal") or "🖥️",
+            style=discord.ButtonStyle.secondary,
+        )
+        home_btn.callback = self._on_switch_overview
+
+        farm_btn = discord.ui.Button(
+            label="Ferme" if is_fr else "Farm",
+            emoji=get_button_emoji("root_ferme") or "🖧",
+            style=discord.ButtonStyle.secondary,
+        )
+        farm_btn.callback = self._on_switch_farm
+
+        mat_btn = discord.ui.Button(
+            label="Matériel" if is_fr else "Hardware",
+            emoji=get_button_emoji("root_materiel") or "⚙️",
+            style=discord.ButtonStyle.secondary,
+        )
+        mat_btn.callback = self._on_switch_hardware
+
+        ops_btn = discord.ui.Button(
+            label="Opérations" if is_fr else "Operations",
+            emoji=get_button_emoji("root_operations") or "⚔️",
+            style=discord.ButtonStyle.secondary,
+        )
+        ops_btn.callback = self._on_switch_operations
+
+        if self.current_view == 'farm':
+            container, file = build_farm_container(
+                self.last_result,
+                locale=locale,
+                display_name=self.display_name,
+            )
+            container.add_row(home_btn, mat_btn, ops_btn)
+            container.add_row(claim_btn, refresh_btn)
+
+        elif self.current_view == 'hardware':
+            container, file = build_hardware_container(
+                self.last_result,
+                locale=locale,
+                display_name=self.display_name,
+            )
+            container.add_row(home_btn, farm_btn, ops_btn)
+            container.add_row(claim_btn, refresh_btn)
+
+        elif self.current_view == 'operations':
+            container, file = build_operations_container(
+                self.last_result,
+                locale=locale,
+                display_name=self.display_name,
+            )
+            container.add_row(home_btn, farm_btn, mat_btn)
+            container.add_row(claim_btn, refresh_btn)
+
+        else:
+            # Vue standard : Accueil (Overview)
+            container, file = build_overview_container(
+                self.last_result,
+                locale=locale,
+                display_name=self.display_name,
+            )
+            container.add_row(farm_btn, mat_btn, ops_btn)
+            container.add_row(claim_btn, refresh_btn)
+
+        self._container = container
+        self.current_file = file
+        self.add_item(container)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
             await interaction.response.send_message(text.get(self.ctx, 'no_permission'), ephemeral=True)
-            return
+            return False
+        return True
+
+    async def _on_switch_overview(self, interaction: discord.Interaction):
+        """Bascule vers la vue Accueil."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'overview'
+            self._rebuild_components()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du retour à l'accueil network")
+
+    async def _on_switch_farm(self, interaction: discord.Interaction):
+        """Bascule vers la vue Ferme."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'farm'
+            self._rebuild_components()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du passage à la vue ferme network")
+
+    async def _on_switch_hardware(self, interaction: discord.Interaction):
+        """Bascule vers la vue Matériel."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'hardware'
+            self._rebuild_components()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du passage à la vue matériel network")
+
+    async def _on_switch_operations(self, interaction: discord.Interaction):
+        """Bascule vers la vue Opérations."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'operations'
+            self._rebuild_components()
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du passage à la vue opérations network")
+
+    async def _on_claim(self, interaction: discord.Interaction):
+        """Exécute la récolte du Rootium en mémoire et actualise le panneau."""
         checks = Check()
         allowed, err_key = await checks.check_interaction_access(self.cog.bot, interaction, allow_network=False)
         if not allowed:
@@ -249,46 +406,37 @@ class NetworkActionView(discord.ui.View):
                 await interaction.followup.send(err_msg, ephemeral=True)
                 return
 
-            # Recharger network
-            net_res = await self.cog.service.execute(
+            # Recharger network et rafraîchir
+            self.last_result = await self.cog.service.execute(
                 self.author_id,
                 interaction.guild.id if interaction.guild else None,
                 'network',
             )
-            embed = self.cog._build_network_embed(self.ctx, net_res)
-            self._update_buttons(net_res)
+            self._rebuild_components()
             try:
-                await interaction.message.edit(embed=embed, view=self)
+                await interaction.message.edit(view=self)
             except Exception:
-                pass
+                logger.exception("Erreur lors de l'actualisation après claim")
 
     async def _on_refresh(self, interaction: discord.Interaction):
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message(text.get(self.ctx, 'no_permission'), ephemeral=True)
-            return
+        """Actualise les données de la vue active."""
         async with self.lock:
             await interaction.response.defer()
-            net_res = await self.cog.service.execute(
+            self.last_result = await self.cog.service.execute(
                 self.author_id,
                 interaction.guild.id if interaction.guild else None,
                 'network',
             )
-            embed = self.cog._build_network_embed(self.ctx, net_res)
-            self._update_buttons(net_res)
+            self._rebuild_components()
             try:
-                await interaction.message.edit(embed=embed, view=self)
+                await interaction.message.edit(view=self)
             except Exception:
-                pass
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message(text.get(self.ctx, 'no_permission'), ephemeral=True)
-            return False
-        return True
+                logger.exception("Erreur lors du rafraîchissement network")
 
     async def on_timeout(self):
-        for child in self.children:
-            child.disabled = True
+        """Désactive les contrôles lors de l'expiration du timeout."""
+        if self._container:
+            self._container.disable_all_items()
         if self.message:
             try:
                 await self.message.edit(view=self)
@@ -296,78 +444,12 @@ class NetworkActionView(discord.ui.View):
                 pass
 
 
-def _build_compact_total_lines(ctx, stats, firewall: int, mining_state: dict, result: dict, is_mem_full: bool, rep_val: int, rep_bonus_pct: Decimal) -> str:
-    """Génère l'affichage compact, lisible et coloré en blockquotes pour la section Total Infrastructure."""
-    is_fr = (text.get_locale(ctx) == 'fr')
-
-    tot_atk = stats.get('total_bits_per_s_formatted') or MathConfig.format_bits_per_s(
-        stats.get('total_bits_per_s', 0)
-    )
-    tot_bdef = f"{stats['total_bay_defense']} DEF"
-    tot_ndef = f"{stats['network_defense']} DEF"
-    hashrate = stats['total_hashrate_formatted']
-
-    mem_pct = float(mining_state.get('memory_pct', 0))
-    bar_blocks = max(0, min(10, int(round(mem_pct / 10.0))))
-    ram_bar = '▰' * bar_blocks + '▱' * (10 - bar_blocks)
-    used_str = mining_state.get('memory_used_formatted', '0 o')
-    total_ram_str = mining_state.get('total_ram_formatted', '0 o')
-    rate_str = text.format_rtm(mining_state.get('rate_per_min', 0))
-    pending_str = text.format_rtm(mining_state.get('buffer', 0))
-    fill_str = format_duration(mining_state.get('seconds_to_full', 0))
-
-    rep_note = f", +{rep_bonus_pct:.1f}% rep" if rep_val > 0 else ""
-    autoclaim_credits = int(result.get('autoclaim_credits', 0) or 0)
-    autoclaim_active = int(result.get('autoclaim_active', 0) or 0)
-    combo_saver_credits = int(result.get('combo_saver_credits', 0) or 0)
-
-    lines = []
-    if is_mem_full:
-        lines.append(text.get(ctx, 'g_net_ram_alert'))
-
-    if is_fr:
-        lines.append(f"> ⚡ **Hashrate global** : `{hashrate}`")
-        lines.append(f"> ⚔️ **Attaque** : `{tot_atk}`")
-        lines.append(f"> 🛡️ **Défense** : `{tot_bdef}` *(Baies)* · `{tot_ndef}` *(Réseau)*")
-        lines.append(f"> 🧠 **Mémoire vive** : {ram_bar} **{mem_pct:.1f}%** (`{used_str} / {total_ram_str}`)")
-        if is_mem_full:
-            lines.append(f"> 🪙 **À récolter** : **{pending_str} RTM** · 🔴 **SATURÉ**")
-        else:
-            lines.append(f"> ⏱️ **Plein dans** : **{fill_str}** *({rate_str} RTM/min{rep_note})*")
-            lines.append(f"> 🪙 **À récolter** : **{pending_str} RTM**")
-
-        if autoclaim_active > 0:
-            lines.append(f"> 🎫 **Autoclaim** : **{autoclaim_credits}** en réserve · **{autoclaim_active}** programmé(s)")
-        else:
-            lines.append(f"> 🎫 **Autoclaim** : **{autoclaim_credits}** crédit(s) en réserve")
-        lines.append(f"> 🛡️ **Combo Saver** : **{combo_saver_credits}** crédit(s) en réserve")
-    else:
-        lines.append(f"> ⚡ **Global Hashrate**: `{hashrate}`")
-        lines.append(f"> ⚔️ **Attack**: `{tot_atk}`")
-        lines.append(f"> 🛡️ **Defense**: `{tot_bdef}` *(Bays)* · `{tot_ndef}` *(Network)*")
-        lines.append(f"> 🧠 **Memory (RAM)**: {ram_bar} **{mem_pct:.1f}%** (`{used_str} / {total_ram_str}`)")
-        if is_mem_full:
-            lines.append(f"> 🪙 **To claim**: **{pending_str} RTM** · 🔴 **FULL**")
-        else:
-            lines.append(f"> ⏱️ **Full in**: **{fill_str}** *({rate_str} RTM/min{rep_note})*")
-            lines.append(f"> 🪙 **To claim**: **{pending_str} RTM**")
-
-        if autoclaim_active > 0:
-            lines.append(f"> 🎫 **Autoclaim**: **{autoclaim_credits}** in reserve · **{autoclaim_active}** queued")
-        else:
-            lines.append(f"> 🎫 **Autoclaim**: **{autoclaim_credits}** credit(s) in reserve")
-        lines.append(f"> 🛡️ **Combo Saver**: **{combo_saver_credits}** credit(s) in reserve")
-
-    return '\n'.join(lines)
-
-
 class Network(BaseGameCog):
-    """Cog gérant la commande centrale /network et l'affichage du profil joueur."""
+    """Cog gérant la commande centrale /network et le poste de commande du joueur."""
 
     def __init__(self, bot):
         self.bot = bot
         self.check_secret_rotation_loop.change_interval(seconds=_secret_id_check_interval())
-        # Les tests d'embed isolés n'ont pas de boucle asyncio : ne pas démarrer alors.
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -419,216 +501,68 @@ class Network(BaseGameCog):
         """Commande préfixe !network ou !n."""
         await self._invoke(ctx, 'network')
 
-    # ── Rendu de l'Embed ─────────────────────────────────────────────────────
-    def _build_network_embed(self, ctx, result):
-        """Construit l'Embed d'affichage complet du réseau joueur à partir du dictionnaire de résultat.
-
-        Mise en forme des données :
-        - Précision monétaire stricte : 2 décimales pour les USD, 5 décimales pour le RTM.
-        - Barre de Firewall : 5 segments '▰' pleins ou '▱' vides représentant les niveaux 1 à 5.
-        - Date de création formatée avec le timestamp Discord (<t:...:D>).
-        - Matrice des baies : pour chaque tier de 1 à 6, affiche le nombre de modules installés.
-        """
+    # ── Rendu de l'Embed (utilisé aussi pour les tests et appels externes) ────
+    def _build_network_embed(self, ctx, result, view_name: str = 'overview', page: int = 1):
+        """Génère l'embed correspondant à la vue demandée (Accueil par défaut)."""
         author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
         author_name = getattr(author, 'display_name', str(result.get('discord_id', '')))
         avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
+        locale = text.get_locale(ctx)
 
-        # Formatage des montants monétaires et statistiques numériques
-        usd      = text.format_usd(result.get('dollars') or 0)
-        rtm      = f"{Decimal(str(result.get('rootium') or 0)):,.5f}"
-        firewall = int(result.get('firewall_level') or 0)
-        # Jauge graphique de 5 blocs
-        bar      = '▰' * max(0, min(firewall, 5)) + '▱' * (5 - max(0, min(firewall, 5)))
-        stats = result.get('stats') or MathConfig.calculate_player_stats(result)
-        defense  = stats.get('total_defense', stats['network_defense'] + stats['total_bay_defense'])
-        reputation = int(result.get('reputation') or 0)
-
-        # Date de création du réseau (stockée en UTC naïf dans la BDD)
-        created = result.get('created_at')
-        if hasattr(created, 'timestamp'):
-            created_ts = int(created.replace(tzinfo=timezone.utc).timestamp()) if created.tzinfo is None else int(created.timestamp())
-            created_str = f"<t:{created_ts}:D>"
+        if view_name == 'farm':
+            embed, _ = build_farm_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
+        elif view_name == 'hardware':
+            embed, _ = build_hardware_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
+        elif view_name == 'operations':
+            embed, _, _ = build_operations_embed(result, locale=locale, display_name=author_name, page=page, avatar_url=avatar_url)
         else:
-            created_str = str(created) if created else "?"
-
-        # Calcul du minage et saturation mémoire vive pour coloration d'alerte
-        mining_state = result.get('mining_state')
-        if mining_state is None:
-            mining_state = MathConfig.compute_mining_progress(result, stats, datetime.now(timezone.utc))
-        mem_pct = float(mining_state.get('memory_pct', 0))
-        is_mem_full = mem_pct >= 100.0 or bool(mining_state.get('is_full'))
-        embed_color = discord.Color.from_rgb(255, 170, 0) if is_mem_full else discord.Color.from_rgb(0, 220, 200)
-
-        # Construction de l'Embed Discord aux couleurs cyber (Cyan #00DCC8 ou Orange Alerte #FFAA00)
-        embed = discord.Embed(
-            description=text.get(ctx, 'g_net_status', created=created_str) + '\n\u200b',
-            color=embed_color,
-            timestamp=discord.utils.utcnow(),
-        )
-        if author:
-            embed.set_author(name=text.get(ctx, 'g_net_author', name=author_name), icon_url=avatar_url)
-            if avatar_url:
-                embed.set_thumbnail(url=avatar_url)
-
-        rep_val = int(result.get('reputation') or 0)
-        rep_bonus_pct = Decimal(str(rep_val)) * Decimal('0.5')
-        rep_bonus_str = f" *(+{rep_bonus_pct:.1f}% minage)*" if rep_val > 0 else ""
-
-        # Champs principaux : 2 colonnes aérées pour éviter tout retour à la ligne forcé
-        embed.add_field(
-            name=text.get(ctx, 'g_net_economy'),
-            value=text.get(ctx, 'g_net_economy_desc', usd=usd, rtm=rtm, reputation=reputation, rep_bonus_str=rep_bonus_str),
-            inline=True,
-        )
-
-        # Sécurité & Système (avec statut d'amélioration directement rattaché au pare-feu)
-        pending_up = result.get('pending_upgrade')
-        defense_lines = [text.get(ctx, 'g_net_firewall', firewall=firewall, bar=bar)]
-        if pending_up:
-            exp = pending_up.get('expires_at')
-            if exp and hasattr(exp, 'timestamp'):
-                up_ts = int(exp.replace(tzinfo=timezone.utc).timestamp()) if exp.tzinfo is None else int(exp.timestamp())
-            else:
-                up_ts = 0
-            defense_lines.append(text.get(ctx, 'g_net_upgrade_progress', level=pending_up.get('target_level'), timestamp=up_ts))
-        defense_lines.append(text.get(ctx, 'g_net_network_defense', defense=defense))
-        embed.add_field(name=text.get(ctx, 'g_net_defense'), value='\n'.join(defense_lines), inline=True)
-
-        # Identifiant secret (pleine largeur) entre sécurité et baies — uniquement si présent
-        secret_id = result.get('secret_id_display') or result.get('secret_id')
-        secret_ts = result.get('secret_next_ts')
-        if secret_id is not None and secret_ts is not None:
-            embed.add_field(
-                name=text.get(ctx, 'g_net_secret_name'),
-                value=text.get(ctx, 'g_net_secret_desc', secret_id=secret_id, timestamp=secret_ts),
-                inline=False,
-            )
-
-        # Stock ATK + production /compile en cours (pleine largeur, après le secret)
-        atk_stock = int(result.get('attack_points') or 0)
-        atk_lines = [text.get(ctx, 'g_net_atk_stock', atk=atk_stock)]
-        pending_hack = result.get('pending_hack')
-        if pending_hack:
-            exp = pending_hack.get('expires_at')
-            if exp and hasattr(exp, 'timestamp'):
-                hack_ts = int(exp.replace(tzinfo=timezone.utc).timestamp()) if exp.tzinfo is None else int(exp.timestamp())
-            else:
-                hack_ts = int(pending_hack.get('timestamp') or 0)
-            method_key = pending_hack.get('method') or 'unskilled'
-            method_label = text.get(ctx, f'g_compile_method_{method_key}')
-            atk_lines.append(text.get(
-                ctx, 'g_net_hack_progress',
-                method=method_label,
-                atk=int(pending_hack.get('atk_yield') or 0),
-                timestamp=hack_ts,
-            ))
-
-        # Scan en cours
-        pending_scan = result.get('pending_scan')
-        if pending_scan:
-            exp = pending_scan.get('expires_at')
-            if exp and hasattr(exp, 'timestamp'):
-                scan_ts = int(exp.replace(tzinfo=timezone.utc).timestamp()) if exp.tzinfo is None else int(exp.timestamp())
-            else:
-                scan_ts = 0
-            target_id = pending_scan.get('target_id')
-            atk_lines.append(text.get(
-                ctx, 'g_net_scan_progress',
-                target=f"<@{target_id}>",
-                timestamp=scan_ts,
-            ))
-
-        # Ripostes autorisées (affichées dans tous les cas avec identité de l'agresseur)
-        retaliations = result.get('retaliations') or []
-        if retaliations:
-            seen = {}
-            for r in retaliations:
-                aid = r.get('attacker_id')
-                dt = r.get('delete_at')
-                if aid not in seen or (dt and dt > seen[aid]):
-                    seen[aid] = dt
-            for aid, dt in list(seen.items())[:3]:
-                rem_str = _format_retaliation_countdown(dt)
-                atk_lines.append(text.get(
-                    ctx, 'g_net_retaliation_identified',
-                    target=f"<@{aid}>",
-                    remaining=rem_str,
-                ))
-
-        embed.add_field(
-            name=text.get(ctx, 'g_net_atk'),
-            value='\n'.join(atk_lines),
-            inline=False,
-        )
-
-        # Infrastructure matérielle : Pleine largeur (inline=False)
-        max_tier_unlocked = max(1, min(5, firewall + 1))
-        bay_entries = []
-        for tier in range(1, 6):
-            bay = stats['bay_details'][tier]
-            m_count = bay['mining_count']
-            a_count = bay['attack_count']
-            d_count = bay['bay_defense_count']
-
-            # Afficher la baie si elle est débloquée à l'achat pour ce pare-feu,
-            # OU si le joueur possède déjà au moins un module dans cette baie (ex: capture PvP via /hack).
-            if tier <= max_tier_unlocked or m_count > 0 or a_count > 0 or d_count > 0:
-                m_hs = MathConfig.format_hashrate(bay['mining_hashrate'])
-                a_pow = MathConfig.format_bits_per_s(bay.get('attack_bits_per_s', 0))
-                d_pow = f"{bay['bay_defense_power']} DEF"
-
-                bay_entries.append(
-                    f"> {text.get(ctx, 'g_net_rack_bay_title', tier=tier)}\n"
-                    f"> {text.get(ctx, 'g_net_rack_bay_stats', m_count=m_count, m_power=m_hs, a_count=a_count, a_power=a_pow, d_count=d_count, d_power=d_pow)}"
-                )
-
-        embed.add_field(
-            name=text.get(ctx, 'g_net_bays'),
-            value='\n\n'.join(bay_entries),
-            inline=False,
-        )
-
-        # Récapitulatif Total prenant toute la largeur en dessous (inline=False)
-        total_text = _build_compact_total_lines(
-            ctx=ctx,
-            stats=stats,
-            firewall=firewall,
-            mining_state=mining_state,
-            result=result,
-            is_mem_full=is_mem_full,
-            rep_val=rep_val,
-            rep_bonus_pct=rep_bonus_pct,
-        )
-
-        embed.add_field(
-            name=text.get(ctx, 'g_net_rack_total_title'),
-            value=total_text,
-            inline=False,
-        )
-
-        # Pied de page avec identifiant joueur et logo du bot
-        bot_user = getattr(ctx, 'bot', None) and getattr(ctx.bot, 'user', None)
-        bot_avatar = bot_user.display_avatar.url if bot_user and hasattr(bot_user, 'display_avatar') else None
-        embed.set_footer(text=text.get(ctx, 'g_net_footer', discord_id=result.get('discord_id', '')), icon_url=bot_avatar)
+            embed, _ = build_overview_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
         return embed
 
     async def _send(self, ctx, method, result):
-        """Envoie l'Embed complet d'affichage du réseau joueur avec les boutons d'action rapide."""
-        embed = self._build_network_embed(ctx, result)
+        """Envoie l'Accueil initial avec le conteneur Discord V2 et ses boutons intégrés."""
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        author_name = getattr(author, 'display_name', str(result.get('discord_id', '')))
+        avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
+        locale = text.get_locale(ctx)
+
         view = NetworkActionView(self, ctx, result)
-        kwargs = {'embed': embed, 'view': view, 'allowed_mentions': discord.AllowedMentions.none()}
-        if getattr(ctx, 'interaction', None):
-            msg = await ctx.respond(**kwargs)
-        else:
-            msg = await ctx.send(**kwargs)
-        view.message = getattr(msg, 'message', None) or msg
+        kwargs: dict[str, Any] = {
+            'view': view,
+            'allowed_mentions': discord.AllowedMentions.none(),
+        }
+        if view.current_file:
+            kwargs['file'] = view.current_file
+
+        try:
+            if getattr(ctx, 'interaction', None):
+                msg = await ctx.respond(**kwargs)
+            else:
+                msg = await ctx.send(**kwargs)
+            view.message = getattr(msg, 'message', None) or msg
+        except Exception as e:
+            logger.exception("Échec envoi V2 components network, repli sur embed V1: %s", e)
+            embed, file = build_overview_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
+            fb_view = discord.ui.View()
+            fb_kwargs: dict[str, Any] = {
+                'embed': embed,
+                'view': fb_view,
+                'allowed_mentions': discord.AllowedMentions.none(),
+            }
+            if file:
+                fb_kwargs['file'] = file
+            if getattr(ctx, 'interaction', None):
+                msg = await ctx.respond(**fb_kwargs)
+            else:
+                msg = await ctx.send(**fb_kwargs)
+            view.message = getattr(msg, 'message', None) or msg
 
         if result.get('is_new'):
             await Logger(self.bot).log_new_player(ctx, result)
             await self._send_welcome_language(ctx)
 
     async def _send_welcome_language(self, ctx):
-        """Propose le choix de langue au tout premier réseau, puis l'intro events / buy."""
+        """Propose le choix de langue au tout premier réseau, puis l'intro onboarding."""
         prompt_lang = _slash_or_english(ctx)
         prefix = _command_prefix(ctx)
         author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)

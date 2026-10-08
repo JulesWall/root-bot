@@ -38,9 +38,39 @@ desc = {
     "maths_expression": "The mathematical expression to evaluate (e.g. 2 + 2, sqrt(16), 5^3)",
     "math": "Calculate a mathematical expression",
     "math_expression": "The mathematical expression to evaluate (e.g. 2 + 2, sqrt(16), 5^3)",
+    "macro": "Run or inspect an automated sequence of actions",
+    "macro_name": "Name of the macro to run",
+    "macro_create": "Create a new automated macro step-by-step",
+    "macro_delete": "Delete one of your registered macros",
+    "macro_delete_name": "Name of the macro to delete",
 }
 
 desc_loc = {
+    "macro": {
+        "en-US": "Run or inspect an automated sequence of actions",
+        "en-GB": "Run or inspect an automated sequence of actions",
+        "fr": "Exécuter ou inspecter une séquence automatisée d'actions",
+    },
+    "macro_name": {
+        "en-US": "Name of the macro to run",
+        "en-GB": "Name of the macro to run",
+        "fr": "Nom de la macro à exécuter",
+    },
+    "macro_create": {
+        "en-US": "Create a new automated macro step-by-step",
+        "en-GB": "Create a new automated macro step-by-step",
+        "fr": "Créer une nouvelle macro étape par étape",
+    },
+    "macro_delete": {
+        "en-US": "Delete one of your registered macros",
+        "en-GB": "Delete one of your registered macros",
+        "fr": "Supprimer l'une de vos macros enregistrées",
+    },
+    "macro_delete_name": {
+        "en-US": "Name of the macro to delete",
+        "en-GB": "Name of the macro to delete",
+        "fr": "Nom de la macro à supprimer",
+    },
     "maths": {
         "en-US": "Calculate a mathematical expression",
         "en-GB": "Calculate a mathematical expression",
