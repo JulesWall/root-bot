@@ -254,3 +254,4 @@ async def get_or_render_chart(points: List[dict], period_name: str, source: str)
         _render_locks.pop(cache_key, None)
 
     return file_path
+

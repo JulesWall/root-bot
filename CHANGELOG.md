@@ -8,6 +8,20 @@ Le devis de `/convert` affiche le **cours appliqué** et l'heure de sa dernière
 
 Le Rootium reste une monnaie interne au jeu : le cours est inspiré du marché, aucune transaction réelle n'est effectuée. L'équilibrage des combats (`/hack`) reste calculé sur un taux de référence stable.
 
+## :bar_chart: **Terminal de marché & Graphiques (`/market` & `!market`)**
+
+Un nouveau terminal interactif permet de suivre le cours du Rootium en temps réel :
+- **Vue instantanée** : cours courant, tendance avec sparkline Unicode, variation sur la période (24 h, 7 j, 30 j) et contributions respectives de BTC, ETH et SOL.
+- **Graphiques haute résolution** : génération à la demande d'un graphique détaillé adapté aux mobiles et ordinateurs, avec courbe d'évolution et repères temporels.
+
+## :bell: **Alertes de cours personnalisées (`/market` & `!market alert`)**
+
+Tu peux désormais programmer jusqu'à **5 alertes de prix** pour être notifié en message privé dès que le Rootium franchit tes objectifs :
+- **Sens au choix** : surveillance à la hausse (`above`, ≥) ou à la baisse (`below`, ≤).
+- **Configuration intuitive** : saisie du seuil et du sens via un formulaire interactif accessible depuis le bouton **Alertes** du terminal de marché.
+- **Anti-spam & réarmement** : délai de rappel paramétrable (défaut 60 min, minimum 15 min) et réarmement automatique dès que le cours repasse de l'autre côté du seuil.
+- **Gestion complète** : consultation, activation/désactivation et suppression de tes alertes directement dans l'interface Discord.
+
 # :rocket: Beta Update N°3
 
 ## :shield: **Système de dégâts critiques**

@@ -115,6 +115,7 @@ class ApplyCycleTests(unittest.TestCase):
         tx.one.side_effect = lambda sql, args=(): (
             {'ts': newest_ts} if 'MAX(market_ts)' in sql else state
         )
+        tx.all.return_value = []
         return tx
 
     def setUp(self):
@@ -138,6 +139,12 @@ class ApplyCycleTests(unittest.TestCase):
         tx = self._tx(datetime(2026, 1, 1, 12, 0))
         res = MarketState.apply_cycle(tx, datetime(2026, 1, 1, 11, 45), self.CLOSES, 'test')
         self.assertEqual(res['status'], 'already_applied')
+
+    def test_apply_cycle_returns_triggered_alerts(self):
+        tx = self._tx(None)
+        res = MarketState.apply_cycle(tx, datetime(2026, 1, 1, 12, 0), self.CLOSES, 'test')
+        self.assertIn('triggered_alerts', res)
+        self.assertIsInstance(res['triggered_alerts'], list)
 
 
 class ConvertMarketRateTests(unittest.TestCase):
@@ -291,6 +298,227 @@ class MarketChartsTests(unittest.TestCase):
         self.assertGreater(len(png_bytes), 1000)
 
 
+class FakeAlertTx:
+    """Mock léger de transaction pour tester MarketAlerts de manière déterministe."""
+
+    def __init__(self, now=None):
+        self.alerts = []
+        self._next_id = 1
+        self.now = now or datetime(2026, 1, 1, 12, 0)
+        self.acquired_locks = []
+
+    def acquire_lock(self, name, timeout=10):
+        self.acquired_locks.append(name)
+
+    def execute(self, sql, args=()):
+        sql_u = sql.upper().strip()
+        if "INSERT INTO RTM_PRICE_ALERTS" in sql_u:
+            aid = self._next_id
+            self._next_id += 1
+            self.alerts.append({
+                'id': aid,
+                'discord_id': int(args[0]),
+                'direction': str(args[1]),
+                'threshold_usd': Decimal(str(args[2])),
+                'cooldown_minutes': int(args[3]),
+                'enabled': 1,
+                'armed': 1,
+                'last_notified_at': None,
+            })
+            return aid
+        elif "DELETE FROM RTM_PRICE_ALERTS" in sql_u:
+            aid = int(args[0])
+            self.alerts = [a for a in self.alerts if a['id'] != aid]
+            return 1
+        elif "UPDATE RTM_PRICE_ALERTS SET ARMED = 1" in sql_u:
+            price = Decimal(str(args[0]))
+            now_val = args[2] if len(args) > 2 else self.now
+            for a in self.alerts:
+                if a['enabled'] == 1 and a['armed'] == 0:
+                    if (a['direction'] == 'above' and price < a['threshold_usd']) or \
+                       (a['direction'] == 'below' and price > a['threshold_usd']):
+                        a['armed'] = 1
+                    elif a.get('last_notified_at'):
+                        diff = (now_val - a['last_notified_at']).total_seconds() / 60
+                        if diff >= a['cooldown_minutes']:
+                            a['armed'] = 1
+            return 1
+        elif "UPDATE RTM_PRICE_ALERTS SET ARMED = 0" in sql_u:
+            now_val = args[0]
+            aid = int(args[1])
+            for a in self.alerts:
+                if a['id'] == aid:
+                    a['armed'] = 0
+                    a['last_notified_at'] = now_val
+            return 1
+        elif "UPDATE RTM_PRICE_ALERTS SET ENABLED =" in sql_u:
+            new_en = int(args[0])
+            new_ar = int(args[1])
+            aid = int(args[2])
+            for a in self.alerts:
+                if a['id'] == aid:
+                    a['enabled'] = new_en
+                    a['armed'] = new_ar
+            return 1
+        return 0
+
+    def one(self, sql, args=()):
+        sql_u = sql.upper().strip()
+        if "COUNT(*)" in sql_u:
+            uid = int(args[0])
+            return {'cnt': sum(1 for a in self.alerts if a['discord_id'] == uid)}
+        elif "WHERE DISCORD_ID = %S AND DIRECTION = %S AND THRESHOLD_USD = %S" in sql_u:
+            uid, direction, thresh = int(args[0]), str(args[1]), Decimal(str(args[2]))
+            for a in self.alerts:
+                if a['discord_id'] == uid and a['direction'] == direction and a['threshold_usd'] == thresh:
+                    return {'id': a['id']}
+            return None
+        elif "WHERE ID = %S AND DISCORD_ID = %S" in sql_u:
+            aid, uid = int(args[0]), int(args[1])
+            for a in self.alerts:
+                if a['id'] == aid and a['discord_id'] == uid:
+                    return dict(a)
+            return None
+        return None
+
+    def all(self, sql, args=()):
+        sql_u = sql.upper().strip()
+        if "WHERE DISCORD_ID = %S" in sql_u:
+            uid = int(args[0])
+            return [dict(a) for a in self.alerts if a['discord_id'] == uid]
+        elif "WHERE ENABLED = 1 AND ARMED = 1" in sql_u:
+            price = Decimal(str(args[0]))
+            res = []
+            for a in self.alerts:
+                if a['enabled'] == 1 and a['armed'] == 1:
+                    if a['direction'] == 'above' and price >= a['threshold_usd']:
+                        res.append(dict(a))
+                    elif a['direction'] == 'below' and price <= a['threshold_usd']:
+                        res.append(dict(a))
+            return res
+        return []
+
+
+class MarketAlertsTests(unittest.TestCase):
+    """Tests unitaires de la gestion et du déclenchement des alertes de marché."""
+
+    def setUp(self):
+        self.tx = FakeAlertTx(now=datetime(2026, 1, 1, 12, 0))
+        from game.math_config import MathConfig
+        MathConfig.clear_cache()
+
+    def test_create_alert_valid(self):
+        from game.db.market_alerts import MarketAlerts
+        alert = MarketAlerts.create(
+            self.tx,
+            discord_id=123,
+            direction='above',
+            threshold_usd=Decimal('50000'),
+            cooldown_minutes=60,
+            current_price=Decimal('40000'),
+        )
+        self.assertEqual(alert['id'], 1)
+        self.assertEqual(alert['direction'], 'above')
+        self.assertEqual(alert['threshold_usd'], Decimal('50000'))
+        self.assertEqual(alert['cooldown_minutes'], 60)
+        self.assertEqual(alert['enabled'], 1)
+        self.assertEqual(alert['armed'], 1)
+
+    def test_create_alert_limit_reached(self):
+        from game.db.market_alerts import MarketAlerts
+        from game.game_error import GameError
+        for i in range(5):
+            MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal(f'{50000 + i * 100}'))
+        with self.assertRaises(GameError) as ctx:
+            MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('60000'))
+        self.assertEqual(str(ctx.exception), 'market_alert_limit_reached')
+
+    def test_create_alert_duplicate(self):
+        from game.db.market_alerts import MarketAlerts
+        from game.game_error import GameError
+        MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('50000'))
+        with self.assertRaises(GameError) as ctx:
+            MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('50000'))
+        self.assertEqual(str(ctx.exception), 'market_alert_duplicate')
+
+    def test_create_alert_threshold_too_high(self):
+        from game.db.market_alerts import MarketAlerts
+        from game.game_error import GameError
+        with self.assertRaises(GameError) as ctx:
+            MarketAlerts.create(
+                self.tx,
+                discord_id=123,
+                direction='above',
+                threshold_usd=Decimal('500000'),
+                current_price=Decimal('40000'),  # 10x = 400000
+            )
+        self.assertEqual(str(ctx.exception), 'market_alert_threshold_too_high')
+
+    def test_create_alert_invalid_direction(self):
+        from game.db.market_alerts import MarketAlerts
+        from game.game_error import GameError
+        with self.assertRaises(GameError):
+            MarketAlerts.create(self.tx, discord_id=123, direction='sideways', threshold_usd=Decimal('50000'))
+
+    def test_delete_alert(self):
+        from game.db.market_alerts import MarketAlerts
+        alert = MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('50000'))
+        self.assertTrue(MarketAlerts.delete(self.tx, discord_id=123, alert_id=alert['id']))
+        self.assertEqual(len(MarketAlerts.list_for(self.tx, 123)), 0)
+        # Supprimer une alerte inexistante
+        self.assertFalse(MarketAlerts.delete(self.tx, discord_id=123, alert_id=999))
+
+    def test_toggle_alert(self):
+        from game.db.market_alerts import MarketAlerts
+        alert = MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('50000'))
+        toggled = MarketAlerts.toggle(self.tx, discord_id=123, alert_id=alert['id'])
+        self.assertEqual(toggled['enabled'], 0)
+        toggled2 = MarketAlerts.toggle(self.tx, discord_id=123, alert_id=alert['id'])
+        self.assertEqual(toggled2['enabled'], 1)
+        self.assertEqual(toggled2['armed'], 1)
+
+    def test_trigger_above_and_rearm(self):
+        from datetime import timedelta
+        from game.db.market_alerts import MarketAlerts
+        MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('50000'), cooldown_minutes=60)
+
+        # Prix à 45000 -> pas de déclenchement
+        trig = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('45000'), self.tx.now)
+        self.assertEqual(len(trig), 0)
+
+        # Prix monte à 51000 -> déclenchement !
+        trig = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('51000'), self.tx.now)
+        self.assertEqual(len(trig), 1)
+        self.assertEqual(trig[0]['discord_id'], 123)
+
+        # Cycle suivant à 52000 -> l'alerte est désarmée, pas de re-déclenchement intempestif
+        trig2 = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('52000'), self.tx.now + timedelta(minutes=15))
+        self.assertEqual(len(trig2), 0)
+
+        # Le cours redescend à 48000 -> réarmement automatique !
+        MarketAlerts.evaluate_and_trigger(self.tx, Decimal('48000'), self.tx.now + timedelta(minutes=30))
+        alerts = MarketAlerts.list_for(self.tx, 123)
+        self.assertEqual(alerts[0]['armed'], 1)
+
+        # Le cours remonte à 53000 -> nouveau déclenchement !
+        trig3 = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('53000'), self.tx.now + timedelta(minutes=45))
+        self.assertEqual(len(trig3), 1)
+
+    def test_trigger_below(self):
+        from game.db.market_alerts import MarketAlerts
+        MarketAlerts.create(self.tx, discord_id=123, direction='below', threshold_usd=Decimal('30000'))
+
+        # Prix à 35000 -> pas de déclenchement
+        trig = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('35000'), self.tx.now)
+        self.assertEqual(len(trig), 0)
+
+        # Prix chute à 29000 -> déclenchement !
+        trig = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('29000'), self.tx.now)
+        self.assertEqual(len(trig), 1)
+        self.assertEqual(trig[0]['threshold_usd'], Decimal('30000'))
+
+
 if __name__ == '__main__':
     unittest.main()
+
 

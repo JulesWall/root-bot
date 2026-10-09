@@ -142,6 +142,254 @@ class MarketView(discord.ui.View):
             pass
 
 
+class MarketAlertAddModal(discord.ui.Modal):
+    """Modal de configuration d'une alerte de cours."""
+
+    def __init__(self, cog: "Market", ctx, user_id: int, on_complete):
+        super().__init__(title=text.get(ctx, 'g_market_modal_add_title')[:45])
+        self.cog = cog
+        self.ctx = ctx
+        self.user_id = user_id
+        self.on_complete = on_complete
+
+        self.threshold_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_threshold_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_threshold_hint')[:100],
+            required=True,
+        )
+        self.add_item(self.threshold_input)
+
+        self.dir_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_dir_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_dir_hint')[:100],
+            value="above",
+            required=True,
+        )
+        self.add_item(self.dir_input)
+
+        self.cooldown_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_cooldown_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_cooldown_hint')[:100],
+            value="60",
+            required=False,
+        )
+        self.add_item(self.cooldown_input)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        raw_dir = self.dir_input.value.strip().lower()
+        if raw_dir in ('above', 'up', 'hausse', '>=', '>', '+'):
+            direction = 'above'
+        elif raw_dir in ('below', 'down', 'baisse', '<=', '<', '-'):
+            direction = 'below'
+        else:
+            return await interaction.followup.send(
+                text.get(self.ctx, 'g_error_market_alert_invalid_direction'),
+                ephemeral=True,
+            )
+
+        raw_thresh = self.threshold_input.value.strip().replace(' ', '').replace(',', '.')
+        try:
+            threshold = Decimal(raw_thresh)
+            if threshold <= 0:
+                raise ValueError()
+        except Exception:
+            return await interaction.followup.send(
+                text.get(self.ctx, 'g_error_market_alert_invalid_threshold'),
+                ephemeral=True,
+            )
+
+        raw_cd = self.cooldown_input.value.strip() if self.cooldown_input.value else "60"
+        try:
+            cooldown = max(15, int(raw_cd))
+        except Exception:
+            cooldown = 60
+
+        try:
+            state = await self.cog.service.get_market_state() or {}
+            cur_price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
+            await self.cog.service.create_market_alert(
+                self.user_id,
+                direction=direction,
+                threshold_usd=threshold,
+                cooldown_minutes=cooldown,
+                current_price=cur_price,
+            )
+            dir_label = (
+                text.get(self.ctx, 'g_market_alerts_dir_above')
+                if direction == 'above'
+                else text.get(self.ctx, 'g_market_alerts_dir_below')
+            )
+            success_msg = text.get(
+                self.ctx,
+                'g_market_alert_created',
+                dir_label=dir_label,
+                threshold=text.format_usd(threshold),
+                cooldown=cooldown,
+            )
+            await interaction.followup.send(success_msg, ephemeral=True)
+            await self.on_complete()
+        except GameError as err:
+            err_map = {
+                'market_alert_limit_reached': 'g_error_market_alert_limit',
+                'market_alert_duplicate': 'g_error_market_alert_duplicate',
+                'market_alert_threshold_too_high': 'g_error_market_alert_invalid_threshold',
+            }
+            err_key = err_map.get(str(err), 'g_error_busy')
+            max_alerts = MathConfig.market_settings().get('alerts_max_per_player', 5)
+            await interaction.followup.send(
+                text.get(self.ctx, err_key, max=max_alerts),
+                ephemeral=True,
+            )
+        except Exception:
+            logger.exception("[Market] Erreur création alerte")
+            await interaction.followup.send(text.get(self.ctx, 'g_error_busy'), ephemeral=True)
+
+
+class MarketAlertsView(discord.ui.View):
+    """Vue interactive pour la gestion des alertes personnelles."""
+
+    def __init__(self, cog: "Market", ctx, user_id: int, alerts: list[dict]):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.ctx = ctx
+        self.user_id = user_id
+        self.alerts = alerts
+        self.message = None
+
+        self._build_interface()
+
+    def _build_interface(self):
+        self.clear_items()
+
+        # Bouton Ajouter
+        btn_add = discord.ui.Button(
+            label=text.get(self.ctx, 'g_market_btn_add_alert'),
+            emoji=get_button_emoji('root_materiel') or '➕',
+            style=discord.ButtonStyle.primary,
+            custom_id="market_alert_add",
+        )
+        btn_add.callback = self._on_add_click
+        self.add_item(btn_add)
+
+        # Select menu de suppression si alertes présentes
+        if self.alerts:
+            opts_del = []
+            for a in self.alerts[:25]:
+                direction_txt = "≥" if a['direction'] == 'above' else "≤"
+                thresh_txt = text.format_usd(a['threshold_usd'])
+                label = f"#{a['id']} · {direction_txt} {thresh_txt} USD"
+                opts_del.append(discord.SelectOption(
+                    label=label[:100],
+                    value=str(a['id']),
+                    description=f"Rappel : {a.get('cooldown_minutes', 60)} min",
+                ))
+
+            select_del = discord.ui.Select(
+                placeholder=text.get(self.ctx, 'g_market_btn_del_alert'),
+                options=opts_del,
+                custom_id="market_alert_del_select",
+            )
+            select_del.callback = self._on_del_select
+            self.add_item(select_del)
+
+            # Select menu d'activation / désactivation
+            opts_toggle = []
+            for a in self.alerts[:25]:
+                direction_txt = "≥" if a['direction'] == 'above' else "≤"
+                thresh_txt = text.format_usd(a['threshold_usd'])
+                state_txt = "Désactiver" if a.get('enabled') else "Activer"
+                label = f"{state_txt} #{a['id']} ({direction_txt} {thresh_txt})"
+                opts_toggle.append(discord.SelectOption(
+                    label=label[:100],
+                    value=str(a['id']),
+                ))
+
+            select_toggle = discord.ui.Select(
+                placeholder=text.get(self.ctx, 'g_market_btn_toggle_alert'),
+                options=opts_toggle,
+                custom_id="market_alert_toggle_select",
+            )
+            select_toggle.callback = self._on_toggle_select
+            self.add_item(select_toggle)
+
+        # Bouton Retour au Marché
+        btn_back = discord.ui.Button(
+            label=text.get(self.ctx, 'g_market_btn_back'),
+            emoji=get_button_emoji('root_retour') or '🔙',
+            style=discord.ButtonStyle.secondary,
+            custom_id="market_alert_back",
+        )
+        btn_back.callback = self._on_back_click
+        self.add_item(btn_back)
+
+    async def _on_add_click(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message(text.get(self.ctx, 'g_error_access_denied'), ephemeral=True)
+
+        async def on_complete():
+            embed, view = await self.cog._build_alerts_display(self.ctx, self.user_id)
+            if self.message:
+                await self.message.edit(embed=embed, view=view)
+
+        modal = MarketAlertAddModal(self.cog, self.ctx, self.user_id, on_complete)
+        await interaction.response.send_modal(modal)
+
+    async def _on_del_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message(text.get(self.ctx, 'g_error_access_denied'), ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        alert_id = int(interaction.data['values'][0])
+        await self.cog.service.delete_market_alert(self.user_id, alert_id)
+        del_msg = text.get(self.ctx, 'g_market_alert_deleted', id=alert_id)
+        await interaction.followup.send(del_msg, ephemeral=True)
+
+        embed, view = await self.cog._build_alerts_display(self.ctx, self.user_id)
+        if self.message:
+            await self.message.edit(embed=embed, view=view)
+
+    async def _on_toggle_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message(text.get(self.ctx, 'g_error_access_denied'), ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        alert_id = int(interaction.data['values'][0])
+        updated = await self.cog.service.toggle_market_alert(self.user_id, alert_id)
+        st = text.get(self.ctx, 'g_market_alerts_status_armed' if updated.get('enabled') else 'g_market_alerts_status_disabled')
+        upd_msg = text.get(self.ctx, 'g_market_alert_toggled', id=alert_id, status=st)
+        await interaction.followup.send(upd_msg, ephemeral=True)
+
+        embed, view = await self.cog._build_alerts_display(self.ctx, self.user_id)
+        if self.message:
+            await self.message.edit(embed=embed, view=view)
+
+    async def _on_back_click(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        embed, view = await self.cog._build_market_display(self.ctx, '24h')
+        if self.message:
+            await self.message.edit(embed=embed, view=view)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        checks = Check()
+        allowed, err_key = await checks.check_interaction_access(self.ctx.bot, interaction, allow_network=False)
+        if not allowed:
+            await interaction.response.send_message(text.get(self.ctx, err_key), ephemeral=True)
+            return False
+        return True
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        try:
+            if self.message:
+                await self.message.edit(view=self)
+        except Exception:
+            pass
+
+
+
 class Market(BaseGameCog):
     """Cog gérant la consultation du marché RTM et l'affichage des cours."""
 
@@ -182,6 +430,12 @@ class Market(BaseGameCog):
         """Commande préfixe !market [24h|7d|30d|chart]."""
         await self._prefetch_lang(ctx.author.id)
         period_clean = period.lower().strip()
+        if period_clean in ('alert', 'alerts', 'alerte', 'alertes'):
+            embed, view = await self._build_alerts_display(ctx, ctx.author.id)
+            msg = await ctx.send(embed=embed, view=view)
+            view.message = msg
+            return
+
         if period_clean in ('chart', 'c', 'graph', 'graphique'):
             target_period = args[0].lower().strip() if args else '24h'
             if target_period not in PERIODS:
@@ -199,6 +453,51 @@ class Market(BaseGameCog):
         embed, view = await self._build_market_display(ctx, period_clean)
         msg = await ctx.send(embed=embed, view=view)
         view.message = msg
+
+    async def _build_alerts_display(self, ctx, user_id: int):
+        """Construit l'embed et la vue de gestion des alertes personnelles."""
+        alerts = await self.service.list_market_alerts(user_id)
+        max_alerts = MathConfig.market_settings().get('alerts_max_per_player', 5)
+
+        lines = []
+        if not alerts:
+            lines.append(text.get(ctx, 'g_market_alerts_empty'))
+        else:
+            lines.append(text.get(ctx, 'g_market_alerts_header', count=len(alerts), max=max_alerts))
+            for a in alerts:
+                direction = a['direction']
+                dir_label = (
+                    text.get(ctx, 'g_market_alerts_dir_above')
+                    if direction == 'above'
+                    else text.get(ctx, 'g_market_alerts_dir_below')
+                )
+                if not a.get('enabled'):
+                    st = text.get(ctx, 'g_market_alerts_status_disabled')
+                elif a.get('armed'):
+                    st = text.get(ctx, 'g_market_alerts_status_armed')
+                else:
+                    st = text.get(ctx, 'g_market_alerts_status_waiting')
+
+                lines.append(text.get(
+                    ctx,
+                    'g_market_alerts_item',
+                    id=a['id'],
+                    dir_label=dir_label,
+                    threshold=text.format_usd(a['threshold_usd']),
+                    status=st,
+                    cooldown=a.get('cooldown_minutes', 60),
+                ))
+
+        embed = RootEmbed(
+            ctx=ctx,
+            action='market',
+            title=text.get(ctx, 'g_market_alerts_title'),
+            content="\n".join(lines),
+            state=VisualState.CONSULTATION,
+            footer="ROOT OS · Marché",
+        )
+        view = MarketAlertsView(self, ctx, user_id, alerts)
+        return embed, view
 
     # ── Rendu et Données ─────────────────────────────────────────────────────
     async def _build_market_display(self, ctx, period: str):

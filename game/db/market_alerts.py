@@ -182,3 +182,4 @@ class MarketAlerts:
             )
 
         return triggered
+
