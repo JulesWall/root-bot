@@ -28,17 +28,77 @@ from game.math_config import MathConfig
 from lang.descslash import desc, desc_loc
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
+from types import SimpleNamespace
+
 from utils import text
 from utils.check import Check
+from utils.confirmation import Confirmation
 from utils.root_embed import RootEmbed
 from utils.root_emojis import get_button_emoji, get_emoji
 from utils.root_theme import VisualState
 
 logger = logging.getLogger(__name__)
 
+DEX_ADDRESS = "0xROOTIUM_DEX"
+
+
+class MarketTradeModal(discord.ui.Modal):
+    """Modal de saisie du montant pour l'achat ou la vente de RTM."""
+
+    def __init__(self, cog: "Market", ctx, action: str = 'buy'):
+        title_key = 'g_market_modal_buy_title' if action == 'buy' else 'g_market_modal_sell_title'
+        label_key = 'g_market_modal_buy_amount_label' if action == 'buy' else 'g_market_modal_sell_amount_label'
+        hint_key = 'g_market_modal_buy_amount_hint' if action == 'buy' else 'g_market_modal_sell_amount_hint'
+
+        super().__init__(title=text.get(ctx, title_key)[:45])
+        self.cog = cog
+        self.ctx = ctx
+        self.action = action
+
+        self.amount_input = discord.ui.InputText(
+            label=text.get(ctx, label_key)[:45],
+            placeholder=text.get(ctx, hint_key)[:100],
+            required=True,
+        )
+        self.add_item(self.amount_input)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        raw_amount = self.amount_input.value.strip().lower()
+        is_all = raw_amount in ('all', 'tout', 'max')
+
+        modal_ctx = SimpleNamespace(
+            author=interaction.user,
+            user=interaction.user,
+            guild=interaction.guild,
+            bot=self.cog.bot,
+            command=self.ctx.command,
+            respond=interaction.followup.send,
+            send=interaction.followup.send,
+            interaction=interaction,
+        )
+
+        try:
+            result = await self.cog.service.execute(
+                interaction.user.id,
+                interaction.guild.id if interaction.guild else None,
+                'convert',
+                action=self.action,
+                amount=raw_amount,
+                all=is_all,
+                confirm=False,
+            )
+            await self.cog._send(modal_ctx, 'convert', result)
+        except GameError as err:
+            err_msg = text.get(modal_ctx, 'g_error_' + err.key, **err.values)
+            await interaction.followup.send(err_msg, ephemeral=True)
+        except Exception:
+            logger.exception("[Market] Erreur lors de l'exécution de la modal %s", self.action)
+            await interaction.followup.send(text.get(modal_ctx, 'g_error_busy'), ephemeral=True)
+
 
 class MarketView(discord.ui.View):
-    """Vue interactive pour basculer de période ou afficher le graphique détaillé."""
+    """Vue interactive pour basculer de période, acheter/vendre ou configurer les alertes/ventes auto."""
 
     def __init__(self, cog: "Market", ctx, current_period: str = "24h"):
         super().__init__(timeout=300)
@@ -58,9 +118,32 @@ class MarketView(discord.ui.View):
                 style=discord.ButtonStyle.primary if is_active else discord.ButtonStyle.secondary,
                 custom_id=f"market_p_{p}",
                 disabled=is_active,
+                row=0,
             )
             btn.callback = self._make_period_callback(p)
             self.add_item(btn)
+
+        # Bouton Acheter RTM
+        btn_buy = discord.ui.Button(
+            label=text.get(self.ctx, 'g_market_btn_buy'),
+            emoji=get_button_emoji('root_recolter') or '🛒',
+            style=discord.ButtonStyle.success,
+            custom_id="market_btn_buy",
+            row=1,
+        )
+        btn_buy.callback = self._on_buy_click
+        self.add_item(btn_buy)
+
+        # Bouton Vendre RTM
+        btn_sell = discord.ui.Button(
+            label=text.get(self.ctx, 'g_market_btn_sell'),
+            emoji=get_button_emoji('root_materiel') or '💰',
+            style=discord.ButtonStyle.secondary,
+            custom_id="market_btn_sell",
+            row=1,
+        )
+        btn_sell.callback = self._on_sell_click
+        self.add_item(btn_sell)
 
         # Bouton Alertes
         btn_alerts = discord.ui.Button(
@@ -68,6 +151,7 @@ class MarketView(discord.ui.View):
             emoji=get_button_emoji('root_alerte') or '🔔',
             style=discord.ButtonStyle.secondary,
             custom_id="market_btn_alerts",
+            row=1,
         )
         btn_alerts.callback = self._on_alerts_click
         self.add_item(btn_alerts)
@@ -75,9 +159,10 @@ class MarketView(discord.ui.View):
         # Bouton Vente auto
         btn_auto_sell = discord.ui.Button(
             label=text.get(self.ctx, 'g_market_btn_auto_sell'),
-            emoji=get_button_emoji('root_materiel') or '⚡',
+            emoji=get_button_emoji('root_operations') or '⚡',
             style=discord.ButtonStyle.secondary,
             custom_id="market_btn_auto_sell",
+            row=1,
         )
         btn_auto_sell.callback = self._on_auto_sell_click
         self.add_item(btn_auto_sell)
@@ -98,6 +183,16 @@ class MarketView(discord.ui.View):
             await interaction.message.edit(embed=embed, file=file, attachments=[], view=self)
 
         return callback
+
+    async def _on_buy_click(self, interaction: discord.Interaction):
+        """Ouvre le formulaire modal d'achat de Rootium."""
+        modal = MarketTradeModal(self.cog, self.ctx, action='buy')
+        await interaction.response.send_modal(modal)
+
+    async def _on_sell_click(self, interaction: discord.Interaction):
+        """Ouvre le formulaire modal de vente de Rootium."""
+        modal = MarketTradeModal(self.cog, self.ctx, action='sell')
+        await interaction.response.send_modal(modal)
 
     async def _on_chart_click(self, interaction: discord.Interaction):
         """Génère (ou récupère en cache) l'image PNG et l'envoie en réponse éphémère."""
@@ -760,16 +855,38 @@ class Market(BaseGameCog):
     # ── Préfixe ──────────────────────────────────────────────────────────────
     @commands.command(name='market', aliases=['mk'], help=FR['market'])
     async def prefix_market(self, ctx, period: str = '24h', *args):
-        """Commande préfixe !market [24h|7d|30d|chart|alerts|autosell]."""
+        """Commande préfixe !market [24h|7d|30d|buy|sell|chart|alerts|autosell]."""
         await self._prefetch_lang(ctx.author.id)
         period_clean = period.lower().strip()
+
+        # Commandes d'achat et de vente de Rootium
+        if period_clean in ('buy', 'achat', 'b'):
+            amount = args[0] if args else None
+            if not amount:
+                prefix = getattr(ctx, 'prefix', '!')
+                return await ctx.send(text.get(ctx, 'g_error_market_usage', prefix=prefix))
+            confirm = len(args) > 1 and args[1].lower() in ('confirm', 'yes', 'oui', 'c')
+            is_all = amount.lower() in ('all', 'tout', 'max')
+            await self._invoke(ctx, 'convert', action='buy', amount=amount, all=is_all, confirm=confirm)
+            return
+
+        if period_clean in ('sell', 'vente', 's'):
+            amount = args[0] if args else None
+            if not amount:
+                prefix = getattr(ctx, 'prefix', '!')
+                return await ctx.send(text.get(ctx, 'g_error_market_usage', prefix=prefix))
+            confirm = len(args) > 1 and args[1].lower() in ('confirm', 'yes', 'oui', 'c')
+            is_all = amount.lower() in ('all', 'tout', 'max')
+            await self._invoke(ctx, 'convert', action='sell', amount=amount, all=is_all, confirm=confirm)
+            return
+
         if period_clean in ('alert', 'alerts', 'alerte', 'alertes'):
             embed, view = await self._build_alerts_display(ctx, ctx.author.id)
             msg = await ctx.send(embed=embed, view=view)
             view.message = msg
             return
 
-        if period_clean in ('autosell', 'as', 'sell', 'auto'):
+        if period_clean in ('autosell', 'as', 'auto'):
             embed, view = await self._build_auto_sell_display(ctx, ctx.author.id)
             msg = await ctx.send(embed=embed, view=view)
             view.message = msg
@@ -792,6 +909,149 @@ class Market(BaseGameCog):
         file, embed, view = await self._build_market_display(ctx, period_clean)
         msg = await ctx.send(embed=embed, file=file, view=view)
         view.message = msg
+
+    async def _send(self, ctx, method, result):
+        """Affiche le devis interactif ou la confirmation finale de la transaction de marché."""
+        if method != 'convert':
+            return
+
+        action = result.get('action', 'sell')
+        market_ts = result.get('market_updated_ts')
+        ts_val = int(market_ts.replace(tzinfo=timezone.utc).timestamp()) if market_ts else int(datetime.now(timezone.utc).timestamp())
+        market_line = (
+            text.get(ctx, 'g_convert_market_delayed', ts=ts_val)
+            if result.get('market_status') == 'delayed'
+            else text.get(ctx, 'g_convert_market_live', ts=ts_val)
+        )
+
+        rtm_formatted = text.format_rtm(result.get('rtm_amount', 0))
+        rate_formatted = text.format_usd(result.get('rate', 0))
+        fee_pct_formatted = f"{result.get('fee_pct', Decimal('1'))}"
+        fee_usd_formatted = text.format_usd(result.get('fee_usd', 0))
+        gross_usd_formatted = text.format_usd(result.get('gross_usd', 0))
+        usd_formatted = text.format_usd(result.get('usd_amount', 0))
+
+        if result.get('convert_quote') or result.get('quote'):
+            if action == 'buy':
+                content = text.get(
+                    ctx,
+                    'g_market_buy_quote',
+                    rtm=rtm_formatted,
+                    gross_usd=gross_usd_formatted,
+                    fee_pct=fee_pct_formatted,
+                    fee_usd=fee_usd_formatted,
+                    usd=usd_formatted,
+                    rate=rate_formatted,
+                    market_line=market_line,
+                    cur_usd=text.format_usd(result.get('current_dollars', 0)),
+                    rem_usd=text.format_usd(result.get('new_dollars', 0)),
+                    cur_rtm=text.format_rtm(result.get('current_rootium', 0)),
+                    rem_rtm=text.format_rtm(result.get('new_rootium', 0)),
+                )
+            else:
+                content = text.get(
+                    ctx,
+                    'g_market_sell_quote',
+                    rtm=rtm_formatted,
+                    gross_usd=gross_usd_formatted,
+                    fee_pct=fee_pct_formatted,
+                    fee_usd=fee_usd_formatted,
+                    usd=usd_formatted,
+                    rate=rate_formatted,
+                    market_line=market_line,
+                    cur_rtm=text.format_rtm(result.get('current_rootium', 0)),
+                    rem_rtm=text.format_rtm(result.get('new_rootium', 0)),
+                    cur_usd=text.format_usd(result.get('current_dollars', 0)),
+                    rem_usd=text.format_usd(result.get('new_dollars', 0)),
+                )
+            confirmation_args = {
+                'action': action,
+                'amount': 'all' if result.get('sold_all') else result.get('rtm_amount'),
+                'confirm': True,
+            }
+            view = Confirmation(self._send, self.service, ctx, 'convert', confirmation_args)
+            embed = RootEmbed(
+                ctx=ctx,
+                action='market',
+                title=text.get(ctx, 'g_market_title'),
+                content=content,
+                state=VisualState.CONSULTATION,
+                footer="ROOT OS · Marché",
+            )
+            if getattr(ctx, 'interaction', None):
+                return await ctx.respond(embed=embed, view=view, ephemeral=True)
+            else:
+                return await ctx.send(embed=embed, view=view)
+
+        # Transaction confirmée et exécutée
+        if action == 'buy':
+            content = text.get(
+                ctx,
+                'g_market_buy_success',
+                rtm=rtm_formatted,
+                usd=usd_formatted,
+                fee_usd=fee_usd_formatted,
+                rate=rate_formatted,
+                usd_total=text.format_usd(result.get('new_dollars', 0)),
+                rtm_total=text.format_rtm(result.get('new_rootium', 0)),
+            )
+        else:
+            content = text.get(
+                ctx,
+                'g_market_sell_success',
+                rtm=rtm_formatted,
+                usd=usd_formatted,
+                fee_usd=fee_usd_formatted,
+                rate=rate_formatted,
+                usd_total=text.format_usd(result.get('new_dollars', 0)),
+                rtm_total=text.format_rtm(result.get('new_rootium', 0)),
+            )
+
+        # Émission du log blockchain avec frais
+        author = getattr(ctx, "author", None) or getattr(ctx, "user", None)
+        author_id = getattr(author, "id", None)
+        author_name = getattr(author, "display_name", None) or getattr(author, "name", None)
+        rtm_val = Decimal(str(result.get('rtm_amount', 0)))
+        fee_val = result.get('fee_usd')
+        gross_val = result.get('gross_usd')
+
+        if rtm_val > 0 and author_id and hasattr(self.bot, 'discord_logger'):
+            try:
+                if action == 'buy':
+                    await self.bot.discord_logger.log_blockchain_transaction(
+                        from_id=DEX_ADDRESS,
+                        to_address=str(author_id),
+                        rtm_amount=rtm_val,
+                        tx_type="BUY TOKEN",
+                        usd_amount=gross_val,
+                        fee_usd=fee_val,
+                        to_name=author_name,
+                    )
+                else:
+                    await self.bot.discord_logger.log_blockchain_transaction(
+                        from_id=author_id,
+                        to_address=DEX_ADDRESS,
+                        rtm_amount=rtm_val,
+                        tx_type="SELL TOKEN",
+                        usd_amount=gross_val,
+                        fee_usd=fee_val,
+                        from_name=author_name,
+                    )
+            except Exception:
+                logger.exception("[Market] Impossible d'émettre le log blockchain")
+
+        embed = RootEmbed(
+            ctx=ctx,
+            action='market',
+            title=text.get(ctx, 'g_market_title'),
+            content=content,
+            state=VisualState.CONFIRMATION,
+            footer="ROOT OS · Marché",
+        )
+        if getattr(ctx, 'interaction', None):
+            await ctx.respond(embed=embed, ephemeral=True)
+        else:
+            await ctx.send(embed=embed)
 
     async def _build_alerts_display(self, ctx, user_id: int):
         """Construit l'embed et la vue de gestion des alertes personnelles."""

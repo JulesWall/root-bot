@@ -330,6 +330,10 @@ CREATE TABLE IF NOT EXISTS economy_hourly (
     conversions         BIGINT UNSIGNED NOT NULL DEFAULT 0,
     converted_rtm       DECIMAL(38,5) NOT NULL DEFAULT 0,
     converted_usd       DECIMAL(38,2) NOT NULL DEFAULT 0,
+    market_buys         BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    market_bought_rtm   DECIMAL(38,5) NOT NULL DEFAULT 0,
+    market_spent_usd    DECIMAL(38,2) NOT NULL DEFAULT 0,
+    market_fees_usd     DECIMAL(38,2) NOT NULL DEFAULT 0,
     trades              BIGINT UNSIGNED NOT NULL DEFAULT 0,
     PRIMARY KEY (bucket_start, player_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

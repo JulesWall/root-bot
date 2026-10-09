@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -189,7 +189,9 @@ class ConvertMarketRateTests(unittest.TestCase):
     def test_quote_uses_persisted_rate_and_exposes_freshness(self):
         quote, upd = self._convert(self._tx('50000', 'delayed'), amount='0.5', confirm=False)
         self.assertEqual(quote['rate'], Decimal('50000'))
-        self.assertEqual(quote['usd_amount'], Decimal('25000.00'))
+        self.assertEqual(quote['gross_usd'], Decimal('25000.00'))
+        self.assertEqual(quote['fee_usd'], Decimal('250.00'))
+        self.assertEqual(quote['usd_amount'], Decimal('24750.00'))
         self.assertEqual(quote['market_status'], 'delayed')
         self.assertEqual(quote['market_updated_ts'], 1767268810)
         upd.assert_not_called()
@@ -810,7 +812,8 @@ class AutoSellTests(unittest.TestCase):
         self.assertEqual(res['rate'], Decimal('50000'))
         # Vérification débit/crédit
         self.assertEqual(res['new_rootium'], Decimal('80.00000'))
-        self.assertEqual(res['new_dollars'], Decimal('1000.00') + (Decimal('20') * Decimal('50000')))
+        # 20 RTM * 50,000 USD = 1,000,000 gross - 10,000 fee (1%) = 990,000 net USD
+        self.assertEqual(res['new_dollars'], Decimal('1000.00') + Decimal('990000.00'))
         # Règle 'once' désactivée
         self.assertEqual(self.tx.rules[0]['enabled'], 0)
         # Run enregistré
@@ -892,6 +895,135 @@ class AutoSellTests(unittest.TestCase):
         res2 = AutoSellDB.execute_rule(self.tx, rule, Decimal('50000'), mts, self.tx.now)
         self.assertIsNone(res2)
         self.assertEqual(len(self.tx.runs), 1)
+
+
+class MarketTradeAndBlockchainTests(unittest.TestCase):
+    """Tests pour l'achat et la vente de RTM sur le marché, les frais de 1% et les logs."""
+
+    def _setup_tx(self, rate_str='40000'):
+        from datetime import timezone
+        tx = MagicMock()
+        tx.one.return_value = {
+            'price_usd': Decimal(rate_str),
+            'status': 'live',
+            'observed_at': datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+            'market_ts': datetime(2026, 1, 1, 12, 0),
+        }
+        return tx
+
+    def test_buy_quote_and_confirm_with_one_percent_fee(self):
+        from unittest.mock import patch
+        from game.db.players import Player
+        tx = self._setup_tx('50000')
+        player = {'rootium': Decimal('0.00000'), 'dollars': Decimal('1000.00')}
+        with patch('game.db.players.PlayerData.get', return_value=player), \
+             patch('game.db.players.UpdatePlayer.set') as upd:
+            # 1. Devis d'achat de 0.01 RTM
+            # 0.01 * 50,000 = 500.00 USD brut.
+            # Frais 1% = 5.00 USD. Total débité = 505.00 USD.
+            quote = Player.convert(tx, 123, action='buy', amount='0.01', confirm=False)
+            self.assertTrue(quote['quote'])
+            self.assertEqual(quote['action'], 'buy')
+            self.assertEqual(quote['rtm_amount'], Decimal('0.01000'))
+            self.assertEqual(quote['gross_usd'], Decimal('500.00'))
+            self.assertEqual(quote['fee_usd'], Decimal('5.00'))
+            self.assertEqual(quote['fee_pct'], Decimal('1.0'))
+            self.assertEqual(quote['usd_amount'], Decimal('505.00'))
+            self.assertEqual(quote['new_dollars'], Decimal('495.00'))
+            self.assertEqual(quote['new_rootium'], Decimal('0.01000'))
+            upd.assert_not_called()
+
+            # 2. Confirmation de l'achat
+            bought = Player.convert(tx, 123, action='buy', amount='0.01', confirm=True, rate='50000')
+            self.assertTrue(bought['converted'])
+            self.assertEqual(bought['usd_amount'], Decimal('505.00'))
+            upd.assert_called_once_with(tx, 123, dollars=Decimal('495.00'), rootium=Decimal('0.01000'))
+
+    def test_buy_all_calculates_max_rtm_with_fees(self):
+        from game.db.players import Player
+        tx = self._setup_tx('50000')
+        # Solde de 1010.00 USD -> Avec frais 1%, montant brut max = 1000.00 USD, frais = 10.00 USD.
+        # À 50,000 USD/RTM, 1000 USD / 50000 = 0.02000 RTM.
+        player = {'rootium': Decimal('0.00000'), 'dollars': Decimal('1010.00')}
+        with patch('game.db.players.PlayerData.get', return_value=player), \
+             patch('game.db.players.UpdatePlayer.set') as upd:
+            bought = Player.convert(tx, 123, action='buy', amount='all', all=True, confirm=True)
+            self.assertTrue(bought['converted'])
+            self.assertEqual(bought['rtm_amount'], Decimal('0.02000'))
+            self.assertEqual(bought['gross_usd'], Decimal('1000.00'))
+            self.assertEqual(bought['fee_usd'], Decimal('10.00'))
+            self.assertEqual(bought['usd_amount'], Decimal('1010.00'))
+            self.assertEqual(bought['new_dollars'], Decimal('0.00'))
+            self.assertEqual(bought['new_rootium'], Decimal('0.02000'))
+            upd.assert_called_once()
+
+    def test_buy_insufficient_funds_raises_error(self):
+        from game.db.players import Player
+        from game.game_error import GameError
+        tx = self._setup_tx('50000')
+        player = {'rootium': Decimal('0.00000'), 'dollars': Decimal('100.00')}
+        with patch('game.db.players.PlayerData.get', return_value=player):
+            with self.assertRaises(GameError) as cm:
+                Player.convert(tx, 123, action='buy', amount='1', confirm=True)
+            self.assertEqual(cm.exception.key, 'insufficient_funds_usd')
+
+    def test_economy_stats_increments_for_buy_and_sell(self):
+        from game.db.economy_stats import EconomyStatsDB
+        # 1. Achat
+        buy_res = {
+            'converted': True,
+            'action': 'buy',
+            'rtm_amount': Decimal('0.05'),
+            'usd_amount': Decimal('2525.00'),
+            'fee_usd': Decimal('25.00'),
+        }
+        inc_buy = EconomyStatsDB.build_increments('convert', 123, buy_res)
+        self.assertIn(123, inc_buy)
+        self.assertEqual(inc_buy[123]['market_buys'], 1)
+        self.assertEqual(inc_buy[123]['market_bought_rtm'], Decimal('0.05'))
+        self.assertEqual(inc_buy[123]['market_spent_usd'], Decimal('2525.00'))
+        self.assertEqual(inc_buy[123]['market_fees_usd'], Decimal('25.00'))
+
+        # 2. Vente
+        sell_res = {
+            'converted': True,
+            'action': 'sell',
+            'rtm_amount': Decimal('0.05'),
+            'usd_amount': Decimal('2475.00'),
+            'fee_usd': Decimal('25.00'),
+        }
+        inc_sell = EconomyStatsDB.build_increments('convert', 123, sell_res)
+        self.assertIn(123, inc_sell)
+        self.assertEqual(inc_sell[123]['conversions'], 1)
+        self.assertEqual(inc_sell[123]['converted_rtm'], Decimal('0.05'))
+        self.assertEqual(inc_sell[123]['converted_usd'], Decimal('2475.00'))
+        self.assertEqual(inc_sell[123]['market_fees_usd'], Decimal('25.00'))
+
+    def test_blockchain_log_formats_fee(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from utils.logger import Logger
+        bot = MagicMock()
+        mock_channel = MagicMock()
+        mock_channel.send = AsyncMock()
+        bot.get_channel.return_value = mock_channel
+        with patch.object(Logger, 'channel_id', return_value=123456789):
+            logger_inst = Logger(bot)
+            asyncio.run(logger_inst.log_blockchain_transaction(
+                from_id=123,
+                to_address="0xROOTIUM_DEX",
+                rtm_amount=Decimal('0.05000'),
+                tx_type="SELL TOKEN",
+                usd_amount=Decimal('2500.00'),
+                fee_usd=Decimal('25.00'),
+                from_name="Alice",
+            ))
+            mock_channel.send.assert_awaited_once()
+            call_content = mock_channel.send.call_args[0][0]
+            self.assertIn("TYPE   SELL TOKEN", call_content)
+            self.assertIn("RTM    0.05000", call_content)
+            self.assertIn("USD    2,500", call_content)
+            self.assertIn("FEE    25", call_content)
 
 
 if __name__ == '__main__':

@@ -1559,13 +1559,19 @@ class TestPlayerAndGameOperations(unittest.TestCase):
         quote = Player.convert(self.tx, self.actor, amount="0.00002", confirm=False)
         self.assertTrue(quote.get("convert_quote"))
         self.assertEqual(quote.get("rtm_amount"), Decimal("0.00002"))
-        self.assertEqual(quote.get("usd_amount"), MathConfig.convert_rtm_to_usd("0.00002"))
+        from decimal import ROUND_HALF_UP
+        gross_usd = MathConfig.convert_rtm_to_usd("0.00002")
+        fee_usd = (gross_usd * (MathConfig.market_fee_pct() / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        net_usd = gross_usd - fee_usd
+        self.assertEqual(quote.get("gross_usd"), gross_usd)
+        self.assertEqual(quote.get("fee_usd"), fee_usd)
+        self.assertEqual(quote.get("usd_amount"), net_usd)
         self.assertEqual(self.tx.players[self.actor]["rootium"], Decimal("0.00010"))
 
         sold = Player.convert(self.tx, self.actor, amount="0.00002", confirm=True)
         self.assertTrue(sold.get("converted"))
         self.assertEqual(self.tx.players[self.actor]["rootium"], Decimal("0.00008"))
-        self.assertEqual(self.tx.players[self.actor]["dollars"], Decimal("10.00") + MathConfig.convert_rtm_to_usd("0.00002"))
+        self.assertEqual(self.tx.players[self.actor]["dollars"], Decimal("10.00") + net_usd)
 
         with self.assertRaises(GameError) as cm:
             Player.convert(self.tx, self.actor, amount="1", confirm=True)
@@ -8160,10 +8166,10 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         from lang import help_fr, help_en
         from commands.utility.help import PUBLIC_COMMANDS
 
-        # 30 commandes publiques
-        self.assertEqual(len(PUBLIC_COMMANDS), 30)
-        self.assertEqual(len(help_fr.COMMANDS), 30)
-        self.assertEqual(len(help_en.COMMANDS), 30)
+        # 29 commandes publiques (convert fusionné dans market)
+        self.assertEqual(len(PUBLIC_COMMANDS), 29)
+        self.assertEqual(len(help_fr.COMMANDS), 29)
+        self.assertEqual(len(help_en.COMMANDS), 29)
 
         for cmd_name in PUBLIC_COMMANDS:
             self.assertIn(cmd_name, help_fr.COMMANDS)
@@ -8209,7 +8215,7 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         for cs in cmd_selects:
             self.assertLessEqual(len(cs.options), 25)
             total_options.extend(opt.value for opt in cs.options)
-        self.assertEqual(len(total_options), 30)
+        self.assertEqual(len(total_options), 29)
         self.assertEqual(set(total_options), set(PUBLIC_COMMANDS))
 
         # Vérifie que l'embed de la page liste toutes les 27 commandes
@@ -8306,14 +8312,14 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         embed1 = ctx.send.call_args[1]["embed"]
         self.assertIn("network", embed1.title.lower())
 
-        # 2. Alias 'sell' -> convert
+        # 2. Alias 'sell' -> market
         ctx.send.reset_mock()
         with patch("commands.utility.help.get_locale", return_value="fr"):
             with patch("commands.utility.help.get_prefix_async", new=AsyncMock(return_value="+r")):
                 with patch.object(self.cog.check, "beta_enabled", return_value=False):
                     await self.cog.prefix_help(ctx, command_name="sell")
         embed2 = ctx.send.call_args[1]["embed"]
-        self.assertIn("convert", embed2.title.lower())
+        self.assertIn("market", embed2.title.lower())
 
         # 3. Alias 'c' -> claim
         ctx.send.reset_mock()

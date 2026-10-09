@@ -981,10 +981,11 @@ class Logger:
         usd_amount: float | Decimal | str | None = None,
         from_name: str | None = None,
         to_name: str | None = None,
+        fee_usd: float | Decimal | str | None = None,
     ):
         """Envoie un log de transaction RTM formaté dans le salon #blockchain.
 
-        tx_type / usd_amount sont optionnels (ex. vente DEX : TYPE SELL TOKEN + USD).
+        tx_type / usd_amount / fee_usd sont optionnels (ex. vente/achat DEX : TYPE BUY/SELL TOKEN + USD + FEE).
         from_name / to_name permettent d'afficher le pseudo Discord à côté de l'identifiant.
         """
         channel_id = self.channel_id("blockchain")
@@ -1012,6 +1013,9 @@ class Logger:
         if usd_amount is not None:
             from utils.text import format_usd
             extra_lines.append(f"USD    {format_usd(usd_amount)}")
+        if fee_usd is not None:
+            from utils.text import format_usd
+            extra_lines.append(f"FEE    {format_usd(fee_usd)}")
 
         separator = "═" * 68
         block_content = (

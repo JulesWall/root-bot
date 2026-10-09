@@ -1,18 +1,32 @@
 # :rocket: Beta Update N°4
 
-## :chart_with_upwards_trend: **Cours dynamique du Rootium (`/convert`)**
+## :currency_exchange: **Comptoir de Marché unifié : Achat & Vente de Rootium (`/market` & `!market`)**
 
-Le taux **RTM → USD** n'est plus fixe : il évolue désormais **toutes les 15 minutes** selon la moyenne des variations de **Bitcoin, Ethereum et Solana**. Si les trois cryptos montent en moyenne de 1 %, le Rootium monte de 1 % ; si la moyenne est nulle, le cours ne bouge pas.
+Les commandes autonomes `/convert` et `!sell` ont été retirées au profit d'un **Terminal de Marché unifié** accessible via `/market` et `!market`. Vous pouvez désormais :
+- **Vendre du Rootium** (RTM → USD) : transformez vos gains de minage en dollars au cours dynamique en direct.
+- **Acheter du Rootium** (USD → RTM) : investissez vos dollars pour acquérir des tokens Rootium au cours du marché.
+- **Interface interactive** : lancez vos ordres en un clic via les boutons `[🛒 Acheter RTM]` et `[💰 Vendre RTM]` et saisissez le montant (ou `all`) dans un formulaire dédié avec confirmation instantanée.
+- **Commandes rapides** : exécutez vos ordres directement en commandes texte :
+  - `!market buy <montant|all> [confirm]` (ou alias `!buy`)
+  - `!market sell <montant|all> [confirm]` (ou alias `!sell`, `!cv`)
 
-Le devis de `/convert` affiche le **cours appliqué** et l'heure de sa dernière actualisation. Si le cours change entre ton devis et ta confirmation, la vente est refusée et il faut relancer la commande pour obtenir un devis au nouveau cours. Si le flux de marché est interrompu, le dernier cours valide reste utilisé et le devis t'avertit que le cours n'est plus actualisé.
+## :receipt: **Frais de transaction de 1 % & Traçabilité Blockchain**
 
-Le Rootium reste une monnaie interne au jeu : le cours est inspiré du marché, aucune transaction réelle n'est effectuée. L'équilibrage des combats (`/hack`) reste calculé sur un taux de référence stable.
+- **Frais de 1 %** : une commission fixe de 1 % s'applique désormais sur toutes les opérations du comptoir (achats et ventes). Ces frais sont détaillés de manière transparente sur chaque devis avant confirmation.
+- **Registre `#blockchain`** : chaque achat (`BUY TOKEN`) et chaque vente (`SELL TOKEN`) est immédiatement ancré sur la blockchain publique avec l'adresse du DEX (`0xROOTIUM_DEX`), le montant net et les frais prélevés (`FEE`).
+- **Suivi économique** : les volumes d'achat, de vente et les commissions de marché sont désormais suivis et consolidés en temps réel dans les rapports économiques.
 
-## :bar_chart: **Terminal de marché & Graphiques (`/market` & `!market`)**
+## :chart_with_upwards_trend: **Cours dynamique du Rootium**
 
-Un nouveau terminal interactif permet de suivre le cours du Rootium en temps réel :
-- **Vue instantanée** : cours courant, tendance avec sparkline Unicode, variation sur la période (24 h, 7 j, 30 j) et contributions respectives de BTC, ETH et SOL.
-- **Graphiques haute résolution** : génération à la demande d'un graphique détaillé adapté aux mobiles et ordinateurs, avec courbe d'évolution et repères temporels.
+Le cours **RTM / USD** évolue désormais **toutes les 15 minutes** selon la moyenne des variations de **Bitcoin, Ethereum et Solana**. Si les trois cryptos montent en moyenne de 1 %, le Rootium monte de 1 % ; si la moyenne est nulle, le cours ne bouge pas. Si le cours varie entre votre devis et votre confirmation, la transaction est sécurisée et un nouveau devis actualisé vous est proposé.
+
+Le Rootium reste une monnaie interne au jeu : le cours est inspiré du marché, aucune transaction réelle en cryptomonnaie n'est effectuée. L'équilibrage des combats (`/hack`) reste calculé sur un taux de référence stable.
+
+## :bar_chart: **Terminal de marché & Graphiques**
+
+Un terminal complet permet de suivre le cours du Rootium en temps réel :
+- **Vue instantanée** : cours courant, variation sur la période (24 h, 7 j, 30 j) et contributions respectives de BTC, ETH et SOL.
+- **Navigation fluide** : basculez d'une période à l'autre en un clic sur les boutons temporels (`24 h`, `7 j`, `30 j`) avec génération du graphique correspondant.
 
 ## :bell: **Alertes de cours personnalisées (`/market` & `!market alert`)**
 

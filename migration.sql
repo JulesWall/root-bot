@@ -115,3 +115,9 @@ CREATE TABLE IF NOT EXISTS rtm_auto_sell_runs (
     FOREIGN KEY (rule_id) REFERENCES rtm_auto_sell_rules(id) ON DELETE CASCADE,
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration SQL : Suivi économique du marché (achats RTM et frais de marché)
+ALTER TABLE economy_hourly ADD COLUMN market_buys BIGINT UNSIGNED NOT NULL DEFAULT 0;
+ALTER TABLE economy_hourly ADD COLUMN market_bought_rtm DECIMAL(38,5) NOT NULL DEFAULT 0;
+ALTER TABLE economy_hourly ADD COLUMN market_spent_usd DECIMAL(38,2) NOT NULL DEFAULT 0;
+ALTER TABLE economy_hourly ADD COLUMN market_fees_usd DECIMAL(38,2) NOT NULL DEFAULT 0;

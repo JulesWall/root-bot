@@ -242,6 +242,7 @@ class MathConfig:
         cfg.setdefault('price_decimal_places', 8)
         cfg.setdefault('max_change_pct', None)
         cfg.setdefault('history_retention_days', 90)
+        cfg.setdefault('fee_pct', 1.0)
         cfg.setdefault('alerts_enabled', True)
         cfg.setdefault('alerts_max_per_player', 5)
         cfg.setdefault('alerts_default_cooldown_minutes', 60)
@@ -251,6 +252,12 @@ class MathConfig:
         cfg.setdefault('auto_sell_default_cooldown_minutes', 60)
         cfg.setdefault('auto_sell_min_cooldown_minutes', 15)
         return cfg
+
+    @classmethod
+    def market_fee_pct(cls) -> Decimal:
+        """Retourne le pourcentage de frais prélevé sur les transactions du marché (ex. 1.0)."""
+        cfg = cls.market_settings()
+        return Decimal(str(cfg.get('fee_pct', 1.0)))
 
     @classmethod
     def market_formula(cls, name: str, **values) -> Decimal:
@@ -286,6 +293,17 @@ class MathConfig:
         applied = Decimal(str(rate)) if rate is not None else cls.rtm_to_usd_rate()
         usd = Decimal(str(rtm_amount or 0)) * applied
         return usd.quantize(quantum, rounding=ROUND_HALF_UP)
+
+    @classmethod
+    def convert_usd_to_rtm(cls, usd_amount, rate=None) -> Decimal:
+        """Convertit un montant de USD en Rootium au cours courant (ou `rate`), arrondi aux décimales RTM."""
+        places = int(cls.load().get('rtm_decimal_places', 5))
+        quantum = Decimal('1').scaleb(-places)
+        applied = Decimal(str(rate)) if rate is not None else cls.rtm_to_usd_rate()
+        if applied <= Decimal('0'):
+            return Decimal('0')
+        rtm = Decimal(str(usd_amount or 0)) / applied
+        return rtm.quantize(quantum, rounding=ROUND_HALF_UP)
 
     @classmethod
     def compute_mining_progress(cls, player_row: dict, stats: dict, now) -> dict:

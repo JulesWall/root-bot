@@ -29,6 +29,7 @@ _INT_COLUMNS = {
     'attack_bought', 'defense_bought',
     'upgrades_started',
     'conversions',
+    'market_buys',
     'trades',
     'hourly_claims',
     'contracts_collected',
@@ -47,6 +48,7 @@ _DECIMAL_COLUMNS = {
     'upgrades_usd',
     'compile_rtm', 'scan_rtm',
     'converted_rtm', 'converted_usd',
+    'market_bought_rtm', 'market_spent_usd', 'market_fees_usd',
 }
 
 _ALL_COLUMNS = _INT_COLUMNS | _DECIMAL_COLUMNS
@@ -265,15 +267,26 @@ class EconomyStatsDB:
         if method == 'convert':
             if result.get('converted') is not True:
                 return {}
+            action = result.get('action', 'sell')
             rtm_amount = result.get('rtm_amount')
             usd_amount = result.get('usd_amount')
+            fee_usd = result.get('fee_usd', Decimal('0'))
             if rtm_amount is None or usd_amount is None:
                 raise ValueError("conversion réussie mais montants absents du résultat")
-            return {actor: {
-                'conversions': 1,
-                'converted_rtm': _to_decimal(rtm_amount),
-                'converted_usd': _to_decimal(usd_amount),
-            }}
+            if action == 'buy':
+                return {actor: {
+                    'market_buys': 1,
+                    'market_bought_rtm': _to_decimal(rtm_amount),
+                    'market_spent_usd': _to_decimal(usd_amount),
+                    'market_fees_usd': _to_decimal(fee_usd),
+                }}
+            else:
+                return {actor: {
+                    'conversions': 1,
+                    'converted_rtm': _to_decimal(rtm_amount),
+                    'converted_usd': _to_decimal(usd_amount),
+                    'market_fees_usd': _to_decimal(fee_usd),
+                }}
 
         if method == 'trade':
             if result.get('trade_completed') is not True:

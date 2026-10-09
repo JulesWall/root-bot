@@ -10,7 +10,7 @@ Ce module implémente les classes d'accès aux données (DAO / Repository) et la
 """
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, ROUND_DOWN
 import random
 
 from game.db.consequence import ConsequenceDB
@@ -1010,13 +1010,14 @@ class Player:
 
     @staticmethod
     def convert(tx, actor: int, **args) -> dict:
-        """Vend du Rootium contre des dollars au cours courant RTM → USD.
+        """Exécute une transaction de marché : Vente (RTM → USD) ou Achat (USD → RTM).
 
-        Direction unique pour l'instant : le joueur cède du RTM et reçoit des USD.
-        Le cours est lu dans la transaction (table `rtm_market_state`) : le devis et la vente
-        utilisent donc le même cours. Un devis est renvoyé tant que confirm=False ; le
-        débit/crédit n'a lieu qu'à la confirmation, et seulement si le cours n'a pas changé
-        depuis le devis (`quote_changed`).
+        Direction :
+        - action='sell' (défaut) : le joueur cède du RTM et reçoit des USD (frais déduits).
+        - action='buy' : le joueur dépense des USD et reçoit du RTM (frais appliqués).
+
+        Frais :
+        - 1% (ou configuré via market.fee_pct dans math.json) sur le montant brut de la transaction.
         """
         p = PlayerData.get(tx, actor)
         rate, market_info = MarketState.current_rate(tx)
@@ -1029,54 +1030,133 @@ class Player:
 
         settings = MathConfig.load()
         rtm_places = int(settings.get('rtm_decimal_places', 5))
+        usd_places = int(settings.get('usd_decimal_places', 2))
         rtm_quantum = Decimal('1').scaleb(-rtm_places)
-        balance = Decimal(str(p.get('rootium') or 0))
+        usd_quantum = Decimal('1').scaleb(-usd_places)
+
+        fee_pct = MathConfig.market_fee_pct()
+
+        action = str(args.get('action') or args.get('side') or args.get('direction') or 'sell').lower().strip()
+        if action not in ('sell', 'buy'):
+            action = 'sell'
+
+        balance_rtm = Decimal(str(p.get('rootium') or 0))
+        balance_usd = Decimal(str(p.get('dollars') or 0))
 
         raw_amount = args.get('amount')
-        sell_all = bool(args.get('all'))
-        if not sell_all and isinstance(raw_amount, str):
+        is_all = bool(args.get('all'))
+        if not is_all and isinstance(raw_amount, str):
             token = raw_amount.strip().lower().replace(',', '.')
             if token in ('all', 'tout', 'max'):
-                sell_all = True
+                is_all = True
 
-        if sell_all:
-            amount = balance
-        else:
-            try:
-                amount = Decimal(str(raw_amount).replace(',', '.').strip())
-            except (InvalidOperation, TypeError, AttributeError, ValueError):
+        if action == 'sell':
+            # --- VENTE (RTM → USD) ---
+            if is_all:
+                amount = balance_rtm
+            else:
+                try:
+                    amount = Decimal(str(raw_amount).replace(',', '.').strip())
+                except (InvalidOperation, TypeError, AttributeError, ValueError):
+                    raise GameError('invalid_amount')
+
+            if amount <= 0:
                 raise GameError('invalid_amount')
 
-        if amount <= 0:
-            raise GameError('invalid_amount')
+            quantized = amount.quantize(rtm_quantum)
+            if quantized != amount:
+                raise GameError('invalid_amount')
+            amount = quantized
+            if amount <= 0:
+                raise GameError('invalid_amount')
+            if amount > balance_rtm:
+                raise GameError('insufficient_funds_rtm', rtm=f"{amount:,.{rtm_places}f}")
 
-        quantized = amount.quantize(rtm_quantum)
-        if quantized != amount:
-            raise GameError('invalid_amount')
-        amount = quantized
-        if amount <= 0:
-            raise GameError('invalid_amount')
-        if amount > balance:
-            raise GameError('insufficient_funds_rtm', rtm=f"{amount:,.{rtm_places}f}")
+            gross_usd = (amount * rate).quantize(usd_quantum, rounding=ROUND_HALF_UP)
+            if gross_usd <= 0:
+                raise GameError('invalid_amount')
 
-        usd = MathConfig.convert_rtm_to_usd(amount, rate)
-        if usd <= 0:
-            raise GameError('invalid_amount')
+            fee_usd = (gross_usd * (fee_pct / Decimal('100'))).quantize(usd_quantum, rounding=ROUND_HALF_UP)
+            net_usd = gross_usd - fee_usd
+            if net_usd <= 0:
+                raise GameError('invalid_amount')
 
-        new_rtm = balance - amount
-        new_usd = Decimal(str(p.get('dollars') or 0)) + usd
-        payload = {
-            'rtm_amount': amount,
-            'usd_amount': usd,
-            'rate': rate,
-            'market_status': (market_info or {}).get('status'),
-            'market_updated_ts': (market_info or {}).get('updated_ts'),
-            'current_rootium': balance,
-            'current_dollars': Decimal(str(p.get('dollars') or 0)),
-            'new_rootium': new_rtm,
-            'new_dollars': new_usd,
-            'sold_all': sell_all,
-        }
+            new_rtm = balance_rtm - amount
+            new_usd = balance_usd + net_usd
+
+            payload = {
+                'action': 'sell',
+                'rtm_amount': amount,
+                'gross_usd': gross_usd,
+                'fee_usd': fee_usd,
+                'fee_pct': fee_pct,
+                'usd_amount': net_usd,
+                'rate': rate,
+                'market_status': (market_info or {}).get('status'),
+                'market_updated_ts': (market_info or {}).get('updated_ts'),
+                'current_rootium': balance_rtm,
+                'current_dollars': balance_usd,
+                'new_rootium': new_rtm,
+                'new_dollars': new_usd,
+                'sold_all': is_all,
+            }
+
+        else:
+            # --- ACHAT (USD → RTM) ---
+            if is_all:
+                if balance_usd <= 0:
+                    raise GameError('insufficient_funds_usd', usd="1.00")
+                gross_usd = (balance_usd / (Decimal('1') + (fee_pct / Decimal('100')))).quantize(usd_quantum, rounding=ROUND_DOWN)
+                raw_rtm = gross_usd / rate
+                amount = raw_rtm.quantize(rtm_quantum, rounding=ROUND_DOWN)
+                if amount <= 0:
+                    raise GameError('insufficient_funds_usd', usd=f"{balance_usd:,.2f}")
+                gross_usd = (amount * rate).quantize(usd_quantum, rounding=ROUND_HALF_UP)
+                fee_usd = (gross_usd * (fee_pct / Decimal('100'))).quantize(usd_quantum, rounding=ROUND_HALF_UP)
+                total_cost_usd = gross_usd + fee_usd
+            else:
+                try:
+                    amount = Decimal(str(raw_amount).replace(',', '.').strip())
+                except (InvalidOperation, TypeError, AttributeError, ValueError):
+                    raise GameError('invalid_amount')
+
+                if amount <= 0:
+                    raise GameError('invalid_amount')
+
+                quantized = amount.quantize(rtm_quantum)
+                if quantized != amount:
+                    raise GameError('invalid_amount')
+                amount = quantized
+                if amount <= 0:
+                    raise GameError('invalid_amount')
+
+                gross_usd = (amount * rate).quantize(usd_quantum, rounding=ROUND_HALF_UP)
+                fee_usd = (gross_usd * (fee_pct / Decimal('100'))).quantize(usd_quantum, rounding=ROUND_HALF_UP)
+                total_cost_usd = gross_usd + fee_usd
+
+            if total_cost_usd > balance_usd:
+                raise GameError('insufficient_funds_usd', usd=f"{total_cost_usd:,.2f}")
+
+            new_usd = balance_usd - total_cost_usd
+            new_rtm = balance_rtm + amount
+
+            payload = {
+                'action': 'buy',
+                'rtm_amount': amount,
+                'gross_usd': gross_usd,
+                'fee_usd': fee_usd,
+                'fee_pct': fee_pct,
+                'usd_amount': total_cost_usd,
+                'rate': rate,
+                'market_status': (market_info or {}).get('status'),
+                'market_updated_ts': (market_info or {}).get('updated_ts'),
+                'current_rootium': balance_rtm,
+                'current_dollars': balance_usd,
+                'new_rootium': new_rtm,
+                'new_dollars': new_usd,
+                'bought_all': is_all,
+            }
+
         if not args.get('confirm'):
             payload['quote'] = True
             payload['convert_quote'] = True
