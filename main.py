@@ -259,6 +259,8 @@ def create_bot() -> commands.Bot:
             await bot.root_service.init_economy()
         except Exception:
             logger.exception("[EconomyStats] Échec de l'initialisation du suivi économique. Vérifier la migration SQL.")
+        # Chargement du cours RTM persistant en mémoire (repli sur le cours d'amorçage si indisponible)
+        await bot.root_service.init_market()
 
 
     @bot.event

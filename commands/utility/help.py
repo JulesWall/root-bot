@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Liste canonique des 29 commandes publiques autorisées
 PUBLIC_COMMANDS = [
-    "network", "buy", "claim", "hourly", "contract", "convert", "upgrade",
+    "network", "buy", "claim", "hourly", "contract", "convert", "market", "upgrade",
     "macro",
     "compile", "scan", "hack",
     "event", "hash", "pin", "decode", "anomaly", "buffer", "signal", "packet",

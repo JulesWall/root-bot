@@ -145,6 +145,7 @@ PAGES = {
             "• **/hourly** — Claim hourly USD reward and build combo streak\n"
             "• **/contract** — View and accept guaranteed Root CyberSec missions\n"
             "• **/convert** — Sell Rootium for USD at current rate\n"
+            "• **/market** — View dynamic Rootium rate and market charts\n"
             "• **/upgrade** — Upgrade infrastructure tier\n"
             "• **/macro** — Automate routines by chaining sequential commands\n\n"
             "**⚔️ Attack & Defend**\n"
@@ -183,6 +184,7 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) — Claim hourly USD reward\n"
             "• **{prefix}contract** — Accept guaranteed paid missions\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Sell RTM for USD\n"
+            "• **{prefix}market** (alias `{prefix}mk`) — View market rate & charts\n"
             "• **{prefix}upgrade** — Upgrade infrastructure tier\n"
             "• **{prefix}macro** (alias `{prefix}mac`) — Automate command sequences\n\n"
             "**⚔️ Attack & Defend**\n"
@@ -223,6 +225,7 @@ PAGES = {
             "• **/hourly**: Claim your hourly cash reward and stack up your combo for massive USD payouts.\n"
             "• **/contract**: Work for Root CyberSec and complete guaranteed missions for steady income.\n"
             "• **/convert**: Convert RTM to USD at the current market rate.\n"
+            "• **/market**: View dynamic Rootium rate and historical price charts.\n"
             "• **/upgrade**: Start upgrading your infrastructure tier.\n"
             "• **/macro**: Automate routines by chaining up to 5 sequential actions.\n\n"
             "👉 *Select a command in the dropdown menu below for complete details.*"
@@ -235,6 +238,7 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`): Claim your hourly reward and maintain your streak.\n"
             "• **{prefix}contract**: Accept guaranteed cybersecurity missions paid in USD.\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`): Sell RTM for USD.\n"
+            "• **{prefix}market** (alias `{prefix}mk`): View market rate & charts.\n"
             "• **{prefix}upgrade**: Upgrade your firewall tier.\n"
             "• **{prefix}macro** (alias `{prefix}mac`): Automate routines by chaining up to 5 sequential actions.\n\n"
             "👉 *Select a command in the dropdown menu below for complete details.*"
@@ -871,6 +875,25 @@ COMMANDS = {
         "aliases": ["{prefix}mac", "{prefix}macros"],
         "linked_commands": ["claim", "hourly", "buy", "upgrade", "network"],
     },
+    "market": {
+        "name": "market",
+        "category": "network",
+        "title": "📈 `/market` — Market Terminal and Charts",
+        "description": "View the dynamic Rootium price indexed on BTC, ETH and SOL, as well as history and price charts.",
+        "slash_syntax": "/market [period:24h|7d|30d]",
+        "text_syntax": "{prefix}market [24h|7d|30d|chart]",
+        "parameters": (
+            "• `period`: Displayed time period (24h, 7d, or 30d). Default: 24h.\n"
+            "• `chart`: (Text option) Generates and sends high-resolution PNG price chart."
+        ),
+        "slash_example": "/market period:7d",
+        "text_example": "{prefix}market 7d",
+        "example_note": "To directly display detailed chart in text mode: `{prefix}market chart 24h`.",
+        "prerequisites": "No prerequisites. Can be viewed freely by any player.",
+        "advice": "Price updates every 15 minutes. Check the market before selling tokens with `/convert` to maximize your USD return.",
+        "aliases": ["{prefix}mk"],
+        "linked_commands": ["convert", "network"],
+    },
 }
 
 COMMAND_ALIASES = {
@@ -883,6 +906,7 @@ COMMAND_ALIASES = {
     "hr": "hourly",
     "cv": "convert",
     "sell": "convert",
+    "mk": "market",
     "cp": "compile",
     "hk": "hack",
     "events": "event",

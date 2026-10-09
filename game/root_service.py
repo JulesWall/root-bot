@@ -71,6 +71,107 @@ class RootService:
             "[EconomyStats] Suivi actif. tracking_start=%s", tracking_start
         )
 
+    async def init_market(self) -> dict | None:
+        """Charge le cours persistant en mémoire (amorçage à `market.start_price` si absent).
+
+        Si la base est indisponible, le cours d'amorçage de math.json reste utilisé.
+        """
+        import logging
+        from game.db.market import MarketState
+
+        log = logging.getLogger(__name__)
+        try:
+            state = await self.database.run(MarketState.ensure, locks=['rtm_market'])
+        except Exception:
+            log.exception("[Market] Chargement du cours impossible, cours d'amorçage conservé.")
+            return None
+        MathConfig.set_market_rate(state['price_usd'])
+        log.info("[Market] Cours chargé : 1 RTM = %s USD (%s)", state['price_usd'], state['status'])
+        return state
+
+    async def apply_market_cycle(self, market_ts, closes: dict, source: str) -> dict:
+        """Applique un cycle de marché (idempotent) et rafraîchit le cours en mémoire."""
+        from game.db.market import MarketState
+
+        result = await self.database.run(
+            lambda tx: MarketState.apply_cycle(tx, market_ts, closes, source),
+            locks=['rtm_market'],
+        )
+        MathConfig.set_market_rate(result['price'])
+        return result
+
+    async def mark_market_delayed(self) -> dict:
+        """Marque le flux de marché comme retardé sans modifier le cours."""
+        from game.db.market import MarketState
+
+        return await self.database.run(MarketState.mark_delayed, locks=['rtm_market'])
+
+    async def get_market_state(self) -> dict | None:
+        """Retourne l'état courant du marché (lecture seule)."""
+        from game.db.market import MarketState
+
+        return await self.database.run(MarketState.get, readonly=True)
+
+    async def purge_market_history(self) -> int:
+        """Supprime l'historique du marché au-delà de la rétention configurée."""
+        from game.db.market import MarketState
+
+        return await self.database.run(MarketState.purge, locks=['rtm_market'])
+
+    async def get_market_series(self, since) -> list[dict]:
+        """Récupère l'historique chronologique du marché depuis `since` (lecture seule)."""
+        from game.db.market import MarketState
+
+        return await self.database.run(
+            lambda tx: MarketState.series(tx, since),
+            readonly=True,
+        )
+
+    async def list_market_alerts(self, discord_id: int) -> list[dict]:
+        """Récupère les alertes de cours configurées par un joueur (lecture seule)."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.list_for(tx, discord_id),
+            readonly=True,
+        )
+
+    async def create_market_alert(
+        self,
+        discord_id: int,
+        direction: str,
+        threshold_usd,
+        cooldown_minutes: int = 60,
+        current_price=None,
+    ) -> dict:
+        """Crée une nouvelle alerte personnelle pour un joueur."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.create(
+                tx, discord_id, direction, threshold_usd, cooldown_minutes, current_price
+            ),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def delete_market_alert(self, discord_id: int, alert_id: int) -> bool:
+        """Supprime une alerte de cours d'un joueur."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.delete(tx, discord_id, alert_id),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def toggle_market_alert(self, discord_id: int, alert_id: int, enabled: bool | None = None) -> dict:
+        """Active ou désactive une alerte de cours d'un joueur."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.toggle(tx, discord_id, alert_id, enabled),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
 
     async def deliver_expired_upgrades(self) -> list[dict]:
         """

@@ -145,6 +145,7 @@ PAGES = {
             "• **/hourly** — Réclamer ma prime horaire en dollars et faire monter le combo\n"
             "• **/contract** — Consulter et accepter des missions rémunérées avec Root CyberSec\n"
             "• **/convert** — Vendre du Rootium contre des dollars USD\n"
+            "• **/market** — Consulter le cours dynamique et les graphiques du marché\n"
             "• **/upgrade** — Améliorer le niveau d'infrastructure\n"
             "• **/macro** — Automatiser des routines de commandes séquentielles\n\n"
             "**⚔️ Attaquer et me défendre**\n"
@@ -183,6 +184,7 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) — Réclamer ma prime horaire en dollars\n"
             "• **{prefix}contract** — Accepter des missions rémunérées garanties\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Vendre des RTM\n"
+            "• **{prefix}market** (alias `{prefix}mk`) — Consulter le cours et graphiques du marché\n"
             "• **{prefix}upgrade** — Améliorer le niveau d'infrastructure\n"
             "• **{prefix}macro** (alias `{prefix}mac`) — Automatiser des routines de commandes\n\n"
             "**⚔️ Attaquer et me défendre**\n"
@@ -223,6 +225,7 @@ PAGES = {
             "• **/hourly** : Réclame ta prime horaire et fais monter ton combo pour décupler tes récompenses en USD.\n"
             "• **/contract** : Travaille pour Root CyberSec et accomplis des missions garanties pour un revenu régulier.\n"
             "• **/convert** : Convertis tes RTM en dollars USD au cours de change actuel.\n"
+            "• **/market** : Consulte le cours dynamique et les graphiques du marché RTM.\n"
             "• **/upgrade** : Lance l'amélioration de ton niveau d'infrastructure.\n"
             "• **/macro** : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
@@ -235,6 +238,7 @@ PAGES = {
             "• **{prefix}hourly** (alias `{prefix}hr`) : Réclame ta prime horaire et entretiens ton combo.\n"
             "• **{prefix}contract** : Accepte des contrats de sécurité informatique rémunérés en USD.\n"
             "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) : Vends tes RTM en USD.\n"
+            "• **{prefix}market** (alias `{prefix}mk`) : Consulte le cours et graphiques du marché.\n"
             "• **{prefix}upgrade** : Lance l'amélioration de ton infrastructure.\n"
             "• **{prefix}macro** (alias `{prefix}mac`) : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
@@ -871,6 +875,25 @@ COMMANDS = {
         "aliases": ["{prefix}mac", "{prefix}macros"],
         "linked_commands": ["claim", "hourly", "buy", "upgrade", "network"],
     },
+    "market": {
+        "name": "market",
+        "category": "network",
+        "title": "📈 `/market` — Terminal de marché et graphiques",
+        "description": "Consulte le cours dynamique du Rootium indexé sur BTC, ETH et SOL, ainsi que l'historique et les graphiques de prix.",
+        "slash_syntax": "/market [period:24h|7d|30d]",
+        "text_syntax": "{prefix}market [24h|7d|30d|chart]",
+        "parameters": (
+            "• `period` : Période temporelle affichée (24h, 7d ou 30d). Par défaut : 24h.\n"
+            "• `chart` : (Option texte) Génère et envoie l'image PNG haute résolution du cours."
+        ),
+        "slash_example": "/market period:7d",
+        "text_example": "{prefix}market 7d",
+        "example_note": "Pour afficher directement le graphique détaillé en texte : `{prefix}market chart 24h`.",
+        "prerequisites": "Aucun prérequis. Consultable librement par tout joueur.",
+        "advice": "Le cours évolue toutes les 15 minutes. Consulte le marché avant de vendre tes tokens avec `/convert` pour maximiser tes gains en USD.",
+        "aliases": ["{prefix}mk"],
+        "linked_commands": ["convert", "network"],
+    },
 }
 
 COMMAND_ALIASES = {
@@ -883,6 +906,7 @@ COMMAND_ALIASES = {
     "hr": "hourly",
     "cv": "convert",
     "sell": "convert",
+    "mk": "market",
     "cp": "compile",
     "hk": "hack",
     "events": "event",

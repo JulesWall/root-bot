@@ -43,6 +43,7 @@ desc = {
     "macro_create": "Create a new automated macro step-by-step",
     "macro_delete": "Delete one of your registered macros",
     "macro_delete_name": "Name of the macro to delete",
+    "market_period": "Historical time period: 24h, 7d, or 30d",
 }
 
 desc_loc = {
@@ -265,6 +266,11 @@ desc_loc = {
         "en-US": "Duration (e.g. 30m, 2h) or smart target (all, hourly, claim, events)",
         "en-GB": "Duration (e.g. 30m, 2h) or smart target (all, hourly, claim, events)",
         "fr": "Durée (ex: 30m, 2h) ou cible de jeu (all, hourly, claim, events)",
+    },
+    "market_period": {
+        "en-US": "Historical time period: 24h, 7d, or 30d",
+        "en-GB": "Historical time period: 24h, 7d, or 30d",
+        "fr": "Période d'historique : 24h, 7d ou 30d",
     },
 }
 

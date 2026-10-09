@@ -215,18 +215,72 @@ class MathConfig:
             return f"{int(val)} o"
         return f"{val:,.2f} {units[idx]}"
 
+    # Cours RTM → USD courant, alimenté par le service marché (None = pas encore chargé).
+    _market_rate: Decimal | None = None
+
     @classmethod
-    def rtm_to_usd_rate(cls) -> Decimal:
-        """Retourne le taux fixe de conversion RTM → USD (1 RTM = N dollars)."""
-        rate = Decimal(str(cls.load().get('conversion', {}).get('rtm_to_usd', 0)))
+    def set_market_rate(cls, rate) -> None:
+        """Met à jour le cours courant en mémoire (appelé par le service marché)."""
+        value = Decimal(str(rate)) if rate is not None else None
+        cls._market_rate = value if value is not None and value > 0 else None
+
+    @classmethod
+    def market_settings(cls) -> dict:
+        """Retourne la section `market` de data/math.json, validée et complétée."""
+        cfg = dict(cls.load().get('market', {}) or {})
+        symbols = cfg.get('symbols') or []
+        if cfg.get('enabled') and len(symbols) != 3:
+            raise ValueError("market.symbols doit contenir exactement 3 paires (BTC, ETH, SOL).")
+        cfg.setdefault('enabled', False)
+        cfg.setdefault('timeframe', '15m')
+        cfg.setdefault('interval_seconds', 900)
+        cfg.setdefault('close_margin_seconds', 10)
+        cfg.setdefault('retry_seconds', 60)
+        cfg.setdefault('max_staleness_seconds', 1500)
+        cfg.setdefault('fetch_limit', 6)
+        cfg.setdefault('start_price', cls.load().get('conversion', {}).get('rtm_to_usd', 0))
+        cfg.setdefault('price_decimal_places', 8)
+        cfg.setdefault('max_change_pct', None)
+        cfg.setdefault('history_retention_days', 90)
+        cfg.setdefault('alerts_enabled', True)
+        cfg.setdefault('alerts_max_per_player', 5)
+        cfg.setdefault('alerts_default_cooldown_minutes', 60)
+        cfg.setdefault('alerts_min_cooldown_minutes', 15)
+        return cfg
+
+    @classmethod
+    def market_formula(cls, name: str, **values) -> Decimal:
+        """Évalue une formule `market_*` via l'évaluateur AST sécurisé (jamais eval)."""
+        return cls.formula(cls.load(), name, **values)
+
+    @classmethod
+    def pvp_reference_rate(cls) -> Decimal:
+        """Taux de référence PvP, indépendant du cours variable du marché."""
+        conv = cls.load().get('conversion', {})
+        rate = Decimal(str(conv.get('pvp_reference_rate', conv.get('rtm_to_usd', 0))))
         return rate if rate > 0 else Decimal('0')
 
     @classmethod
-    def convert_rtm_to_usd(cls, rtm_amount) -> Decimal:
-        """Convertit un montant de Rootium en USD au taux fixe, arrondi à 2 décimales."""
+    def rtm_to_usd_rate(cls) -> Decimal:
+        """Retourne le cours courant RTM → USD (1 RTM = N dollars).
+
+        Priorité : cours persistant chargé en mémoire par le service marché, puis
+        valeur d'amorçage `market.start_price`, puis ancien taux fixe `conversion.rtm_to_usd`.
+        """
+        if cls._market_rate is not None:
+            return cls._market_rate
+        rules = cls.load()
+        raw = rules.get('market', {}).get('start_price') or rules.get('conversion', {}).get('rtm_to_usd', 0)
+        rate = Decimal(str(raw or 0))
+        return rate if rate > 0 else Decimal('0')
+
+    @classmethod
+    def convert_rtm_to_usd(cls, rtm_amount, rate=None) -> Decimal:
+        """Convertit un montant de Rootium en USD au cours courant (ou `rate`), arrondi à 2 décimales."""
         places = int(cls.load().get('usd_decimal_places', 2))
         quantum = Decimal('1').scaleb(-places)
-        usd = Decimal(str(rtm_amount or 0)) * cls.rtm_to_usd_rate()
+        applied = Decimal(str(rate)) if rate is not None else cls.rtm_to_usd_rate()
+        usd = Decimal(str(rtm_amount or 0)) * applied
         return usd.quantize(quantum, rounding=ROUND_HALF_UP)
 
     @classmethod
@@ -487,7 +541,8 @@ class MathConfig:
         atk_mult = Decimal(str(beta.get('cost_multiplier', 2)))
         atk_cost_rtm = atk_base_rtm * (atk_mult ** (tier - 1))
 
-        rtm_to_usd = Decimal(str(rules.get('conversion', {}).get('rtm_to_usd', 43567)))
+        # Taux de référence indépendant du cours variable du marché (équilibrage PvP stable)
+        rtm_to_usd = cls.pvp_reference_rate() or Decimal('43567')
         atk_cost_usd = atk_cost_rtm * rtm_to_usd
 
         bits = Decimal(str(rules.get('module_stats', {}).get('attack_bits_per_s', {}).get(str(tier), 0)))

@@ -20,7 +20,28 @@
     "reputation_bonus_per_point": 0.005
   },
   "conversion": {
-    "rtm_to_usd": 43567
+    "rtm_to_usd": 39876,
+    "pvp_reference_rate": 43567
+  },
+  "market": {
+    "enabled": true,
+    "exchange": "binance",
+    "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+    "quote_currency": "USDT",
+    "timeframe": "15m",
+    "interval_seconds": 900,
+    "close_margin_seconds": 10,
+    "retry_seconds": 60,
+    "max_staleness_seconds": 1500,
+    "fetch_limit": 6,
+    "start_price": 39876,
+    "price_decimal_places": 8,
+    "max_change_pct": null,
+    "history_retention_days": 90,
+    "alerts_enabled": true,
+    "alerts_max_per_player": 5,
+    "alerts_default_cooldown_minutes": 60,
+    "alerts_min_cooldown_minutes": 15
   },
   "compile": {
     "bits_per_atk": 60,
@@ -93,7 +114,10 @@
     "5": 15000
   },
   "formulas": {
-    "pvp_overrun_threshold": "(mining_cost_usd / (atk_cost_rtm * rtm_to_usd)) * overrun_multiplier * sqrt(bits_per_s * overrun_time_factor)"
+    "pvp_overrun_threshold": "(mining_cost_usd / (atk_cost_rtm * rtm_to_usd)) * overrun_multiplier * sqrt(bits_per_s * overrun_time_factor)",
+    "market_asset_change_pct": "(close_now / close_prev - 1) * 100",
+    "market_average_change_pct": "(btc_pct + eth_pct + sol_pct) / 3",
+    "market_price_next": "price * (1 + avg_pct / 100)"
   },
   "reputation_gift_points": 1,
   "event_firewall_multipliers": {

@@ -36,3 +36,47 @@ CREATE TABLE IF NOT EXISTS macro_runs (
 
 -- Migration SQL : Procédure de sauvegarde et dégâts critiques PvP
 ALTER TABLE players ADD COLUMN critical_lock_until DATETIME(6) NULL DEFAULT NULL;
+
+-- Migration SQL : Cours dynamique du RTM (etat courant + historique 15 min)
+CREATE TABLE IF NOT EXISTS rtm_market_state (
+    id           TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+    price_usd    DECIMAL(24,8) NOT NULL,
+    market_ts    DATETIME(0)   NOT NULL,
+    observed_at  DATETIME(6)   NOT NULL,
+    status       VARCHAR(16)   NOT NULL DEFAULT 'live',
+    source       VARCHAR(32)   NOT NULL,
+    CHECK (id = 1),
+    CHECK (price_usd > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO rtm_market_state (id, price_usd, market_ts, observed_at, status, source)
+VALUES (1, 43567, UTC_TIMESTAMP(), UTC_TIMESTAMP(6), 'seed', 'seed');
+
+CREATE TABLE IF NOT EXISTS rtm_market_history (
+    market_ts     DATETIME(0)   NOT NULL PRIMARY KEY,
+    price_before  DECIMAL(24,8) NOT NULL,
+    price_after   DECIMAL(24,8) NOT NULL,
+    btc_pct       DECIMAL(12,6) NOT NULL,
+    eth_pct       DECIMAL(12,6) NOT NULL,
+    sol_pct       DECIMAL(12,6) NOT NULL,
+    avg_pct       DECIMAL(12,6) NOT NULL,
+    capped        TINYINT(1)    NOT NULL DEFAULT 0,
+    source        VARCHAR(32)   NOT NULL,
+    created_at    DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration SQL : Alertes de cours du RTM
+CREATE TABLE IF NOT EXISTS rtm_price_alerts (
+    id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id       BIGINT UNSIGNED NOT NULL,
+    direction        ENUM('above','below') NOT NULL,
+    threshold_usd    DECIMAL(24,8) NOT NULL,
+    cooldown_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+    enabled          TINYINT(1) NOT NULL DEFAULT 1,
+    armed            TINYINT(1) NOT NULL DEFAULT 1,
+    last_notified_at DATETIME(6) NULL,
+    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_alert (discord_id, direction, threshold_usd),
+    INDEX idx_alert_enabled (enabled, armed),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,4 +1,4 @@
-"""Commande /convert et !convert — Vente de Rootium contre des dollars au taux fixe.
+"""Commande /convert et !convert — Vente de Rootium contre des dollars au cours du marché.
 
 Direction unique pour l'instant : RTM → USD.
 Le joueur cède des tokens Rootium ; le DEX crédite des dollars.
@@ -106,6 +106,15 @@ class Convert(BaseGameCog):
         )
 
     # ── Rendu ────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _market_line(ctx, result) -> str:
+        """Ligne de fraîcheur du cours (vide si l'horodatage est inconnu)."""
+        ts = result.get('market_updated_ts')
+        if not ts:
+            return ''
+        key = 'g_convert_market_delayed' if result.get('market_status') == 'delayed' else 'g_convert_market_live'
+        return text.get(ctx, key, ts=int(ts))
+
     async def _send(self, ctx, method, result):
         """Affiche le devis interactif ou le reçu de vente, puis journalise la blockchain."""
         rtm = text.format_rtm(result.get('rtm_amount', 0))
@@ -122,6 +131,7 @@ class Convert(BaseGameCog):
                 rtm=rtm, usd=usd, rate=rate,
                 cur_rtm=cur_rtm, rem_rtm=rem_rtm,
                 cur_usd=cur_usd, rem_usd=rem_usd,
+                market_line=self._market_line(ctx, result),
             )
             view = Confirmation(
                 self._send, self.service, ctx, 'convert',

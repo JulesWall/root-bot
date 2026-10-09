@@ -8160,10 +8160,10 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         from lang import help_fr, help_en
         from commands.utility.help import PUBLIC_COMMANDS
 
-        # 29 commandes publiques
-        self.assertEqual(len(PUBLIC_COMMANDS), 29)
-        self.assertEqual(len(help_fr.COMMANDS), 29)
-        self.assertEqual(len(help_en.COMMANDS), 29)
+        # 30 commandes publiques
+        self.assertEqual(len(PUBLIC_COMMANDS), 30)
+        self.assertEqual(len(help_fr.COMMANDS), 30)
+        self.assertEqual(len(help_en.COMMANDS), 30)
 
         for cmd_name in PUBLIC_COMMANDS:
             self.assertIn(cmd_name, help_fr.COMMANDS)
@@ -8209,7 +8209,7 @@ class TestHelpSystem(unittest.IsolatedAsyncioTestCase):
         for cs in cmd_selects:
             self.assertLessEqual(len(cs.options), 25)
             total_options.extend(opt.value for opt in cs.options)
-        self.assertEqual(len(total_options), 29)
+        self.assertEqual(len(total_options), 30)
         self.assertEqual(set(total_options), set(PUBLIC_COMMANDS))
 
         # Vérifie que l'embed de la page liste toutes les 27 commandes

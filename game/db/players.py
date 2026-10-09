@@ -18,6 +18,7 @@ from game.db.daily_claim_stats import DailyClaimStatsDB
 from game.db.database import Database, player_lock_name
 from game.db.hack import HackDB
 from game.db.hourly_stats import HourlyStatsDB
+from game.db.market import MarketState
 from game.db.pvp import PvpDB
 from game.db.secret_ids import (
     ensure_player_secret,
@@ -1009,13 +1010,16 @@ class Player:
 
     @staticmethod
     def convert(tx, actor: int, **args) -> dict:
-        """Vend du Rootium contre des dollars au taux fixe RTM → USD.
+        """Vend du Rootium contre des dollars au cours courant RTM → USD.
 
         Direction unique pour l'instant : le joueur cède du RTM et reçoit des USD.
-        Un devis est renvoyé tant que confirm=False ; le débit/crédit n'a lieu qu'à la confirmation.
+        Le cours est lu dans la transaction (table `rtm_market_state`) : le devis et la vente
+        utilisent donc le même cours. Un devis est renvoyé tant que confirm=False ; le
+        débit/crédit n'a lieu qu'à la confirmation, et seulement si le cours n'a pas changé
+        depuis le devis (`quote_changed`).
         """
         p = PlayerData.get(tx, actor)
-        rate = MathConfig.rtm_to_usd_rate()
+        rate, market_info = MarketState.current_rate(tx)
         if rate <= 0:
             raise GameError('invalid_selection')
 
@@ -1055,7 +1059,7 @@ class Player:
         if amount > balance:
             raise GameError('insufficient_funds_rtm', rtm=f"{amount:,.{rtm_places}f}")
 
-        usd = MathConfig.convert_rtm_to_usd(amount)
+        usd = MathConfig.convert_rtm_to_usd(amount, rate)
         if usd <= 0:
             raise GameError('invalid_amount')
 
@@ -1065,6 +1069,8 @@ class Player:
             'rtm_amount': amount,
             'usd_amount': usd,
             'rate': rate,
+            'market_status': (market_info or {}).get('status'),
+            'market_updated_ts': (market_info or {}).get('updated_ts'),
             'current_rootium': balance,
             'current_dollars': Decimal(str(p.get('dollars') or 0)),
             'new_rootium': new_rtm,
