@@ -41,7 +41,11 @@
     "alerts_enabled": true,
     "alerts_max_per_player": 5,
     "alerts_default_cooldown_minutes": 60,
-    "alerts_min_cooldown_minutes": 15
+    "alerts_min_cooldown_minutes": 15,
+    "auto_sell_enabled": true,
+    "auto_sell_max_per_player": 3,
+    "auto_sell_default_cooldown_minutes": 60,
+    "auto_sell_min_cooldown_minutes": 15
   },
   "compile": {
     "bits_per_atk": 60,

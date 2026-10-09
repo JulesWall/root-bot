@@ -91,6 +91,16 @@ class MarketTask(BaseGameCog):
             alerts = result.get('triggered_alerts') or []
             if alerts:
                 await self._notify_alerts(alerts, result['price_after'])
+
+            # Exécution et notification des ventes automatiques de RTM
+            try:
+                auto_sells = await self.service.process_auto_sells(
+                    payload['market_ts'], result['price_after']
+                )
+                if auto_sells:
+                    await self._notify_auto_sells(auto_sells, result['price_after'])
+            except Exception:
+                logger.exception("[Market] Erreur lors du traitement des ventes automatiques")
         else:
             logger.info("[Market] Cycle %s déjà appliqué, cours inchangé.", payload['market_ts'])
 
@@ -152,6 +162,86 @@ class MarketTask(BaseGameCog):
                 logger.info("[Market] DM bloqué pour le joueur %s (MP fermés)", discord_id)
             except Exception:
                 logger.warning("[Market] Échec de transmission d'alerte pour le joueur %s", discord_id, exc_info=True)
+
+    async def _notify_auto_sells(self, auto_sells: list[dict], current_price):
+        """Notifie chaque joueur en DM du succès de sa vente automatique et journalise dans #blockchain."""
+        import discord
+        from utils import text
+        from utils.language_manager import fetch_user_language
+        from utils.root_embed import RootEmbed
+        from utils.root_theme import VisualState
+        from utils.logger import Logger
+
+        bot_logger = getattr(self.bot, 'discord_logger', None) or Logger(self.bot)
+
+        for run in auto_sells:
+            discord_id = int(run['discord_id'])
+            rtm_amt = run['rtm_amount']
+            usd_amt = run['usd_amount']
+            rate = run['rate']
+
+            # Journalisation blockchain (best-effort)
+            try:
+                await bot_logger.log_blockchain_transaction(
+                    from_id=discord_id,
+                    to_address="0xROOTIUM_DEX",
+                    rtm_amount=rtm_amt,
+                    tx_type='AUTO SELL',
+                    usd_amount=usd_amt,
+                )
+            except Exception:
+                pass
+
+            # Notification privée
+            try:
+                user = self.bot.get_user(discord_id)
+                if user is None:
+                    try:
+                        user = await self.bot.fetch_user(discord_id)
+                    except Exception:
+                        user = None
+                if not user:
+                    continue
+
+                lang = await fetch_user_language(discord_id) or 'fr'
+                repeat_mode = run.get('repeat_mode', 'once')
+                repeat_info = (
+                    text.get_for_lang(lang, 'g_market_auto_sell_dm_repeat')
+                    if repeat_mode == 'repeat'
+                    else text.get_for_lang(lang, 'g_market_auto_sell_dm_once')
+                )
+
+                content = text.get_for_lang(
+                    lang,
+                    'g_market_auto_sell_triggered_dm',
+                    rtm=text.format_rtm(rtm_amt),
+                    usd=text.format_usd(usd_amt),
+                    rate=text.format_usd(rate),
+                    usd_total=text.format_usd(run.get('new_dollars', 0)),
+                    rtm_total=text.format_rtm(run.get('new_rootium', 0)),
+                    repeat_info=repeat_info,
+                )
+
+                embed = RootEmbed(
+                    action='market',
+                    title=text.get_for_lang(lang, 'g_market_auto_sell_dm_title'),
+                    content=content,
+                    state=VisualState.REUSSITE,
+                    locale=lang,
+                    footer="ROOT OS · Marché",
+                )
+                await user.send(embed=embed)
+                logger.info(
+                    "[Market] Reçu de vente auto envoyé en DM au joueur %s (%s RTM -> %s USD)",
+                    discord_id, rtm_amt, usd_amt,
+                )
+            except discord.Forbidden:
+                logger.info("[Market] DM de vente auto bloqué pour le joueur %s (MP fermés)", discord_id)
+            except Exception:
+                logger.warning(
+                    "[Market] Échec d'envoi du reçu de vente auto pour le joueur %s",
+                    discord_id, exc_info=True,
+                )
 
     @market_loop.before_loop
     async def before_market_loop(self):

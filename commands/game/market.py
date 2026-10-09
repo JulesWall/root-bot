@@ -72,6 +72,16 @@ class MarketView(discord.ui.View):
         btn_alerts.callback = self._on_alerts_click
         self.add_item(btn_alerts)
 
+        # Bouton Vente auto
+        btn_auto_sell = discord.ui.Button(
+            label=text.get(self.ctx, 'g_market_btn_auto_sell'),
+            emoji=get_button_emoji('root_materiel') or '⚡',
+            style=discord.ButtonStyle.secondary,
+            custom_id="market_btn_auto_sell",
+        )
+        btn_auto_sell.callback = self._on_auto_sell_click
+        self.add_item(btn_auto_sell)
+
     def _make_period_callback(self, period: str):
         async def callback(interaction: discord.Interaction):
             # Les modifications de période dans un message public sont éphémères pour les non-auteurs
@@ -112,6 +122,20 @@ class MarketView(discord.ui.View):
                 view.message = resp
         except Exception:
             logger.exception("[Market] Erreur ouverture vue alertes")
+            await interaction.followup.send(text.get(self.ctx, 'g_error_busy'), ephemeral=True)
+
+    async def _on_auto_sell_click(self, interaction: discord.Interaction):
+        """Affiche l'interface de gestion des ordres de vente automatique."""
+        await interaction.response.defer(ephemeral=True)
+        try:
+            embed, view = await self.cog._build_auto_sell_display(self.ctx, interaction.user.id)
+            resp = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            if hasattr(resp, 'message') and resp.message:
+                view.message = resp.message
+            elif isinstance(resp, discord.Message):
+                view.message = resp
+        except Exception:
+            logger.exception("[Market] Erreur ouverture vue ventes auto")
             await interaction.followup.send(text.get(self.ctx, 'g_error_busy'), ephemeral=True)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -379,6 +403,324 @@ class MarketAlertsView(discord.ui.View):
             pass
 
 
+class MarketAutoSellAddModal(discord.ui.Modal):
+    """Modal de configuration d'un ordre de vente automatique de RTM."""
+
+    def __init__(self, cog: "Market", ctx, user_id: int, on_complete):
+        super().__init__(title=text.get(ctx, 'g_market_modal_auto_sell_title')[:45])
+        self.cog = cog
+        self.ctx = ctx
+        self.user_id = user_id
+        self.on_complete = on_complete
+
+        self.threshold_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_as_threshold_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_as_threshold_hint')[:100],
+            required=True,
+        )
+        self.add_item(self.threshold_input)
+
+        self.dir_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_as_dir_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_as_dir_hint')[:100],
+            value="above",
+            required=True,
+        )
+        self.add_item(self.dir_input)
+
+        self.amount_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_as_amount_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_as_amount_hint')[:100],
+            required=True,
+        )
+        self.add_item(self.amount_input)
+
+        self.repeat_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_as_repeat_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_as_repeat_hint')[:100],
+            value="once",
+            required=False,
+        )
+        self.add_item(self.repeat_input)
+
+        self.cap_input = discord.ui.InputText(
+            label=text.get(ctx, 'g_market_modal_as_cap_label')[:45],
+            placeholder=text.get(ctx, 'g_market_modal_as_cap_hint')[:100],
+            required=False,
+        )
+        self.add_item(self.cap_input)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        raw_dir = self.dir_input.value.strip().lower()
+        if raw_dir in ('above', 'up', 'hausse', '>=', '>', '+'):
+            direction = 'above'
+        elif raw_dir in ('below', 'down', 'baisse', '<=', '<', '-'):
+            direction = 'below'
+        else:
+            return await interaction.followup.send(
+                text.get(self.ctx, 'g_error_market_auto_sell_invalid_direction'),
+                ephemeral=True,
+            )
+
+        raw_thresh = self.threshold_input.value.strip().replace(' ', '').replace(',', '.')
+        try:
+            threshold = Decimal(raw_thresh)
+            if threshold <= 0:
+                raise ValueError()
+        except Exception:
+            return await interaction.followup.send(
+                text.get(self.ctx, 'g_error_market_auto_sell_invalid_threshold'),
+                ephemeral=True,
+            )
+
+        raw_amt = self.amount_input.value.strip().replace(' ', '').replace(',', '.')
+        mode = 'fixed'
+        amount_rtm = None
+        percent = None
+        if raw_amt.endswith('%'):
+            mode = 'percent'
+            try:
+                percent = Decimal(raw_amt[:-1])
+                if percent <= 0 or percent > 100:
+                    raise ValueError()
+            except Exception:
+                return await interaction.followup.send(
+                    text.get(self.ctx, 'g_error_market_auto_sell_invalid_amount'),
+                    ephemeral=True,
+                )
+        elif raw_amt.lower() in ('all', 'tout', 'max'):
+            mode = 'percent'
+            percent = Decimal('100')
+        else:
+            mode = 'fixed'
+            try:
+                amount_rtm = Decimal(raw_amt)
+                if amount_rtm <= 0:
+                    raise ValueError()
+            except Exception:
+                return await interaction.followup.send(
+                    text.get(self.ctx, 'g_error_market_auto_sell_invalid_amount'),
+                    ephemeral=True,
+                )
+
+        raw_rep = self.repeat_input.value.strip().lower() if self.repeat_input.value else "once"
+        if raw_rep in ('repeat', 'loop', 'repeter', 'répéter', 'r', 'yes', 'oui'):
+            repeat_mode = 'repeat'
+        else:
+            repeat_mode = 'once'
+
+        max_cap = None
+        if self.cap_input.value and self.cap_input.value.strip():
+            raw_cap = self.cap_input.value.strip().replace(' ', '').replace(',', '.')
+            try:
+                cap_val = Decimal(raw_cap)
+                if cap_val > 0:
+                    max_cap = cap_val
+            except Exception:
+                pass
+
+        try:
+            state = await self.cog.service.get_market_state() or {}
+            cur_price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
+            await self.cog.service.create_auto_sell_rule(
+                self.user_id,
+                direction=direction,
+                threshold_usd=threshold,
+                mode=mode,
+                amount_rtm=amount_rtm,
+                percent=percent,
+                max_rtm_per_run=max_cap,
+                cooldown_minutes=60,
+                repeat_mode=repeat_mode,
+                current_price=cur_price,
+            )
+
+            dir_label = (
+                text.get(self.ctx, 'g_market_alerts_dir_above')
+                if direction == 'above'
+                else text.get(self.ctx, 'g_market_alerts_dir_below')
+            )
+            amt_label = f"{percent} % du solde" if mode == 'percent' else f"{text.format_rtm(amount_rtm)} RTM"
+            rep_label = text.get(
+                self.ctx,
+                'g_market_auto_sell_repeat_once'
+                if repeat_mode == 'once'
+                else 'g_market_auto_sell_repeat_loop',
+                cooldown=60,
+            )
+
+            success_msg = text.get(
+                self.ctx,
+                'g_market_auto_sell_created',
+                dir_label=dir_label,
+                threshold=text.format_usd(threshold),
+                amount_label=amt_label,
+                repeat_label=rep_label,
+            )
+            await interaction.followup.send(success_msg, ephemeral=True)
+            await self.on_complete()
+        except GameError as err:
+            err_map = {
+                'market_auto_sell_limit_reached': 'g_error_market_auto_sell_limit',
+                'market_auto_sell_duplicate': 'g_error_market_auto_sell_duplicate',
+                'market_auto_sell_threshold_too_high': 'g_error_market_auto_sell_invalid_threshold',
+                'invalid_amount': 'g_error_market_auto_sell_invalid_amount',
+            }
+            err_key = err_map.get(str(err), 'g_error_busy')
+            max_rules = MathConfig.market_settings().get('auto_sell_max_per_player', 3)
+            await interaction.followup.send(
+                text.get(self.ctx, err_key, max=max_rules),
+                ephemeral=True,
+            )
+        except Exception:
+            logger.exception("[Market] Erreur création vente auto")
+            await interaction.followup.send(text.get(self.ctx, 'g_error_busy'), ephemeral=True)
+
+
+class MarketAutoSellView(discord.ui.View):
+    """Vue interactive pour la gestion des ordres de vente automatique."""
+
+    def __init__(self, cog: "Market", ctx, user_id: int, rules: list[dict]):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.ctx = ctx
+        self.user_id = user_id
+        self.rules = rules
+        self.message = None
+
+        self._build_interface()
+
+    def _build_interface(self):
+        self.clear_items()
+
+        # Bouton Ajouter
+        btn_add = discord.ui.Button(
+            label=text.get(self.ctx, 'g_market_btn_add_auto_sell'),
+            emoji=get_button_emoji('root_materiel') or '➕',
+            style=discord.ButtonStyle.primary,
+            custom_id="market_auto_sell_add",
+        )
+        btn_add.callback = self._on_add_click
+        self.add_item(btn_add)
+
+        # Select menu de suppression si règles présentes
+        if self.rules:
+            opts_del = []
+            for r in self.rules[:25]:
+                direction_txt = "≥" if r['direction'] == 'above' else "≤"
+                thresh_txt = text.format_usd(r['threshold_usd'])
+                amt_txt = f"{r['percent']}%" if r['mode'] == 'percent' else f"{text.format_rtm(r['amount_rtm'])} RTM"
+                label = f"#{r['id']} · {direction_txt} {thresh_txt} USD ({amt_txt})"
+                opts_del.append(discord.SelectOption(
+                    label=label[:100],
+                    value=str(r['id']),
+                    description=f"Mode : {r['repeat_mode']}",
+                ))
+
+            select_del = discord.ui.Select(
+                placeholder=text.get(self.ctx, 'g_market_btn_del_auto_sell'),
+                options=opts_del,
+                custom_id="market_auto_sell_del_select",
+            )
+            select_del.callback = self._on_del_select
+            self.add_item(select_del)
+
+            # Select menu d'activation / désactivation
+            opts_toggle = []
+            for r in self.rules[:25]:
+                direction_txt = "≥" if r['direction'] == 'above' else "≤"
+                thresh_txt = text.format_usd(r['threshold_usd'])
+                state_txt = "Désactiver" if r.get('enabled') else "Activer"
+                label = f"{state_txt} #{r['id']} ({direction_txt} {thresh_txt})"
+                opts_toggle.append(discord.SelectOption(
+                    label=label[:100],
+                    value=str(r['id']),
+                ))
+
+            select_toggle = discord.ui.Select(
+                placeholder=text.get(self.ctx, 'g_market_btn_toggle_auto_sell'),
+                options=opts_toggle,
+                custom_id="market_auto_sell_toggle_select",
+            )
+            select_toggle.callback = self._on_toggle_select
+            self.add_item(select_toggle)
+
+        # Bouton Retour au Marché
+        btn_back = discord.ui.Button(
+            label=text.get(self.ctx, 'g_market_btn_back'),
+            emoji=get_button_emoji('root_retour') or '🔙',
+            style=discord.ButtonStyle.secondary,
+            custom_id="market_auto_sell_back",
+        )
+        btn_back.callback = self._on_back_click
+        self.add_item(btn_back)
+
+    async def _on_add_click(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message(text.get(self.ctx, 'g_error_access_denied'), ephemeral=True)
+
+        async def on_complete():
+            embed, view = await self.cog._build_auto_sell_display(self.ctx, self.user_id)
+            if self.message:
+                await self.message.edit(embed=embed, view=view)
+
+        modal = MarketAutoSellAddModal(self.cog, self.ctx, self.user_id, on_complete)
+        await interaction.response.send_modal(modal)
+
+    async def _on_del_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message(text.get(self.ctx, 'g_error_access_denied'), ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        rule_id = int(interaction.data['values'][0])
+        await self.cog.service.delete_auto_sell_rule(self.user_id, rule_id)
+        del_msg = text.get(self.ctx, 'g_market_auto_sell_deleted', id=rule_id)
+        await interaction.followup.send(del_msg, ephemeral=True)
+
+        embed, view = await self.cog._build_auto_sell_display(self.ctx, self.user_id)
+        if self.message:
+            await self.message.edit(embed=embed, view=view)
+
+    async def _on_toggle_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message(text.get(self.ctx, 'g_error_access_denied'), ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        rule_id = int(interaction.data['values'][0])
+        updated = await self.cog.service.toggle_auto_sell_rule(self.user_id, rule_id)
+        st = text.get(self.ctx, 'g_market_auto_sell_status_active' if updated.get('enabled') else 'g_market_auto_sell_status_disabled')
+        upd_msg = text.get(self.ctx, 'g_market_auto_sell_toggled', id=rule_id, status=st)
+        await interaction.followup.send(upd_msg, ephemeral=True)
+
+        embed, view = await self.cog._build_auto_sell_display(self.ctx, self.user_id)
+        if self.message:
+            await self.message.edit(embed=embed, view=view)
+
+    async def _on_back_click(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        file, embed, view = await self.cog._build_market_display(self.ctx, '24h')
+        if self.message:
+            await self.message.edit(embed=embed, file=file, attachments=[], view=view)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        checks = Check()
+        allowed, err_key = await checks.check_interaction_access(self.ctx.bot, interaction, allow_network=False)
+        if not allowed:
+            await interaction.response.send_message(text.get(self.ctx, err_key), ephemeral=True)
+            return False
+        return True
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        try:
+            if self.message:
+                await self.message.edit(view=self)
+        except Exception:
+            pass
+
 
 class Market(BaseGameCog):
     """Cog gérant la consultation du marché RTM et l'affichage des cours."""
@@ -418,11 +760,17 @@ class Market(BaseGameCog):
     # ── Préfixe ──────────────────────────────────────────────────────────────
     @commands.command(name='market', aliases=['mk'], help=FR['market'])
     async def prefix_market(self, ctx, period: str = '24h', *args):
-        """Commande préfixe !market [24h|7d|30d|chart]."""
+        """Commande préfixe !market [24h|7d|30d|chart|alerts|autosell]."""
         await self._prefetch_lang(ctx.author.id)
         period_clean = period.lower().strip()
         if period_clean in ('alert', 'alerts', 'alerte', 'alertes'):
             embed, view = await self._build_alerts_display(ctx, ctx.author.id)
+            msg = await ctx.send(embed=embed, view=view)
+            view.message = msg
+            return
+
+        if period_clean in ('autosell', 'as', 'sell', 'auto'):
+            embed, view = await self._build_auto_sell_display(ctx, ctx.author.id)
             msg = await ctx.send(embed=embed, view=view)
             view.message = msg
             return
@@ -490,6 +838,63 @@ class Market(BaseGameCog):
         view = MarketAlertsView(self, ctx, user_id, alerts)
         return embed, view
 
+    async def _build_auto_sell_display(self, ctx, user_id: int):
+        """Construit l'embed et la vue de gestion des ordres de vente automatique."""
+        rules = await self.service.list_auto_sell_rules(user_id)
+        max_rules = MathConfig.market_settings().get('auto_sell_max_per_player', 3)
+
+        lines = []
+        if not rules:
+            lines.append(text.get(ctx, 'g_market_auto_sell_empty'))
+        else:
+            lines.append(text.get(ctx, 'g_market_auto_sell_header', count=len(rules), max=max_rules))
+            for r in rules:
+                direction = r['direction']
+                dir_label = (
+                    text.get(ctx, 'g_market_alerts_dir_above')
+                    if direction == 'above'
+                    else text.get(ctx, 'g_market_alerts_dir_below')
+                )
+                if not r.get('enabled'):
+                    st = text.get(ctx, 'g_market_auto_sell_status_disabled')
+                else:
+                    st = text.get(ctx, 'g_market_auto_sell_status_active')
+
+                amount_label = (
+                    f"{r['percent']} % du solde"
+                    if r['mode'] == 'percent'
+                    else f"{text.format_rtm(r['amount_rtm'])} RTM"
+                )
+                repeat_label = text.get(
+                    ctx,
+                    'g_market_auto_sell_repeat_once'
+                    if r['repeat_mode'] == 'once'
+                    else 'g_market_auto_sell_repeat_loop',
+                    cooldown=r.get('cooldown_minutes', 60),
+                )
+
+                lines.append(text.get(
+                    ctx,
+                    'g_market_auto_sell_item',
+                    id=r['id'],
+                    dir_label=dir_label,
+                    threshold=text.format_usd(r['threshold_usd']),
+                    amount_label=amount_label,
+                    repeat_label=repeat_label,
+                    status=st,
+                ))
+
+        embed = RootEmbed(
+            ctx=ctx,
+            action='market',
+            title=text.get(ctx, 'g_market_auto_sell_title'),
+            content="\n".join(lines),
+            state=VisualState.CONSULTATION,
+            footer="ROOT OS · Marché",
+        )
+        view = MarketAutoSellView(self, ctx, user_id, rules)
+        return embed, view
+
     # ── Rendu et Données ─────────────────────────────────────────────────────
     async def _build_market_display(self, ctx, period: str):
         """Construit l'embed de niveau 1 (sans image PNG) et la vue."""
@@ -506,15 +911,6 @@ class Market(BaseGameCog):
 
         series = await self.service.get_market_series(since)
         prices = [p['price_after'] for p in series] if series else [price]
-
-        # Calcul des variations
-        first_price = prices[0]
-        last_price = prices[-1] if len(prices) > 1 else price
-        pct = period_change_pct(first_price, last_price)
-        sign = "+" if pct >= 0 else ""
-        change_str = f"{sign}{pct}%"
-        direction = "↗ Hausse" if pct > 0 else ("↘ Baisse" if pct < 0 else "→ Stable")
-        spark = sparkline(prices, width=28)
 
         # Dernières contributions crypto (issues du dernier point d'historique)
         if series:
@@ -534,8 +930,6 @@ class Market(BaseGameCog):
 
         lines = [
             text.get(ctx, 'g_market_rate', rate=text.format_usd(price)),
-            text.get(ctx, 'g_market_change', period=period.upper(), change_str=change_str),
-            text.get(ctx, 'g_market_sparkline', sparkline=spark, direction=direction),
             text.get(ctx, 'g_market_contributions', btc=btc, eth=eth, sol=sol),
             f"> 📶 **Statut** : {status_line}",
             text.get(ctx, 'g_market_meta', ts=ts_val, source=display_source),

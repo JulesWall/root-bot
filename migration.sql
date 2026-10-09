@@ -80,3 +80,38 @@ CREATE TABLE IF NOT EXISTS rtm_price_alerts (
     INDEX idx_alert_enabled (enabled, armed),
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration SQL : Vente automatique de Rootium (RTM)
+CREATE TABLE IF NOT EXISTS rtm_auto_sell_rules (
+    id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id       BIGINT UNSIGNED NOT NULL,
+    direction        ENUM('above','below') NOT NULL,
+    threshold_usd    DECIMAL(24,8) NOT NULL,
+    mode             ENUM('fixed','percent') NOT NULL DEFAULT 'fixed',
+    amount_rtm       DECIMAL(20,5) NULL DEFAULT NULL,
+    percent          DECIMAL(5,2) NULL DEFAULT NULL,
+    max_rtm_per_run  DECIMAL(20,5) NULL DEFAULT NULL,
+    cooldown_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+    repeat_mode      ENUM('once','repeat') NOT NULL DEFAULT 'once',
+    enabled          TINYINT(1) NOT NULL DEFAULT 1,
+    last_run_at      DATETIME(6) NULL DEFAULT NULL,
+    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_auto_sell_eligible (enabled, direction, threshold_usd),
+    INDEX idx_auto_sell_user (discord_id),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rtm_auto_sell_runs (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    rule_id     BIGINT UNSIGNED NOT NULL,
+    discord_id  BIGINT UNSIGNED NOT NULL,
+    market_ts   DATETIME(0) NOT NULL,
+    rate_usd    DECIMAL(24,8) NOT NULL,
+    rtm_amount  DECIMAL(20,5) NOT NULL,
+    usd_amount  DECIMAL(24,2) NOT NULL,
+    created_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_rule_cycle (rule_id, market_ts),
+    INDEX idx_runs_user (discord_id, created_at),
+    FOREIGN KEY (rule_id) REFERENCES rtm_auto_sell_rules(id) ON DELETE CASCADE,
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

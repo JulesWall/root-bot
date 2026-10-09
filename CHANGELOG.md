@@ -22,6 +22,15 @@ Tu peux désormais programmer jusqu'à **5 alertes de prix** pour être notifié
 - **Anti-spam & réarmement** : délai de rappel paramétrable (défaut 60 min, minimum 15 min) et réarmement automatique dès que le cours repasse de l'autre côté du seuil.
 - **Gestion complète** : consultation, activation/désactivation et suppression de tes alertes directement dans l'interface Discord.
 
+## :zap: **Ventes automatiques de Rootium (`/market` & `!market autosell`)**
+
+Automatise la prise de profit sur tes gains de minage avec des règles de vente intelligentes :
+- **Règles configurables (jusqu'à 3 par joueur)** : déclenchement selon un seuil en USD (`above` à la hausse ou `below` à la baisse).
+- **Montant fixe ou pourcentage du solde** : choisis de vendre une quantité précise (ex: `100 RTM`) ou une part de ton portefeuille (ex: `50 %` ou `tout`).
+- **Plafond de sécurité & récurrence** : configure un plafond maximal par vente et choisis entre un ordre unique (`once`) ou récurrent (`repeat` avec intervalle de sécurité).
+- **Exécution transactionnelle garantie** : chaque vente est convertie automatiquement au cours officiel validé du cycle, inscrite dans le journal `#blockchain` et confirmée par un reçu détaillé en message privé.
+- *Rappel : le Rootium et ses ventes sont des mécaniques virtuelles internes au jeu sans interaction avec des marchés réels.*
+
 # :rocket: Beta Update N°3
 
 ## :shield: **Système de dégâts critiques**

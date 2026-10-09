@@ -172,6 +172,92 @@ class RootService:
             locks=[f'player:{int(discord_id)}'],
         )
 
+    async def list_auto_sell_rules(self, discord_id: int) -> list[dict]:
+        """Récupère les règles de vente automatique configurées par un joueur (lecture seule)."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.list_for(tx, discord_id),
+            readonly=True,
+        )
+
+    async def create_auto_sell_rule(
+        self,
+        discord_id: int,
+        direction: str,
+        threshold_usd,
+        mode: str = 'fixed',
+        amount_rtm=None,
+        percent=None,
+        max_rtm_per_run=None,
+        cooldown_minutes: int = 60,
+        repeat_mode: str = 'once',
+        current_price=None,
+    ) -> dict:
+        """Crée une nouvelle règle de vente automatique pour un joueur."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.create(
+                tx, discord_id, direction, threshold_usd, mode,
+                amount_rtm, percent, max_rtm_per_run, cooldown_minutes, repeat_mode, current_price
+            ),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def delete_auto_sell_rule(self, discord_id: int, rule_id: int) -> bool:
+        """Supprime une règle de vente automatique d'un joueur."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.delete(tx, discord_id, rule_id),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def toggle_auto_sell_rule(self, discord_id: int, rule_id: int, enabled: bool | None = None) -> dict:
+        """Active ou désactive une règle de vente automatique d'un joueur."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.toggle(tx, discord_id, rule_id, enabled),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def process_auto_sells(self, market_ts, current_price) -> list[dict]:
+        """Évalue et exécute les règles de vente automatique pour un cycle de marché."""
+        import logging
+        from datetime import datetime
+        from game.db.auto_sell import AutoSellDB
+
+        log = logging.getLogger(__name__)
+        now_dt = datetime.utcnow()
+
+        try:
+            due_rules = await self.database.run(
+                lambda tx: AutoSellDB.get_due_rules(tx, current_price, now_dt),
+                readonly=True,
+            )
+        except Exception:
+            log.exception("[Market] Impossible de lire les règles de vente automatique")
+            return []
+
+        executed_runs = []
+        for rule in due_rules:
+            discord_id = int(rule['discord_id'])
+            try:
+                run_res = await self.database.run(
+                    lambda tx: AutoSellDB.execute_rule(
+                        tx, rule, current_price, market_ts, now_dt
+                    ),
+                    locks=[f'player:{discord_id}'],
+                )
+                if run_res:
+                    executed_runs.append(run_res)
+            except Exception:
+                log.exception("[Market] Erreur exécution vente auto joueur %s", discord_id)
+
+        return executed_runs
+
 
     async def deliver_expired_upgrades(self) -> list[dict]:
         """

@@ -246,6 +246,10 @@ class MathConfig:
         cfg.setdefault('alerts_max_per_player', 5)
         cfg.setdefault('alerts_default_cooldown_minutes', 60)
         cfg.setdefault('alerts_min_cooldown_minutes', 15)
+        cfg.setdefault('auto_sell_enabled', True)
+        cfg.setdefault('auto_sell_max_per_player', 3)
+        cfg.setdefault('auto_sell_default_cooldown_minutes', 60)
+        cfg.setdefault('auto_sell_min_cooldown_minutes', 15)
         return cfg
 
     @classmethod
