@@ -530,6 +530,7 @@ class Market(BaseGameCog):
 
         # Source joueur anonymisée (aucune mention d'exchange externe)
         display_source = "Index Crypto" if "binance" in str(source).lower() or source in ('seed', None, '') else str(source)
+        status_line = text.get(ctx, 'g_market_status_delayed') if status == 'delayed' else text.get(ctx, 'g_market_status_live')
 
         lines = [
             text.get(ctx, 'g_market_rate', rate=text.format_usd(price)),
