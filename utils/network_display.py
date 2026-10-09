@@ -10,8 +10,10 @@ Implémente les 4 vues unifiées :
 Chacune des quatre vues inclut obligatoirement l'illustration du niveau courant d'infrastructure.
 """
 
+from datetime import timezone
 from decimal import Decimal
 import math
+from pathlib import Path
 import time
 from typing import Any
 import discord
@@ -1029,4 +1031,108 @@ def build_operations_container(
     c.add_text(f"{get_emoji('root_terminal', True)}**{'Poste de combat opérationnel' if is_fr else 'Combat station operational'}** · {'Prêt pour engagement et riposte' if is_fr else 'Ready for engagement and retaliation'}")
 
     return c, file
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VUE 5 : MARCHÉ (MARKET)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_market_embed(
+    result: dict,
+    locale: str = 'fr',
+    display_name: str = 'Opérateur',
+    market_state: dict | None = None,
+    period: str = '24h',
+    avatar_url: str | None = None,
+    chart_path: Any = None,
+) -> tuple[discord.Embed, discord.File | None]:
+    """Construit l'embed et le fichier graphique pour la vue Marché de /network."""
+    is_fr = (locale == 'fr')
+    state = market_state or {}
+    price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
+    status = state.get('status', 'live')
+    source = state.get('source', 'seed')
+
+    usd_str = text.format_usd(result.get('dollars') or 0)
+    rtm_str = text.format_rtm(result.get('rootium') or 0)
+    display_source = "Index Marché" if "binance" in str(source).lower() or "crypto" in str(source).lower() or source in ('seed', None, '') else str(source)
+    status_line = ("🟢 **Flux actif**" if is_fr else "🟢 **Live Feed**") if status != 'delayed' else ("🟡 **Flux retardé**" if is_fr else "🟡 **Delayed Feed**")
+    observed = state.get('observed_at')
+    ts_val = int(observed.replace(tzinfo=timezone.utc).timestamp()) if observed and hasattr(observed, 'replace') else int(time.time())
+
+    lines = [
+        f"> 📈 **{'Cours actuel' if is_fr else 'Current Rate'}** : **1 RTM = {text.format_usd(price)} USD**",
+        f"> 💼 **{'Portefeuille' if is_fr else 'Wallet'}** : **{usd_str} USD** · **{rtm_str} RTM**",
+        f"> 📶 **Statut** : {status_line}",
+        f"> ⏱️ **{'Dernière actualisation' if is_fr else 'Last update'}** : <t:{ts_val}:R> · **Source** : `{display_source}`",
+    ]
+    color = COLOR_AMBER if status == 'delayed' else COLOR_TURQUOISE
+    embed = discord.Embed(
+        title=f"Terminal de Marché · RTM / USD" if is_fr else "Market Terminal · RTM / USD",
+        description="\n".join(lines),
+        color=color,
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_author(
+        name=f"ROOT OS · {'Réseau de' if is_fr else 'Network of'} {display_name}",
+        icon_url=avatar_url,
+    )
+    embed.set_footer(text=build_footer_text('Marché' if is_fr else 'Market'))
+
+    file = None
+    if chart_path and Path(chart_path).exists():
+        chart_filename = f"rtm_chart_{period}.png"
+        file = discord.File(chart_path, filename=chart_filename)
+        embed.set_image(url=f"attachment://{chart_filename}")
+
+    return embed, file
+
+
+def build_market_container(
+    result: dict,
+    locale: str = 'fr',
+    display_name: str = 'Opérateur',
+    market_state: dict | None = None,
+    period: str = '24h',
+    chart_path: Any = None,
+) -> tuple[discord.ui.Container, discord.File | None]:
+    """Construit le Container Discord V2 pour la vue Marché du poste de commande /network."""
+    is_fr = (locale == 'fr')
+    state = market_state or {}
+    price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
+    status = state.get('status', 'live')
+    source = state.get('source', 'seed')
+
+    file = None
+    color = COLOR_AMBER if status == 'delayed' else COLOR_TURQUOISE
+    c = discord.ui.Container(colour=color)
+    if chart_path and Path(chart_path).exists():
+        chart_filename = f"rtm_chart_{period}.png"
+        c.add_gallery(discord.MediaGalleryItem(f"attachment://{chart_filename}"))
+        file = discord.File(chart_path, filename=chart_filename)
+
+    clean_name = display_name
+    term_icon = get_emoji('root_terminal', True)
+    c.add_text(f"### {term_icon}ROOT OS / {clean_name}\n{'Terminal de Marché · RTM / USD' if is_fr else 'Market Terminal · RTM / USD'}")
+    c.add_separator(divider=True)
+
+    usd_str = text.format_usd(result.get('dollars') or 0)
+    rtm_str = text.format_rtm(result.get('rootium') or 0)
+    display_source = "Index Marché" if "binance" in str(source).lower() or "crypto" in str(source).lower() or source in ('seed', None, '') else str(source)
+    status_line = ("🟢 **Flux actif**" if is_fr else "🟢 **Live Feed**") if status != 'delayed' else ("🟡 **Flux retardé**" if is_fr else "🟡 **Delayed Feed**")
+    observed = state.get('observed_at')
+    ts_val = int(observed.replace(tzinfo=timezone.utc).timestamp()) if observed and hasattr(observed, 'replace') else int(time.time())
+
+    lines = [
+        f"> 📈 **{'Cours actuel' if is_fr else 'Current Rate'}** : **1 RTM = {text.format_usd(price)} USD**",
+        f"> 💼 **{'Portefeuille' if is_fr else 'Wallet'}** : **{usd_str} USD** · **{rtm_str} RTM**",
+        f"> 📶 **Statut** : {status_line}",
+        f"> ⏱️ **{'Dernière actualisation' if is_fr else 'Last update'}** : <t:{ts_val}:R> · **Source** : `{display_source}`",
+    ]
+    c.add_text('\n'.join(lines))
+    c.add_separator(divider=True)
+    c.add_text(f"{get_emoji('root_bilan', True)}**{'Marché dynamique' if is_fr else 'Dynamic Market'}** · {'Données synchronisées' if is_fr else 'Synchronized data'}")
+
+    return c, file
+
 

@@ -198,8 +198,8 @@ def _render_chart_sync(points: List[dict], period_name: str, last_ts: str, sourc
     title_text = f"ROOT OS / MARCHÉ  ·  1 RTM = {p_end:,.2f} USD  ({sign}{pct:.2f}% sur {period_name})"
     ax.set_title(title_text, color='#EEF1F5', fontsize=12, fontweight='bold', pad=14, loc='left')
 
-    # Pied de figure (source joueur sans exchange externe)
-    display_source = "Index Crypto" if "binance" in str(source).lower() or source in ('seed', None, '') else str(source)
+    # Pied de figure (source joueur sans exchange externe ni crypto réelle)
+    display_source = "Index Marché" if "binance" in str(source).lower() or "crypto" in str(source).lower() or source in ('seed', None, '') else str(source)
     footer_text = f"Période: {period_name.upper()}  ·  Source: {display_source}  ·  Dernier point: {last_ts} UTC"
     fig.text(0.12, 0.02, footer_text, color='#6C7D8F', fontsize=8, ha='left')
 

@@ -3,12 +3,18 @@
 ## :currency_exchange: **Comptoir de Marché unifié : Achat & Vente de Rootium (`/market` & `!market`)**
 
 Les commandes autonomes `/convert` et `!sell` ont été retirées au profit d'un **Terminal de Marché unifié** accessible via `/market` et `!market`. Vous pouvez désormais :
+- **Consulter votre solde** : affichage direct de vos avoirs en temps réel (`Portefeuille : X USD · Y RTM`).
 - **Vendre du Rootium** (RTM → USD) : transformez vos gains de minage en dollars au cours dynamique en direct.
 - **Acheter du Rootium** (USD → RTM) : investissez vos dollars pour acquérir des tokens Rootium au cours du marché.
 - **Interface interactive** : lancez vos ordres en un clic via les boutons `[🛒 Acheter RTM]` et `[💰 Vendre RTM]` et saisissez le montant (ou `all`) dans un formulaire dédié avec confirmation instantanée.
 - **Commandes rapides** : exécutez vos ordres directement en commandes texte :
   - `!market buy <montant|all> [confirm]` (ou alias `!buy`)
   - `!market sell <montant|all> [confirm]` (ou alias `!sell`, `!cv`)
+
+## :globe_with_meridians: **Intégration au Poste de Commande (`/network` & `!n`)**
+
+- **Nouvel onglet `[📈 Marché]`** : accédez au terminal de marché directement depuis votre interface réseau `/network` (`!n` ou `!n market`).
+- **Expérience complète** : affiche le graphique dynamique de la période, les cours et le portefeuille, tout en conservant les boutons d'achat/vente, d'alertes et de retour vers Accueil, Ferme, Matériel et Opérations.
 
 ## :receipt: **Frais de transaction de 1 % & Traçabilité Blockchain**
 
@@ -18,14 +24,14 @@ Les commandes autonomes `/convert` et `!sell` ont été retirées au profit d'un
 
 ## :chart_with_upwards_trend: **Cours dynamique du Rootium**
 
-Le cours **RTM / USD** évolue désormais **toutes les 15 minutes** selon la moyenne des variations de **Bitcoin, Ethereum et Solana**. Si les trois cryptos montent en moyenne de 1 %, le Rootium monte de 1 % ; si la moyenne est nulle, le cours ne bouge pas. Si le cours varie entre votre devis et votre confirmation, la transaction est sécurisée et un nouveau devis actualisé vous est proposé.
+Le cours **RTM / USD** évolue désormais **toutes les 15 minutes** selon l'activité et les variations du marché. Si le marché est haussier, le Rootium s'apprécie ; si le cours est stable, le cours ne bouge pas. Si le cours varie entre votre devis et votre confirmation, la transaction est sécurisée et un nouveau devis actualisé vous est proposé.
 
-Le Rootium reste une monnaie interne au jeu : le cours est inspiré du marché, aucune transaction réelle en cryptomonnaie n'est effectuée. L'équilibrage des combats (`/hack`) reste calculé sur un taux de référence stable.
+Le Rootium reste une monnaie interne au jeu : aucune transaction réelle en cryptomonnaie n'est effectuée. L'équilibrage des combats (`/hack`) reste calculé sur un taux de référence stable.
 
 ## :bar_chart: **Terminal de marché & Graphiques**
 
 Un terminal complet permet de suivre le cours du Rootium en temps réel :
-- **Vue instantanée** : cours courant, variation sur la période (24 h, 7 j, 30 j) et contributions respectives de BTC, ETH et SOL.
+- **Vue instantanée** : cours courant, variation sur la période (24 h, 7 j, 30 j) et statut du flux.
 - **Navigation fluide** : basculez d'une période à l'autre en un clic sur les boutons temporels (`24 h`, `7 j`, `30 j`) avec génération du graphique correspondant.
 
 ## :bell: **Alertes de cours personnalisées (`/market` & `!market alert`)**

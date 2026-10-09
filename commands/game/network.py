@@ -14,6 +14,7 @@ Ce module constitue l'interface principale et navigable du joueur :
 """
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 import logging
 from decimal import Decimal
 from typing import Any
@@ -24,7 +25,9 @@ from discord.ext import commands, tasks
 import data
 from commands.game.claim import log_claim_events
 from commands.game.commandgame import BaseGameCog
+from commands.game.market import MarketTradeModal
 from game.game_error import GameError
+from game.market_charts import PERIODS, get_or_render_chart
 from game.math_config import MathConfig
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
@@ -42,6 +45,8 @@ from utils.network_display import (
     build_farm_embed,
     build_hardware_container,
     build_hardware_embed,
+    build_market_container,
+    build_market_embed,
     build_operations_container,
     build_operations_embed,
     build_overview_container,
@@ -171,7 +176,7 @@ class NetworkActionView(discord.ui.DesignerView):
       * [ 🔄 Actualiser ] (Bleu / Primaire, actualise les données)
     """
 
-    def __init__(self, cog, ctx, result):
+    def __init__(self, cog, ctx, result, initial_view: str = 'overview'):
         timeout = 180
         try:
             asyncio.get_running_loop()
@@ -186,7 +191,10 @@ class NetworkActionView(discord.ui.DesignerView):
         self.avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
 
         self.last_result = result
-        self.current_view = 'overview'  # 'overview', 'hardware', 'operations'
+        self.current_view = initial_view  # 'overview', 'farm', 'hardware', 'operations', 'market'
+        self.market_period = '24h'
+        self.market_state = None
+        self.market_chart_path = None
         self.current_file = None
         self.current_embed = None
         self._top_items = []
@@ -286,13 +294,20 @@ class NetworkActionView(discord.ui.DesignerView):
         )
         ops_btn.callback = self._on_switch_operations
 
+        market_btn = discord.ui.Button(
+            label="Marché" if is_fr else "Market",
+            emoji=get_button_emoji("root_bilan") or "📈",
+            style=discord.ButtonStyle.secondary,
+        )
+        market_btn.callback = self._on_switch_market
+
         if self.current_view == 'farm':
             container, file = build_farm_container(
                 self.last_result,
                 locale=locale,
                 display_name=self.display_name,
             )
-            container.add_row(home_btn, mat_btn, ops_btn)
+            container.add_row(home_btn, mat_btn, ops_btn, market_btn)
             container.add_row(claim_btn, refresh_btn)
 
         elif self.current_view == 'hardware':
@@ -301,7 +316,7 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            container.add_row(home_btn, farm_btn, ops_btn)
+            container.add_row(home_btn, farm_btn, ops_btn, market_btn)
             container.add_row(claim_btn, refresh_btn)
 
         elif self.current_view == 'operations':
@@ -310,7 +325,60 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            container.add_row(home_btn, farm_btn, mat_btn)
+            container.add_row(home_btn, farm_btn, mat_btn, market_btn)
+            container.add_row(claim_btn, refresh_btn)
+
+        elif self.current_view == 'market':
+            container, file = build_market_container(
+                self.last_result,
+                locale=locale,
+                display_name=self.display_name,
+                market_state=self.market_state,
+                period=self.market_period,
+                chart_path=self.market_chart_path,
+            )
+            p_btns = []
+            for p in ('24h', '7d', '30d'):
+                is_active = (p == self.market_period)
+                btn = discord.ui.Button(
+                    label=text.get(self.ctx, f'g_market_btn_{p}'),
+                    style=discord.ButtonStyle.primary if is_active else discord.ButtonStyle.secondary,
+                    disabled=is_active,
+                )
+                btn.callback = self._make_market_period_callback(p)
+                p_btns.append(btn)
+
+            btn_buy = discord.ui.Button(
+                label=text.get(self.ctx, 'g_market_btn_buy'),
+                emoji=get_button_emoji('root_recolter') or '🛒',
+                style=discord.ButtonStyle.success,
+            )
+            btn_buy.callback = self._on_market_buy
+
+            btn_sell = discord.ui.Button(
+                label=text.get(self.ctx, 'g_market_btn_sell'),
+                emoji=get_button_emoji('root_materiel') or '💰',
+                style=discord.ButtonStyle.secondary,
+            )
+            btn_sell.callback = self._on_market_sell
+
+            btn_alerts = discord.ui.Button(
+                label=text.get(self.ctx, 'g_market_btn_alerts'),
+                emoji=get_button_emoji('root_alerte') or '🔔',
+                style=discord.ButtonStyle.secondary,
+            )
+            btn_alerts.callback = self._on_market_alerts
+
+            btn_auto_sell = discord.ui.Button(
+                label=text.get(self.ctx, 'g_market_btn_auto_sell'),
+                emoji=get_button_emoji('root_operations') or '⚡',
+                style=discord.ButtonStyle.secondary,
+            )
+            btn_auto_sell.callback = self._on_market_auto_sell
+
+            container.add_row(home_btn, farm_btn, mat_btn, ops_btn)
+            container.add_row(*p_btns)
+            container.add_row(btn_buy, btn_sell, btn_alerts, btn_auto_sell)
             container.add_row(claim_btn, refresh_btn)
 
         else:
@@ -320,7 +388,7 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            container.add_row(farm_btn, mat_btn, ops_btn)
+            container.add_row(farm_btn, mat_btn, ops_btn, market_btn)
             container.add_row(claim_btn, refresh_btn)
 
         self._container = container
@@ -340,7 +408,10 @@ class NetworkActionView(discord.ui.DesignerView):
             self.current_view = 'overview'
             self._rebuild_components()
             try:
-                await interaction.message.edit(view=self)
+                if self.current_file:
+                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                else:
+                    await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du retour à l'accueil network")
 
@@ -351,7 +422,10 @@ class NetworkActionView(discord.ui.DesignerView):
             self.current_view = 'farm'
             self._rebuild_components()
             try:
-                await interaction.message.edit(view=self)
+                if self.current_file:
+                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                else:
+                    await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du passage à la vue ferme network")
 
@@ -362,7 +436,10 @@ class NetworkActionView(discord.ui.DesignerView):
             self.current_view = 'hardware'
             self._rebuild_components()
             try:
-                await interaction.message.edit(view=self)
+                if self.current_file:
+                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                else:
+                    await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du passage à la vue matériel network")
 
@@ -373,9 +450,107 @@ class NetworkActionView(discord.ui.DesignerView):
             self.current_view = 'operations'
             self._rebuild_components()
             try:
-                await interaction.message.edit(view=self)
+                if self.current_file:
+                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                else:
+                    await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du passage à la vue opérations network")
+
+    async def _on_switch_market(self, interaction: discord.Interaction):
+        """Bascule vers la vue Marché."""
+        async with self.lock:
+            await interaction.response.defer()
+            self.current_view = 'market'
+            await self._refresh_market_data()
+            self._rebuild_components()
+            try:
+                if self.current_file:
+                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                else:
+                    await interaction.message.edit(view=self)
+            except Exception:
+                logger.exception("Erreur lors du passage à la vue marché network")
+
+    def _make_market_period_callback(self, period: str):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.author_id:
+                return await interaction.response.send_message(
+                    text.get(self.ctx, 'no_permission'), ephemeral=True
+                )
+            async with self.lock:
+                await interaction.response.defer()
+                self.market_period = period
+                await self._refresh_market_data()
+                self._rebuild_components()
+                try:
+                    if self.current_file:
+                        await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                    else:
+                        await interaction.message.edit(view=self)
+                except Exception:
+                    logger.exception("Erreur lors du changement de période marché dans network")
+        return callback
+
+    async def _on_market_buy(self, interaction: discord.Interaction):
+        market_cog = self.cog.bot.get_cog('Market')
+        if market_cog:
+            modal = MarketTradeModal(market_cog, self.ctx, action='buy')
+            await interaction.response.send_modal(modal)
+
+    async def _on_market_sell(self, interaction: discord.Interaction):
+        market_cog = self.cog.bot.get_cog('Market')
+        if market_cog:
+            modal = MarketTradeModal(market_cog, self.ctx, action='sell')
+            await interaction.response.send_modal(modal)
+
+    async def _on_market_alerts(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            market_cog = self.cog.bot.get_cog('Market')
+            if market_cog:
+                embed, view = await market_cog._build_alerts_display(self.ctx, interaction.user.id)
+                resp = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                if hasattr(resp, 'message') and resp.message:
+                    view.message = resp.message
+                elif isinstance(resp, discord.Message):
+                    view.message = resp
+        except Exception:
+            logger.exception("Erreur ouverture vue alertes depuis network")
+            await interaction.followup.send(text.get(self.ctx, 'g_error_busy'), ephemeral=True)
+
+    async def _on_market_auto_sell(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            market_cog = self.cog.bot.get_cog('Market')
+            if market_cog:
+                embed, view = await market_cog._build_auto_sell_display(self.ctx, interaction.user.id)
+                resp = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                if hasattr(resp, 'message') and resp.message:
+                    view.message = resp.message
+                elif isinstance(resp, discord.Message):
+                    view.message = resp
+        except Exception:
+            logger.exception("Erreur ouverture vue ventes auto depuis network")
+            await interaction.followup.send(text.get(self.ctx, 'g_error_busy'), ephemeral=True)
+
+    async def _refresh_market_data(self):
+        """Récupère l'état et génère le graphique pour la période courante."""
+        market_cog = self.cog.bot.get_cog('Market')
+        period = getattr(self, 'market_period', '24h')
+        self.market_period = period
+        if market_cog:
+            state = await market_cog.service.get_market_state() or {}
+            self.market_state = state
+            price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            seconds_back = PERIODS.get(period, 24 * 3600)
+            since = now_utc - timedelta(seconds=seconds_back)
+            series = await market_cog.service.get_market_series(since)
+            source = state.get('source', 'seed')
+            display_source = "Index Marché" if "binance" in str(source).lower() or "crypto" in str(source).lower() or source in ('seed', None, '') else str(source)
+            series_for_chart = series if series else [{'market_ts': now_utc, 'price_after': price}]
+            self.market_chart_path = await get_or_render_chart(series_for_chart, period, display_source)
 
     async def _on_claim(self, interaction: discord.Interaction):
         """Exécute la récolte du Rootium en mémoire et actualise le panneau."""
@@ -412,9 +587,14 @@ class NetworkActionView(discord.ui.DesignerView):
                 interaction.guild.id if interaction.guild else None,
                 'network',
             )
+            if self.current_view == 'market':
+                await self._refresh_market_data()
             self._rebuild_components()
             try:
-                await interaction.message.edit(view=self)
+                if self.current_file:
+                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                else:
+                    await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors de l'actualisation après claim")
 
@@ -427,9 +607,14 @@ class NetworkActionView(discord.ui.DesignerView):
                 interaction.guild.id if interaction.guild else None,
                 'network',
             )
+            if self.current_view == 'market':
+                await self._refresh_market_data()
             self._rebuild_components()
             try:
-                await interaction.message.edit(view=self)
+                if self.current_file:
+                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
+                else:
+                    await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du rafraîchissement network")
 
@@ -497,8 +682,17 @@ class Network(BaseGameCog):
 
     # ── Préfixe ──────────────────────────────────────────────────────────────
     @commands.command(name='network', aliases=['n'], help=FR['network'])
-    async def prefix_network(self, ctx):
-        """Commande préfixe !network ou !n."""
+    async def prefix_network(self, ctx, view: str = 'overview'):
+        """Commande préfixe !network ou !n [overview|farm|hardware|operations|market]."""
+        clean_view = view.lower().strip() if view else 'overview'
+        view_aliases = {
+            'overview': 'overview', 'accueil': 'overview', 'home': 'overview',
+            'farm': 'farm', 'ferme': 'farm',
+            'hardware': 'hardware', 'materiel': 'hardware', 'mat': 'hardware',
+            'operations': 'operations', 'ops': 'operations',
+            'market': 'market', 'marche': 'market', 'mk': 'market',
+        }
+        ctx._network_target_view = view_aliases.get(clean_view, 'overview')
         await self._invoke(ctx, 'network')
 
     # ── Rendu de l'Embed (utilisé aussi pour les tests et appels externes) ────
@@ -515,6 +709,8 @@ class Network(BaseGameCog):
             embed, _ = build_hardware_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
         elif view_name == 'operations':
             embed, _, _ = build_operations_embed(result, locale=locale, display_name=author_name, page=page, avatar_url=avatar_url)
+        elif view_name == 'market':
+            embed, _ = build_market_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
         else:
             embed, _ = build_overview_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
         return embed
@@ -526,7 +722,12 @@ class Network(BaseGameCog):
         avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
         locale = text.get_locale(ctx)
 
-        view = NetworkActionView(self, ctx, result)
+        target_view = getattr(ctx, '_network_target_view', 'overview')
+        view = NetworkActionView(self, ctx, result, initial_view=target_view)
+        if target_view == 'market':
+            await view._refresh_market_data()
+            view._rebuild_components()
+
         kwargs: dict[str, Any] = {
             'view': view,
             'allowed_mentions': discord.AllowedMentions.none(),
@@ -542,15 +743,15 @@ class Network(BaseGameCog):
             view.message = getattr(msg, 'message', None) or msg
         except Exception as e:
             logger.exception("Échec envoi V2 components network, repli sur embed V1: %s", e)
-            embed, file = build_overview_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
+            embed = self._build_network_embed(ctx, result, view_name=target_view)
             fb_view = discord.ui.View()
             fb_kwargs: dict[str, Any] = {
                 'embed': embed,
                 'view': fb_view,
                 'allowed_mentions': discord.AllowedMentions.none(),
             }
-            if file:
-                fb_kwargs['file'] = file
+            if view.current_file:
+                fb_kwargs['file'] = view.current_file
             if getattr(ctx, 'interaction', None):
                 msg = await ctx.respond(**fb_kwargs)
             else:

@@ -1,10 +1,8 @@
 """Commande /market et !market — Consultation du cours dynamique et graphiques.
 
 Fournit :
-1. Vue par défaut (Niveau 1) : Embed sobre Root OS, cours, sparkline Unicode, variation,
-   contributions BTC/ETH/SOL et boutons d'interaction. Aucun fichier image n'est transféré par défaut.
-2. Vue graphique (Niveau 2) : Sur demande explicite, rendu haute résolution aux couleurs Root OS
-   généré hors event-loop, mis en cache sur disque et envoyé de façon éphémère.
+1. Vue par défaut (Niveau 1) : Embed sobre Root OS, cours en direct, statut du flux et boutons d'interaction.
+2. Vue graphique (Niveau 2) : Rendu haute résolution aux couleurs Root OS mis en cache sur disque.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -1156,7 +1154,7 @@ class Market(BaseGameCog):
         return embed, view
 
     # ── Rendu et Données ─────────────────────────────────────────────────────
-    async def _build_market_display(self, ctx, period: str):
+    async def _build_market_display(self, ctx, period: str = '24h', player_balance: dict | None = None):
         """Construit l'embed de niveau 1 (sans image PNG) et la vue."""
         state = await self.service.get_market_state() or {}
         price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
@@ -1172,28 +1170,39 @@ class Market(BaseGameCog):
         series = await self.service.get_market_series(since)
         prices = [p['price_after'] for p in series] if series else [price]
 
-        # Dernières contributions crypto (issues du dernier point d'historique)
-        if series:
-            last_entry = series[-1]
-            btc = f"{Decimal(str(last_entry.get('btc_pct', 0))):+.2f}%"
-            eth = f"{Decimal(str(last_entry.get('eth_pct', 0))):+.2f}%"
-            sol = f"{Decimal(str(last_entry.get('sol_pct', 0))):+.2f}%"
-        else:
-            btc = eth = sol = "+0.00%"
-
         # Horodatage Discord
         ts_val = int(state.get('observed_at').replace(tzinfo=timezone.utc).timestamp()) if state.get('observed_at') else int(datetime.now(timezone.utc).timestamp())
 
-        # Source joueur anonymisée (aucune mention d'exchange externe)
-        display_source = "Index Crypto" if "binance" in str(source).lower() or source in ('seed', None, '') else str(source)
+        # Source joueur anonymisée (aucune mention d'exchange externe ni de crypto réelle)
+        display_source = "Index Marché" if "binance" in str(source).lower() or "crypto" in str(source).lower() or source in ('seed', None, '') else str(source)
         status_line = text.get(ctx, 'g_market_status_delayed') if status == 'delayed' else text.get(ctx, 'g_market_status_live')
+
+        # Récupération du solde joueur
+        author = getattr(ctx, 'author', None) or getattr(ctx, 'user', None)
+        bal_line = None
+        if player_balance is not None:
+            bal_usd = text.format_usd(player_balance.get('dollars', 0))
+            bal_rtm = text.format_rtm(player_balance.get('rootium', 0))
+            bal_line = text.get(ctx, 'g_market_player_balance', usd=bal_usd, rtm=bal_rtm)
+        elif author:
+            try:
+                bal = await self.service.get_player_balance(author.id)
+                if bal:
+                    bal_usd = text.format_usd(bal.get('dollars', 0))
+                    bal_rtm = text.format_rtm(bal.get('rootium', 0))
+                    bal_line = text.get(ctx, 'g_market_player_balance', usd=bal_usd, rtm=bal_rtm)
+            except Exception:
+                pass
 
         lines = [
             text.get(ctx, 'g_market_rate', rate=text.format_usd(price)),
-            text.get(ctx, 'g_market_contributions', btc=btc, eth=eth, sol=sol),
+        ]
+        if bal_line:
+            lines.append(bal_line)
+        lines.extend([
             f"> 📶 **Statut** : {status_line}",
             text.get(ctx, 'g_market_meta', ts=ts_val, source=display_source),
-        ]
+        ])
 
         embed_state = VisualState.ATTENTION if status == 'delayed' else VisualState.CONSULTATION
         embed = RootEmbed(

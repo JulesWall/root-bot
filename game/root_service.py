@@ -127,6 +127,12 @@ class RootService:
             readonly=True,
         )
 
+    async def get_player_balance(self, discord_id: int) -> dict | None:
+        """Récupère les soldes USD et RTM d'un joueur (lecture seule)."""
+        def _get(tx):
+            return tx.one("SELECT dollars, rootium FROM players WHERE discord_id = %s", (discord_id,))
+        return await self.database.run(_get, readonly=True)
+
     async def list_market_alerts(self, discord_id: int) -> list[dict]:
         """Récupère les alertes de cours configurées par un joueur (lecture seule)."""
         from game.db.market_alerts import MarketAlerts

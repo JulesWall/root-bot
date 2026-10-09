@@ -164,6 +164,7 @@ text = {
     'g_error_convert_usage': '> ⚠️ **Invalid Syntax** · Usage: `{prefix}market sell <amount|all>` or `{prefix}market buy <amount|all>`\n🔹 Buy and sell Rootium at dynamic market rate (1% fee).\n\n💡 **Examples**:\n• `{prefix}market buy 0.0005`\n• `{prefix}market sell all`',
     'g_market_title': 'Market Terminal · RTM / USD',
     'g_market_rate': '> 📈 **Current Rate**: **1 RTM = {rate} USD**',
+    'g_market_player_balance': '> 💼 **Wallet**: **{usd} USD** · **{rtm} RTM**',
     'g_market_change': '> 📊 **Change ({period})**: **{change_str}**',
     'g_market_sparkline': '> 📉 **Trend**: `{sparkline}` ({direction})',
     'g_market_contributions': '> 🌐 **Contributions (15m)**: BTC **{btc}** · ETH **{eth}** · SOL **{sol}**',

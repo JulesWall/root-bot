@@ -856,7 +856,7 @@ COMMANDS = {
         "name": "market",
         "category": "network",
         "title": "📈 `/market` — Terminal de marché, achat & vente de RTM",
-        "description": "Consulte le cours dynamique du Rootium indexé sur BTC, ETH et SOL, les graphiques, et négocie tes devises (achat USD➔RTM, vente RTM➔USD avec 1% de frais).",
+        "description": "Consulte le cours dynamique du Rootium, les graphiques en temps réel, et négocie tes devises (achat USD➔RTM, vente RTM➔USD avec 1% de frais).",
         "slash_syntax": "/market [period:24h|7d|30d]",
         "text_syntax": "{prefix}market [24h|7d|30d|buy|sell|chart|alerts|autosell]",
         "parameters": (

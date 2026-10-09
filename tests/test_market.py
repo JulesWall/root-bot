@@ -1025,6 +1025,65 @@ class MarketTradeAndBlockchainTests(unittest.TestCase):
             self.assertIn("USD    2,500", call_content)
             self.assertIn("FEE    25", call_content)
 
+    def test_market_display_shows_player_balance(self):
+        import asyncio
+        from commands.game.market import Market
+        bot = MagicMock()
+        mock_service = MagicMock()
+        mock_service.get_market_state = AsyncMock(return_value={
+            'price_usd': Decimal('40000.00'),
+            'status': 'live',
+            'source': 'Index Marché',
+            'observed_at': datetime(2026, 1, 1, 12, 0),
+        })
+        mock_service.get_market_series = AsyncMock(return_value=[])
+        mock_service.get_player_balance = AsyncMock(return_value={
+            'dollars': Decimal('1234.50'),
+            'rootium': Decimal('0.05000'),
+        })
+        bot.root_service = mock_service
+        cog = Market(bot)
+        mock_ctx = MagicMock()
+        mock_ctx.author.id = 12345
+        mock_ctx.user = None
+        mock_ctx.locale = 'fr'
+
+        with patch('commands.game.market.get_or_render_chart', AsyncMock(return_value=Path(__file__))):
+            file, embed, view = asyncio.run(cog._build_market_display(mock_ctx, '24h'))
+            self.assertIn("1,234.50 USD", embed.description)
+            self.assertIn("0.05000 RTM", embed.description)
+
+    def test_network_has_market_button_and_page(self):
+        import asyncio
+        from commands.game.network import Network, NetworkActionView
+        from utils.network_display import build_market_embed, build_market_container
+        bot = MagicMock()
+        cog = Network(bot)
+        mock_ctx = MagicMock()
+        mock_ctx.author.id = 12345
+        mock_ctx.user = None
+        mock_ctx.locale = 'fr'
+
+        result = {
+            'discord_id': 12345,
+            'dollars': Decimal('2000.00'),
+            'rootium': Decimal('0.10000'),
+            'firewall_level': 1,
+            'mining_state': {'buffer': Decimal('0')},
+        }
+
+        async def _run():
+            view = NetworkActionView(cog, mock_ctx, result)
+            market_btn = next((c for c in view.children if getattr(c, 'label', None) in ('Marché', 'Market')), None)
+            self.assertIsNotNone(market_btn)
+
+            embed = cog._build_network_embed(mock_ctx, result, view_name='market')
+            self.assertTrue("Terminal de Marché" in embed.title or "Market Terminal" in embed.title)
+            self.assertIn("2,000 USD", embed.description)
+            self.assertIn("0.10000 RTM", embed.description)
+
+        asyncio.run(_run())
+
 
 if __name__ == '__main__':
     unittest.main()
