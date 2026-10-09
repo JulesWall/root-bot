@@ -62,16 +62,6 @@ class MarketView(discord.ui.View):
             btn.callback = self._make_period_callback(p)
             self.add_item(btn)
 
-        # Bouton Graphique
-        btn_chart = discord.ui.Button(
-            label=text.get(self.ctx, 'g_market_btn_chart'),
-            emoji=get_button_emoji('root_production') or '📊',
-            style=discord.ButtonStyle.secondary,
-            custom_id="market_btn_chart",
-        )
-        btn_chart.callback = self._on_chart_click
-        self.add_item(btn_chart)
-
         # Bouton Alertes
         btn_alerts = discord.ui.Button(
             label=text.get(self.ctx, 'g_market_btn_alerts'),
@@ -87,15 +77,15 @@ class MarketView(discord.ui.View):
             # Les modifications de période dans un message public sont éphémères pour les non-auteurs
             if interaction.user.id != self.ctx.author.id:
                 await interaction.response.defer(ephemeral=True)
-                embed, view = await self.cog._build_market_display(self.ctx, period)
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                file, embed, view = await self.cog._build_market_display(self.ctx, period)
+                await interaction.followup.send(embed=embed, file=file, view=view, ephemeral=True)
                 return
 
             await interaction.response.defer()
             self.current_period = period
             self._build_buttons()
-            embed, _ = await self.cog._build_market_display(self.ctx, period)
-            await interaction.message.edit(embed=embed, view=self)
+            file, embed, _ = await self.cog._build_market_display(self.ctx, period)
+            await interaction.message.edit(embed=embed, file=file, attachments=[], view=self)
 
         return callback
 
@@ -367,9 +357,9 @@ class MarketAlertsView(discord.ui.View):
 
     async def _on_back_click(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        embed, view = await self.cog._build_market_display(self.ctx, '24h')
+        file, embed, view = await self.cog._build_market_display(self.ctx, '24h')
         if self.message:
-            await self.message.edit(embed=embed, view=view)
+            await self.message.edit(embed=embed, file=file, attachments=[], view=view)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         checks = Check()
@@ -417,8 +407,9 @@ class Market(BaseGameCog):
     ):
         """Affiche le terminal de marché RTM avec la période sélectionnée."""
         await self._prefetch_lang(ctx.author.id)
-        embed, view = await self._build_market_display(ctx, period)
-        msg = await ctx.respond(embed=embed, view=view)
+        embed_data = await self._build_market_display(ctx, period)
+        file, embed, view = embed_data
+        msg = await ctx.respond(embed=embed, file=file, view=view)
         if hasattr(msg, 'message') and msg.message:
             view.message = msg.message
         elif isinstance(msg, discord.Message):
@@ -450,8 +441,8 @@ class Market(BaseGameCog):
         if period_clean not in PERIODS:
             period_clean = '24h'
 
-        embed, view = await self._build_market_display(ctx, period_clean)
-        msg = await ctx.send(embed=embed, view=view)
+        file, embed, view = await self._build_market_display(ctx, period_clean)
+        msg = await ctx.send(embed=embed, file=file, view=view)
         view.message = msg
 
     async def _build_alerts_display(self, ctx, user_id: int):
@@ -537,8 +528,8 @@ class Market(BaseGameCog):
         # Horodatage Discord
         ts_val = int(state.get('observed_at').replace(tzinfo=timezone.utc).timestamp()) if state.get('observed_at') else int(datetime.now(timezone.utc).timestamp())
 
-        # Assemblage des lignes de l'embed
-        status_line = text.get(ctx, 'g_market_status_delayed') if status == 'delayed' else text.get(ctx, 'g_market_status_live')
+        # Source joueur anonymisée (aucune mention d'exchange externe)
+        display_source = "Index Crypto" if "binance" in str(source).lower() or source in ('seed', None, '') else str(source)
 
         lines = [
             text.get(ctx, 'g_market_rate', rate=text.format_usd(price)),
@@ -546,7 +537,7 @@ class Market(BaseGameCog):
             text.get(ctx, 'g_market_sparkline', sparkline=spark, direction=direction),
             text.get(ctx, 'g_market_contributions', btc=btc, eth=eth, sol=sol),
             f"> 📶 **Statut** : {status_line}",
-            text.get(ctx, 'g_market_meta', ts=ts_val, source=source),
+            text.get(ctx, 'g_market_meta', ts=ts_val, source=display_source),
         ]
 
         embed_state = VisualState.ATTENTION if status == 'delayed' else VisualState.CONSULTATION
@@ -559,8 +550,14 @@ class Market(BaseGameCog):
             footer=f"ROOT OS · Marché",
         )
 
+        # Rendu ou récupération en cache du graphique (aucun recalcul si déjà en cache disque)
+        series_for_chart = series if series else [{'market_ts': now_utc, 'price_after': price}]
+        chart_path = await get_or_render_chart(series_for_chart, period, display_source)
+        file = discord.File(chart_path, filename=f"rtm_chart_{period}.png")
+        embed.set_image(url=f"attachment://rtm_chart_{period}.png")
+
         view = MarketView(self, ctx, current_period=period)
-        return embed, view
+        return file, embed, view
 
     async def _generate_chart_file(self, ctx, period: str):
         """Génère l'objet discord.File avec l'image PNG et un embed résumé."""
