@@ -821,17 +821,30 @@ class Macro(BaseGameCog):
                     )
 
             elif method == "convert":
-                from commands.game.convert import DEX_ADDRESS
+                from commands.game.market import DEX_ADDRESS
                 rtm_val = Decimal(str(result.get("rtm_amount", 0)))
+                action = result.get("action", "sell")
                 if rtm_val > 0 and author_id:
-                    await bot_logger.log_blockchain_transaction(
-                        from_id=author_id,
-                        to_address=DEX_ADDRESS,
-                        rtm_amount=rtm_val,
-                        tx_type="SELL TOKEN",
-                        usd_amount=result.get("usd_amount"),
-                        from_name=author_name,
-                    )
+                    if action == "buy":
+                        await bot_logger.log_blockchain_transaction(
+                            from_id=DEX_ADDRESS,
+                            to_address=str(author_id),
+                            rtm_amount=rtm_val,
+                            tx_type="BUY TOKEN",
+                            usd_amount=result.get("gross_usd"),
+                            fee_usd=result.get("fee_usd"),
+                            to_name=author_name,
+                        )
+                    else:
+                        await bot_logger.log_blockchain_transaction(
+                            from_id=author_id,
+                            to_address=DEX_ADDRESS,
+                            rtm_amount=rtm_val,
+                            tx_type="SELL TOKEN",
+                            usd_amount=result.get("gross_usd"),
+                            fee_usd=result.get("fee_usd"),
+                            from_name=author_name,
+                        )
 
             elif method == "compile":
                 from commands.game.compile import COMPILE_ADDRESSES

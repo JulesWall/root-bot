@@ -1,6 +1,6 @@
 # Emojis Root OS
 
-19 PNG transparents en 128 x 128, adaptés à la charte ROOT OS et lisibles en petit dans Discord.
+20 PNG transparents en 128 x 128, adaptés à la charte ROOT OS et lisibles en petit dans Discord.
 
 ## Fichiers
 
@@ -8,7 +8,7 @@
 - `apercu.png` : planche de presentation, avec un exemple a 32 pixels pour chaque symbole.
 - `manifest.json` : noms, usages, couleurs, dimensions, poids et sources.
 - `sources-svg/` : sources vectorielles pour régénérer les pictogrammes.
-- `build_custom_emojis.py` : régénère les deux nouveaux emojis ROOT OS, leurs PNG, le manifeste et l’aperçu.
+- `build_custom_emojis.py` : régénère les emojis ROOT OS originaux, la variante rouge, le manifeste et l’aperçu.
 - `LICENSE-LUCIDE.txt` : licence et attribution a conserver lors du partage du pack.
 
 ## Import
@@ -21,8 +21,9 @@ Pour les utiliser dans les textes du bot, la syntaxe est `<:root_firewall:ID_DIS
 
 - `root_verrou` : profil protégé par un bouclier et un cadenas ; violet réservé aux dégâts critiques.
 - `root_usd` : pièce avec symbole dollar pour les rémunérations en USD.
+- `root_temps_rouge` : variante rouge de l’horloge turquoise, avec le même dessin.
 
-Ces deux nouveaux dessins sont des sources vectorielles originales, réalisées dans la même grammaire de traits que le pack existant. Exécuter `build_custom_emojis.py` avec Pillow disponible pour recréer les images et la planche d’aperçu.
+Les pictogrammes `root_verrou` et `root_usd` sont des sources vectorielles originales, réalisées dans la même grammaire de traits que le pack existant. La variante rouge reprend le dessin Lucide de `root_temps`. Exécuter `build_custom_emojis.py` avec Pillow disponible pour recréer les images et la planche d’aperçu.
 
 ## Direction visuelle
 

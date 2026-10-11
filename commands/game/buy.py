@@ -507,8 +507,20 @@ class Buy(BaseGameCog):
             await self._prefetch_lang(ctx.author.id)
             return await self._send_catalog(ctx)
 
-        valid_kinds = {'mining', 'attack', 'defense', 'bay_defense'}
         cleaned_kind = kind.lower().strip()
+
+        if cleaned_kind in ('rtm', 'rootium'):
+            market_cog = ctx.bot.get_cog('Market')
+            if market_cog:
+                amount = args[0] if args else None
+                if not amount:
+                    prefix = getattr(ctx, 'clean_prefix', None) or getattr(ctx, 'prefix', '!')
+                    return await ctx.send(text.get(ctx, 'g_error_market_usage', prefix=prefix))
+                confirm = len(args) > 1 and str(args[1]).lower() in ('confirm', 'yes', 'oui', 'c')
+                is_all = amount.lower() in ('all', 'tout', 'max')
+                return await market_cog._invoke(ctx, 'convert', action='buy', amount=amount, all=is_all, confirm=confirm)
+
+        valid_kinds = {'mining', 'attack', 'defense', 'bay_defense'}
 
         if cleaned_kind not in valid_kinds:
             await self._prefetch_lang(ctx.author.id)

@@ -45,6 +45,7 @@ ACTION_EMOJIS = {
     'contract': 'root_operations',
     'rmd': 'root_temps',
     'macro': 'root_logiciels',
+    'market': 'root_bilan',
 }
 
 

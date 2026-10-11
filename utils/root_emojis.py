@@ -41,6 +41,7 @@ ALL_EMOJI_NAMES = {
     'root_firewall',  # Ressource historique
     'root_verrou',
     'root_usd',
+    'root_temps_rouge',
 }
 
 DEFAULT_EMOJI_IDS: dict[str, tuple[int, bool]] = {
@@ -63,6 +64,7 @@ DEFAULT_EMOJI_IDS: dict[str, tuple[int, bool]] = {
     'root_temps': (1554181059011416205, False),
     'root_verrou': (1554180918154104984, False),
     'root_usd': (1554180904329420893, False),
+    'root_temps_rouge': (1554181059011416205, False),
 }
 
 # Registre interne pré-rempli avec les identifiants Discord réels
@@ -143,6 +145,7 @@ FALLBACK_EMOJIS = {
     'root_bilan': '💵',
     'root_verrou': '🔒',
     'root_usd': '💵',
+    'root_temps_rouge': '⏳',
 }
 
 

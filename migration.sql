@@ -36,3 +36,109 @@ CREATE TABLE IF NOT EXISTS macro_runs (
 
 -- Migration SQL : Procédure de sauvegarde et dégâts critiques PvP
 ALTER TABLE players ADD COLUMN critical_lock_until DATETIME(6) NULL DEFAULT NULL;
+
+-- Migration SQL : Cours dynamique du RTM (etat courant + historique 15 min)
+CREATE TABLE IF NOT EXISTS rtm_market_state (
+    id           TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+    price_usd    DECIMAL(24,8) NOT NULL,
+    market_ts    DATETIME(0)   NOT NULL,
+    observed_at  DATETIME(6)   NOT NULL,
+    status       VARCHAR(16)   NOT NULL DEFAULT 'live',
+    source       VARCHAR(32)   NOT NULL,
+    CHECK (id = 1),
+    CHECK (price_usd > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO rtm_market_state (id, price_usd, market_ts, observed_at, status, source)
+VALUES (1, 43567, UTC_TIMESTAMP(), UTC_TIMESTAMP(6), 'seed', 'seed');
+
+CREATE TABLE IF NOT EXISTS rtm_market_history (
+    market_ts     DATETIME(0)   NOT NULL PRIMARY KEY,
+    price_before  DECIMAL(24,8) NOT NULL,
+    price_after   DECIMAL(24,8) NOT NULL,
+    btc_pct       DECIMAL(12,6) NOT NULL,
+    eth_pct       DECIMAL(12,6) NOT NULL,
+    sol_pct       DECIMAL(12,6) NOT NULL,
+    avg_pct       DECIMAL(12,6) NOT NULL,
+    capped        TINYINT(1)    NOT NULL DEFAULT 0,
+    source        VARCHAR(32)   NOT NULL,
+    created_at    DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration SQL : Alertes de cours du RTM (usage unique)
+CREATE TABLE IF NOT EXISTS rtm_price_alerts (
+    id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id    BIGINT UNSIGNED NOT NULL,
+    direction     ENUM('above','below') NOT NULL,
+    threshold_usd DECIMAL(24,8) NOT NULL,
+    enabled       TINYINT(1) NOT NULL DEFAULT 1,
+    created_at    DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_alert (discord_id, direction, threshold_usd),
+    INDEX idx_alert_enabled (enabled),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration SQL : Vente automatique de Rootium (RTM)
+CREATE TABLE IF NOT EXISTS rtm_auto_sell_rules (
+    id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id       BIGINT UNSIGNED NOT NULL,
+    direction        ENUM('above','below') NOT NULL,
+    threshold_usd    DECIMAL(24,8) NOT NULL,
+    mode             ENUM('fixed','percent') NOT NULL DEFAULT 'fixed',
+    amount_rtm       DECIMAL(20,5) NULL DEFAULT NULL,
+    percent          DECIMAL(5,2) NULL DEFAULT NULL,
+    max_rtm_per_run  DECIMAL(20,5) NULL DEFAULT NULL,
+    cooldown_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+    repeat_mode      ENUM('once','repeat') NOT NULL DEFAULT 'once',
+    enabled          TINYINT(1) NOT NULL DEFAULT 1,
+    last_run_at      DATETIME(6) NULL DEFAULT NULL,
+    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_auto_sell_eligible (enabled, direction, threshold_usd),
+    INDEX idx_auto_sell_user (discord_id),
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rtm_auto_sell_runs (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    rule_id     BIGINT UNSIGNED NOT NULL,
+    discord_id  BIGINT UNSIGNED NOT NULL,
+    market_ts   DATETIME(0) NOT NULL,
+    rate_usd    DECIMAL(24,8) NOT NULL,
+    rtm_amount  DECIMAL(20,5) NOT NULL,
+    usd_amount  DECIMAL(24,2) NOT NULL,
+    created_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_rule_cycle (rule_id, market_ts),
+    INDEX idx_runs_user (discord_id, created_at),
+    FOREIGN KEY (rule_id) REFERENCES rtm_auto_sell_rules(id) ON DELETE CASCADE,
+    FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration SQL : Suivi économique du marché (achats RTM et frais de marché)
+ALTER TABLE economy_hourly ADD COLUMN market_buys BIGINT UNSIGNED NOT NULL DEFAULT 0;
+ALTER TABLE economy_hourly ADD COLUMN market_bought_rtm DECIMAL(38,5) NOT NULL DEFAULT 0;
+ALTER TABLE economy_hourly ADD COLUMN market_spent_usd DECIMAL(38,2) NOT NULL DEFAULT 0;
+ALTER TABLE economy_hourly ADD COLUMN market_fees_usd DECIMAL(38,2) NOT NULL DEFAULT 0;
+
+-- Migration SQL : Ordres automatiques (Achat & Vente) et suppression de l'historique transactionnel superflu
+ALTER TABLE rtm_auto_sell_rules ADD COLUMN action ENUM('sell','buy') NOT NULL DEFAULT 'sell' AFTER discord_id;
+ALTER TABLE rtm_auto_sell_rules ADD COLUMN last_run_market_ts DATETIME(0) NULL DEFAULT NULL AFTER last_run_at;
+DROP TABLE IF EXISTS rtm_auto_sell_runs;
+
+-- Migration SQL : Nettoyage des éventuelles ruptures de continuité et synchronisation du marché
+DELETE h1 FROM rtm_market_history h1
+JOIN rtm_market_history h2 ON h2.market_ts = DATE_SUB(h1.market_ts, INTERVAL 15 MINUTE)
+WHERE ABS(h1.price_before - h2.price_after) > 10.0;
+
+UPDATE rtm_market_state s
+JOIN (
+    SELECT price_after, market_ts, source 
+    FROM rtm_market_history 
+    ORDER BY market_ts DESC 
+    LIMIT 1
+) h
+SET s.price_usd = h.price_after, s.market_ts = h.market_ts, s.source = h.source, s.status = 'live', s.observed_at = UTC_TIMESTAMP(6)
+WHERE s.id = 1;
+
+-- Migration SQL : Suppression du délai de rappel pour les alertes de cours (alertes à usage unique supprimées dès déclenchement)
+ALTER TABLE rtm_price_alerts DROP COLUMN cooldown_minutes;
+

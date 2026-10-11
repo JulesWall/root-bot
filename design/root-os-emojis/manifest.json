@@ -169,5 +169,14 @@
     "bytes": 9867,
     "source": "Original ROOT OS icon, built from the matching SVG source in this pack",
     "size": 128
+  },
+  {
+    "name": "root_temps_rouge",
+    "usage": "Horloge rouge",
+    "color": "#FF5A5F",
+    "file": "png/root_temps_rouge.png",
+    "bytes": 3233,
+    "source": "Color variant of root_temps; original Lucide shape preserved",
+    "size": 128
   }
 ]

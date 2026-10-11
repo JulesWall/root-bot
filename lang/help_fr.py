@@ -100,8 +100,8 @@ PAGES = {
             "Ouvre la boutique et choisis un module de minage accessible.\n\n"
             "**3. Récupère ta production — `/claim`**\n"
             "Tes mineurs accumulent du Rootium. Quand la RAM est pleine, le minage s'arrête.\n\n"
-            "**4. Finance la suite — `/convert` et `/event`**\n"
-            "Convertis une partie de tes RTM en dollars et participe aux événements.\n\n"
+            "**4. Finance la suite — `/market` et `/event`**\n"
+            "Vends ou achète des RTM au cours dynamique et participe aux événements.\n\n"
             "**5. Développe ton réseau — `/upgrade`**\n"
             "Améliore ton infrastructure pour débloquer du matériel avancé (attention : le niveau 1 active le PvP !).\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
@@ -121,8 +121,8 @@ PAGES = {
             "Ouvre la boutique et choisis un module de minage accessible.\n\n"
             "**3. Récupère ta production — `{prefix}claim`**\n"
             "Tes mineurs accumulent du Rootium. Quand la RAM est pleine, le minage s'arrête.\n\n"
-            "**4. Finance la suite — `{prefix}convert` et `{prefix}event`**\n"
-            "Convertis une partie de tes RTM en dollars et participe aux événements.\n\n"
+            "**4. Finance la suite — `{prefix}market` et `{prefix}event`**\n"
+            "Vends ou achète des RTM au cours dynamique et participe aux événements.\n\n"
             "**5. Développe ton réseau — `{prefix}upgrade`**\n"
             "Améliore ton infrastructure pour débloquer du matériel avancé (attention : le niveau 1 active le PvP !).\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
@@ -137,14 +137,14 @@ PAGES = {
     "all": {
         "title": "📜 ROOT — Toutes les commandes",
         "body_slash": (
-            "Index complet des 29 commandes publiques de Root.\n\n"
+            "Index complet des 28 commandes publiques de Root.\n\n"
             "**⛏️ Développer mon réseau**\n"
             "• **/network** — Créer ou consulter mon réseau et mes soldes\n"
             "• **/buy** — Acheter un module (minage, attaque, défense)\n"
             "• **/claim** — Récupérer le Rootium miné et libérer la RAM\n"
             "• **/hourly** — Réclamer ma prime horaire en dollars et faire monter le combo\n"
             "• **/contract** — Consulter et accepter des missions rémunérées avec Root CyberSec\n"
-            "• **/convert** — Vendre du Rootium contre des dollars USD\n"
+            "• **/market** — Consulter le cours dynamique, graphiques, achat et vente de Rootium\n"
             "• **/upgrade** — Améliorer le niveau d'infrastructure\n"
             "• **/macro** — Automatiser des routines de commandes séquentielles\n\n"
             "**⚔️ Attaquer et me défendre**\n"
@@ -182,7 +182,7 @@ PAGES = {
             "• **{prefix}claim** (alias `{prefix}cl`) — Récupérer le Rootium miné\n"
             "• **{prefix}hourly** (alias `{prefix}hr`) — Réclamer ma prime horaire en dollars\n"
             "• **{prefix}contract** — Accepter des missions rémunérées garanties\n"
-            "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) — Vendre des RTM\n"
+            "• **{prefix}market** (alias `{prefix}mk`) — Consulter le cours, graphiques, acheter et vendre des RTM\n"
             "• **{prefix}upgrade** — Améliorer le niveau d'infrastructure\n"
             "• **{prefix}macro** (alias `{prefix}mac`) — Automatiser des routines de commandes\n\n"
             "**⚔️ Attaquer et me défendre**\n"
@@ -222,7 +222,7 @@ PAGES = {
             "• **/claim** : Récupère le Rootium miné dans ton solde et libère la mémoire RAM.\n"
             "• **/hourly** : Réclame ta prime horaire et fais monter ton combo pour décupler tes récompenses en USD.\n"
             "• **/contract** : Travaille pour Root CyberSec et accomplis des missions garanties pour un revenu régulier.\n"
-            "• **/convert** : Convertis tes RTM en dollars USD au cours de change actuel.\n"
+            "• **/market** : Consulte le cours dynamique, graphiques, et négocie (achète/vends) du RTM.\n"
             "• **/upgrade** : Lance l'amélioration de ton niveau d'infrastructure.\n"
             "• **/macro** : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
@@ -234,7 +234,7 @@ PAGES = {
             "• **{prefix}claim** (alias `{prefix}cl`) : Récupère le Rootium miné et libère la RAM.\n"
             "• **{prefix}hourly** (alias `{prefix}hr`) : Réclame ta prime horaire et entretiens ton combo.\n"
             "• **{prefix}contract** : Accepte des contrats de sécurité informatique rémunérés en USD.\n"
-            "• **{prefix}convert** (alias `{prefix}cv` / `{prefix}sell`) : Vends tes RTM en USD.\n"
+            "• **{prefix}market** (alias `{prefix}mk`) : Consulte le cours, graphiques, ou échange des RTM (`buy`/`sell`).\n"
             "• **{prefix}upgrade** : Lance l'amélioration de ton infrastructure.\n"
             "• **{prefix}macro** (alias `{prefix}mac`) : Automatise tes routines en programmant jusqu'à 5 actions séquentielles.\n\n"
             "👉 *Sélectionne une commande dans le menu déroulant ci-dessous pour voir sa fiche détaillée.*"
@@ -457,25 +457,6 @@ COMMANDS = {
         "advice": "Tu peux aussi utiliser les boutons interactifs sous l'interface pour accepter un contrat ou récupérer ta paye en un clic.",
         "aliases": ["{prefix}co"],
         "linked_commands": ["network", "hourly", "buy"],
-    },
-    "convert": {
-        "name": "convert",
-        "category": "network",
-        "title": "💱 `/convert` — Convertir mes RTM en dollars",
-        "description": "Vends du Rootium contre des dollars USD selon le taux de change dynamique du marché.",
-        "slash_syntax": "/convert amount:<montant|all> [confirm:confirm]",
-        "text_syntax": "{prefix}convert <montant|all> [confirm]",
-        "parameters": (
-            "• `amount` : Quantité exacte de Rootium à vendre, ou `all` pour convertir l'intégralité de ton solde RTM.\n"
-            "• `confirm` : Exécute immédiatement la vente au cours actuel sans devis."
-        ),
-        "slash_example": "/convert amount:0.00002",
-        "text_example": "{prefix}convert 0.00002",
-        "example_note": "Pour tout convertir : `/convert amount:all` ou `{prefix}convert all`.",
-        "prerequisites": "Un réseau et un solde RTM suffisant.",
-        "advice": "Conserve toujours une réserve de Rootium : elle est requise pour fabriquer des ATK (`/compile`) et lancer des scans (`/scan`).",
-        "aliases": ["{prefix}cv", "Entrée alternative texte : `{prefix}sell <montant|all> [confirm]`"],
-        "linked_commands": ["buy", "upgrade"],
     },
     "upgrade": {
         "name": "upgrade",
@@ -871,6 +852,27 @@ COMMANDS = {
         "aliases": ["{prefix}mac", "{prefix}macros"],
         "linked_commands": ["claim", "hourly", "buy", "upgrade", "network"],
     },
+    "market": {
+        "name": "market",
+        "category": "network",
+        "title": "📈 `/market` — Terminal de marché, achat & vente de RTM",
+        "description": "Consulte le cours dynamique du Rootium, les graphiques en temps réel, et négocie tes devises (achat USD➔RTM, vente RTM➔USD avec 1% de frais).",
+        "slash_syntax": "/market [period:24h|7d|30d]",
+        "text_syntax": "{prefix}market [24h|7d|30d|buy|sell|chart|alerts|autosell]",
+        "parameters": (
+            "• `period` : Période temporelle affichée (24h, 7d ou 30d). Par défaut : 24h.\n"
+            "• `buy <montant|all>` : Acheter du Rootium avec des dollars USD (frais 1%).\n"
+            "• `sell <montant|all>` : Vendre du Rootium contre des dollars USD (frais 1%).\n"
+            "• `chart` : Génère l'image PNG haute résolution du cours."
+        ),
+        "slash_example": "/market period:7d",
+        "text_example": "{prefix}market buy 0.0005",
+        "example_note": "Pour vendre tout ton RTM : `{prefix}market sell all`.",
+        "prerequisites": "Aucun prérequis pour consulter. Réseau et fonds requis pour acheter/vendre.",
+        "advice": "Le cours évolue toutes les 15 minutes. Négocie au meilleur moment et surveille les alertes automatiques.",
+        "aliases": ["{prefix}mk", "{prefix}sell", "{prefix}cv"],
+        "linked_commands": ["network", "buy", "upgrade"],
+    },
 }
 
 COMMAND_ALIASES = {
@@ -881,8 +883,9 @@ COMMAND_ALIASES = {
     "cl": "claim",
     "co": "contract",
     "hr": "hourly",
-    "cv": "convert",
-    "sell": "convert",
+    "cv": "market",
+    "sell": "market",
+    "mk": "market",
     "cp": "compile",
     "hk": "hack",
     "events": "event",

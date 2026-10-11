@@ -277,19 +277,32 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
     converted_rtm = _to_dec(data.get('converted_rtm'))
     converted_usd = _to_dec(data.get('converted_usd'))
     conversions = int(data.get('conversions') or 0)
+
+    market_buys = int(data.get('market_buys') or 0)
+    market_bought_rtm = _to_dec(data.get('market_bought_rtm'))
+    market_spent_usd = _to_dec(data.get('market_spent_usd'))
+    market_fees_usd = _to_dec(data.get('market_fees_usd'))
+
     trades = int(data.get('trades') or 0)
 
-    conv_str = (
-        f"{_fmt_rtm(converted_rtm)} -> {_fmt_usd(converted_usd)} ({conversions} conv.)"
+    sells_str = (
+        f"{_fmt_rtm(converted_rtm)} -> {_fmt_usd(converted_usd)} ({conversions} vente(s))"
         if conversions > 0 else "0"
     )
+    buys_str = (
+        f"{_fmt_usd(market_spent_usd)} -> {_fmt_rtm(market_bought_rtm)} ({market_buys} achat(s))"
+        if market_buys > 0 else "0"
+    )
+    fees_str = _fmt_usd(market_fees_usd) if market_fees_usd > 0 else "0 USD"
 
     prog_block = (
         "```yaml\n"
         f"Mineurs     : {tiers_str}\n"
         f"Combat      : +{attack_bought} ATK · +{defense_bought} DEF\n"
         f"Upgrades    : {upgrades_started} démarrée(s)\n"
-        f"Conversions : {conv_str}\n"
+        f"Ventes RTM  : {sells_str}\n"
+        f"Achats RTM  : {buys_str}\n"
+        f"Frais DEX   : {fees_str}\n"
         f"Échanges    : {trades} transfert(s)\n"
         "```"
     )
@@ -300,8 +313,21 @@ def _build_embed(period_hours: int, data: dict, period_start: datetime, period_e
     )
 
     # --- 6. Solde net ---
-    net_usd = event_total + grant_usd + hourly_usd + contracts_usd + _to_dec(data.get('converted_usd')) - total_usd_spent
-    net_rtm = mining_rtm - _to_dec(data.get('converted_rtm')) - total_rtm_spent
+    net_usd = (
+        event_total
+        + grant_usd
+        + hourly_usd
+        + contracts_usd
+        + converted_usd
+        - total_usd_spent
+        - market_spent_usd
+    )
+    net_rtm = (
+        mining_rtm
+        + market_bought_rtm
+        - converted_rtm
+        - total_rtm_spent
+    )
 
     usd_sign = "+" if net_usd >= 0 else "-"
     rtm_sign = "+" if net_rtm >= 0 else "-"

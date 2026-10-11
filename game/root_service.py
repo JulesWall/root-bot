@@ -71,6 +71,335 @@ class RootService:
             "[EconomyStats] Suivi actif. tracking_start=%s", tracking_start
         )
 
+    async def init_market(self) -> dict | None:
+        """Charge le cours persistant en mémoire (amorçage à `market.start_price` si absent).
+
+        Si la base est indisponible, le cours d'amorçage de math.json reste utilisé.
+        """
+        import logging
+        from game.db.market import MarketState
+
+        log = logging.getLogger(__name__)
+        try:
+            state = await self.database.run(MarketState.ensure, locks=['rtm_market'])
+        except Exception:
+            log.exception("[Market] Chargement du cours impossible, cours d'amorçage conservé.")
+            return None
+        MathConfig.set_market_rate(state['price_usd'])
+        log.info("[Market] Cours chargé : 1 RTM = %s USD (%s)", state['price_usd'], state['status'])
+        return state
+
+    async def catch_up_market(self, feed) -> dict:
+        """Rattrape l'historique du cours RTM sur les 7 derniers jours."""
+        import logging
+        from datetime import datetime, timezone
+        from decimal import Decimal
+        from game.db.market import MarketState, build_catchup_cycles
+        from game.math_config import MathConfig
+
+        log = logging.getLogger(__name__)
+        settings = MathConfig.market_settings()
+        if not settings.get('enabled'):
+            return {'status': 'disabled', 'inserted': 0}
+
+        interval = int(settings['interval_seconds'])
+        now_dt = datetime.now(timezone.utc)
+        now_sec = int(now_dt.timestamp())
+
+        # Dernier quart d'heure clos
+        latest_closed_sec = (now_sec // interval) * interval - interval
+        start_sec = latest_closed_sec - (7 * 86400)
+
+        start_dt = datetime.fromtimestamp(start_sec, tz=timezone.utc).replace(tzinfo=None)
+        latest_closed_dt = datetime.fromtimestamp(latest_closed_sec, tz=timezone.utc).replace(tzinfo=None)
+
+        all_slots = []
+        curr = start_sec
+        while curr <= latest_closed_sec:
+            all_slots.append(datetime.fromtimestamp(curr, tz=timezone.utc).replace(tzinfo=None))
+            curr += interval
+
+        # Lire la DB sur 7 jours et le dernier point antérieur
+        rows = await self.database.run(
+            lambda tx: MarketState.get_history_in_range(tx, start_dt, latest_closed_dt),
+            readonly=True,
+        )
+        row_before = await self.database.run(
+            lambda tx: MarketState.get_last_before(tx, all_slots[0]),
+            readonly=True,
+        )
+
+        # Détection et assainissement automatique de toute discontinuité d'historique (ex: redémarrage accidentel au prix de base)
+        all_check_rows = []
+        if isinstance(row_before, dict) and 'market_ts' in row_before:
+            all_check_rows.append(row_before)
+        if isinstance(rows, list):
+            all_check_rows.extend(r for r in rows if isinstance(r, dict) and 'market_ts' in r)
+
+        corrupted_from_dt = None
+        for i in range(1, len(all_check_rows)):
+            prev_r = all_check_rows[i - 1]
+            curr_r = all_check_rows[i]
+            diff_sec = (curr_r['market_ts'] - prev_r['market_ts']).total_seconds()
+            if diff_sec == interval:
+                p_before = Decimal(str(curr_r.get('price_before') or 0))
+                p_after_prev = Decimal(str(prev_r.get('price_after') or 0))
+                if abs(p_before - p_after_prev) > Decimal('0.01'):
+                    corrupted_from_dt = curr_r['market_ts']
+                    break
+
+        if corrupted_from_dt:
+            log.warning(
+                "[Market] Discontinuité d'historique détectée à partir de %s. Purge des créneaux corrompus pour recalcul propre.",
+                corrupted_from_dt,
+            )
+            def _delete_corrupted(tx):
+                tx.execute("DELETE FROM rtm_market_history WHERE market_ts >= %s", (corrupted_from_dt,))
+            await self.database.run(_delete_corrupted, locks=['rtm_market'])
+            rows = await self.database.run(
+                lambda tx: MarketState.get_history_in_range(tx, start_dt, latest_closed_dt),
+                readonly=True,
+            )
+
+        existing_entries = {r['market_ts']: r for r in rows}
+
+        missing_slots = [s for s in all_slots if s not in existing_entries]
+        if not missing_slots:
+            log.info("[Market] Aucun créneau manquant sur les 7 derniers jours.")
+            try:
+                latest_res = await self.database.run(MarketState.ensure, locks=['rtm_market'])
+                if isinstance(latest_res, dict) and latest_res.get('price_usd'):
+                    MathConfig.set_market_rate(latest_res['price_usd'])
+            except Exception:
+                pass
+            return {'status': 'up_to_date', 'inserted': 0}
+
+        log.info(
+            "[Market] Rattrapage en cours : %d créneau(x) manquant(s) identifié(s) sur 7 jours.",
+            len(missing_slots),
+        )
+
+        earliest_missing_dt = min(missing_slots)
+        since_ms = int(earliest_missing_dt.replace(tzinfo=timezone.utc).timestamp() - interval) * 1000
+
+        try:
+            candles_by_symbol = await feed.fetch_history(since_ms)
+        except Exception as exc:
+            log.warning("[Market] Récupération des bougies échouée pour le rattrapage : %s", exc)
+            return {'status': 'feed_error', 'inserted': 0, 'error': str(exc)}
+
+        if isinstance(row_before, dict) and 'price_after' in row_before:
+            initial_price = Decimal(str(row_before['price_after']))
+        else:
+            state = await self.get_market_state()
+            if state and Decimal(str(state.get('price_usd') or 0)) > 0:
+                initial_price = Decimal(str(state['price_usd']))
+            else:
+                initial_price = Decimal(str(settings.get('start_price') or 39876))
+
+        cycles_to_insert = build_catchup_cycles(
+            all_slots=all_slots,
+            existing_entries=existing_entries,
+            candles_by_symbol=candles_by_symbol,
+            initial_price=initial_price,
+            settings=settings,
+            row_before=row_before,
+        )
+
+        if not cycles_to_insert:
+            return {'status': 'up_to_date', 'inserted': 0}
+
+        source = f"{settings['exchange']}:{settings['quote_currency']}"
+        result = await self.database.run(
+            lambda tx: MarketState.save_catchup_cycles(tx, cycles_to_insert, source),
+            locks=['rtm_market'],
+        )
+        if result.get('latest_price'):
+            MathConfig.set_market_rate(result['latest_price'])
+
+        log.info(
+            "[Market] Rattrapage terminé avec succès : %d créneau(x) inséré(s), cours = %s USD.",
+            result.get('inserted', 0),
+            result.get('latest_price'),
+        )
+        return result
+
+    async def apply_market_cycle(self, market_ts, closes: dict, source: str) -> dict:
+        """Applique un cycle de marché (idempotent) et rafraîchit le cours en mémoire."""
+        from game.db.market import MarketState
+
+        result = await self.database.run(
+            lambda tx: MarketState.apply_cycle(tx, market_ts, closes, source),
+            locks=['rtm_market'],
+        )
+        MathConfig.set_market_rate(result['price'])
+        return result
+
+    async def mark_market_delayed(self) -> dict:
+        """Marque le flux de marché comme retardé sans modifier le cours."""
+        from game.db.market import MarketState
+
+        return await self.database.run(MarketState.mark_delayed, locks=['rtm_market'])
+
+    async def get_market_state(self) -> dict | None:
+        """Retourne l'état courant du marché (lecture seule)."""
+        from game.db.market import MarketState
+
+        return await self.database.run(MarketState.ensure, locks=['rtm_market'])
+
+    async def purge_market_history(self) -> int:
+        """Supprime l'historique du marché au-delà de la rétention configurée."""
+        from game.db.market import MarketState
+
+        return await self.database.run(MarketState.purge, locks=['rtm_market'])
+
+    async def get_market_series(self, since) -> list[dict]:
+        """Récupère l'historique chronologique du marché depuis `since` (lecture seule)."""
+        from game.db.market import MarketState
+
+        return await self.database.run(
+            lambda tx: MarketState.series(tx, since),
+            readonly=True,
+        )
+
+    async def get_player_balance(self, discord_id: int) -> dict | None:
+        """Récupère les soldes USD et RTM d'un joueur (lecture seule)."""
+        def _get(tx):
+            return tx.one("SELECT dollars, rootium FROM players WHERE discord_id = %s", (discord_id,))
+        return await self.database.run(_get, readonly=True)
+
+    async def list_market_alerts(self, discord_id: int) -> list[dict]:
+        """Récupère les alertes de cours configurées par un joueur (lecture seule)."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.list_for(tx, discord_id),
+            readonly=True,
+        )
+
+    async def create_market_alert(
+        self,
+        discord_id: int,
+        direction: str,
+        threshold_usd,
+        cooldown_minutes: int = 60,
+        current_price=None,
+    ) -> dict:
+        """Crée une nouvelle alerte personnelle pour un joueur."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.create(
+                tx, discord_id, direction, threshold_usd, cooldown_minutes, current_price
+            ),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def delete_market_alert(self, discord_id: int, alert_id: int) -> bool:
+        """Supprime une alerte de cours d'un joueur."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.delete(tx, discord_id, alert_id),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def toggle_market_alert(self, discord_id: int, alert_id: int, enabled: bool | None = None) -> dict:
+        """Active ou désactive une alerte de cours d'un joueur."""
+        from game.db.market_alerts import MarketAlerts
+
+        return await self.database.run(
+            lambda tx: MarketAlerts.toggle(tx, discord_id, alert_id, enabled),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def list_auto_sell_rules(self, discord_id: int) -> list[dict]:
+        """Récupère les règles de vente automatique configurées par un joueur (lecture seule)."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.list_for(tx, discord_id),
+            readonly=True,
+        )
+
+    async def create_auto_sell_rule(
+        self,
+        discord_id: int,
+        direction: str,
+        threshold_usd,
+        action: str = 'sell',
+        mode: str = 'fixed',
+        amount_rtm=None,
+        percent=None,
+        max_rtm_per_run=None,
+        cooldown_minutes: int = 60,
+        repeat_mode: str = 'once',
+        current_price=None,
+    ) -> dict:
+        """Crée un nouvel ordre automatique (achat ou vente) pour un joueur."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.create(
+                tx, discord_id, direction, threshold_usd, action, mode,
+                amount_rtm, percent, max_rtm_per_run, cooldown_minutes, repeat_mode, current_price
+            ),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def delete_auto_sell_rule(self, discord_id: int, rule_id: int) -> bool:
+        """Supprime une règle de vente automatique d'un joueur."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.delete(tx, discord_id, rule_id),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def toggle_auto_sell_rule(self, discord_id: int, rule_id: int, enabled: bool | None = None) -> dict:
+        """Active ou désactive une règle de vente automatique d'un joueur."""
+        from game.db.auto_sell import AutoSellDB
+
+        return await self.database.run(
+            lambda tx: AutoSellDB.toggle(tx, discord_id, rule_id, enabled),
+            locks=[f'player:{int(discord_id)}'],
+        )
+
+    async def process_auto_sells(self, market_ts, current_price) -> list[dict]:
+        """Évalue et exécute les règles de vente automatique pour un cycle de marché."""
+        import logging
+        from datetime import datetime
+        from game.db.auto_sell import AutoSellDB
+
+        log = logging.getLogger(__name__)
+        now_dt = datetime.utcnow()
+
+        try:
+            due_rules = await self.database.run(
+                lambda tx: AutoSellDB.get_due_rules(tx, current_price, now_dt),
+                readonly=True,
+            )
+        except Exception:
+            log.exception("[Market] Impossible de lire les règles de vente automatique")
+            return []
+
+        executed_runs = []
+        for rule in due_rules:
+            discord_id = int(rule['discord_id'])
+            try:
+                run_res = await self.database.run(
+                    lambda tx: AutoSellDB.execute_rule(
+                        tx, rule, current_price, market_ts, now_dt
+                    ),
+                    locks=[f'player:{discord_id}'],
+                )
+                if run_res:
+                    executed_runs.append(run_res)
+            except Exception:
+                log.exception("[Market] Erreur exécution vente auto joueur %s", discord_id)
+
+        return executed_runs
+
 
     async def deliver_expired_upgrades(self) -> list[dict]:
         """
