@@ -243,6 +243,7 @@ class MathConfig:
         cfg.setdefault('max_change_pct', None)
         cfg.setdefault('history_retention_days', 90)
         cfg.setdefault('fee_pct', 1.0)
+        cfg.setdefault('volatility_multiplier', 2.5)
         cfg.setdefault('alerts_enabled', True)
         cfg.setdefault('alerts_max_per_player', 5)
         cfg.setdefault('alerts_default_cooldown_minutes', 60)
@@ -258,6 +259,15 @@ class MathConfig:
         """Retourne le pourcentage de frais prélevé sur les transactions du marché (ex. 1.0)."""
         cfg = cls.market_settings()
         return Decimal(str(cfg.get('fee_pct', 1.0)))
+
+    @classmethod
+    def market_volatility_multiplier(cls) -> Decimal:
+        """Retourne le multiplicateur de volatilité appliqué à chaque bougie (défaut : 2.5)."""
+        cfg = cls.market_settings()
+        val = cfg.get('volatility_multiplier')
+        if val is None:
+            val = cls.load().get('volatility_multiplier', 2.5)
+        return Decimal(str(val))
 
     @classmethod
     def market_formula(cls, name: str, **values) -> Decimal:

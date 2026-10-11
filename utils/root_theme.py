@@ -17,6 +17,8 @@ class VisualState(str, Enum):
     CRITICAL_FAILURE = 'critical_failure'
     CANCELLED = 'cancelled'
     EXPIRED = 'expired'
+    CONFIRMATION = 'success'
+    REUSSITE = 'success'
 
 
 # Palette officielle Root OS

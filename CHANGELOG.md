@@ -10,11 +10,14 @@ Les commandes autonomes `/convert` et `!sell` ont été retirées au profit d'un
 - **Commandes rapides** : exécutez vos ordres directement en commandes texte :
   - `!market buy <montant|all> [confirm]` (ou alias `!buy`)
   - `!market sell <montant|all> [confirm]` (ou alias `!sell`, `!cv`)
+- **Stabilité** : correction d'une anomalie lors de la soumission des formulaires modaux de vente et d'achat sur le terminal.
 
-## :globe_with_meridians: **Intégration au Poste de Commande (`/network` & `!n`)**
+## :globe_with_meridians: **Poste de Commande & Navigation (`/network` & `!n`)**
 
-- **Nouvel onglet `[📈 Marché]`** : accédez au terminal de marché directement depuis votre interface réseau `/network` (`!n` ou `!n market`).
-- **Expérience complète** : affiche le graphique dynamique de la période, les cours et le portefeuille, tout en conservant les boutons d'achat/vente, d'alertes et de retour vers Accueil, Ferme, Matériel et Opérations.
+- **Refonte et fusion des rubriques** : suppression de l'onglet distinct « Matériel » ; l'ensemble des modules de défense et des accès boutique est désormais centralisé directement sur la page **Opérations** pour une vue complète de la sécurité.
+- **Épuration des Opérations** : retrait du bouton de récolte de minage sur la page Opérations, recentrant l'interface sur la surveillance et le combat.
+- **Terminal Marché optimisé** : suppression de la rangée d'onglets sur la page Marché pour mettre en valeur les commandes de trading, et remplacement du bouton de récolte par un bouton `[↩️ Retour]` vers l'accueil.
+- **Nouvel onglet `[📈 Marché]`** : accédez au terminal de marché complet directement depuis votre interface réseau (`/network` ou `!n market`).
 
 ## :receipt: **Frais de transaction de 1 % & Traçabilité Blockchain**
 
@@ -25,6 +28,7 @@ Les commandes autonomes `/convert` et `!sell` ont été retirées au profit d'un
 ## :chart_with_upwards_trend: **Cours dynamique du Rootium**
 
 Le cours **RTM / USD** évolue désormais **toutes les 15 minutes** selon l'activité et les variations du marché. Si le marché est haussier, le Rootium s'apprécie ; si le cours est stable, le cours ne bouge pas. Si le cours varie entre votre devis et votre confirmation, la transaction est sécurisée et un nouveau devis actualisé vous est proposé.
+- **Volatilité amplifiée** : la variation de chaque bougie de 15 minutes est désormais multipliée par un coefficient de volatilité (`volatility_multiplier` dans `math.json`, fixé à **×2.5** par défaut) pour offrir des mouvements de cours plus dynamiques et stimulants.
 
 Le Rootium reste une monnaie interne au jeu : aucune transaction réelle en cryptomonnaie n'est effectuée. L'équilibrage des combats (`/hack`) reste calculé sur un taux de référence stable.
 
@@ -33,63 +37,46 @@ Le Rootium reste une monnaie interne au jeu : aucune transaction réelle en cryp
 Un terminal complet permet de suivre le cours du Rootium en temps réel :
 - **Vue instantanée** : cours courant, variation sur la période (24 h, 7 j, 30 j) et statut du flux.
 - **Navigation fluide** : basculez d'une période à l'autre en un clic sur les boutons temporels (`24 h`, `7 j`, `30 j`) avec génération du graphique correspondant.
+- **Rattrapage automatique au démarrage** : le bot analyse désormais les 7 derniers jours en base et calcule tous les créneaux de 15 minutes manquants pour combler les interruptions d'activité. Même après une coupure du bot, l'historique et les graphiques restent continus, complets et fidèles au marché réel.
 
 ## :bell: **Alertes de cours personnalisées (`/market` & `!market alert`)**
 
 Tu peux désormais programmer jusqu'à **5 alertes de prix** pour être notifié en message privé dès que le Rootium franchit tes objectifs :
 - **Sens au choix** : surveillance à la hausse (`above`, ≥) ou à la baisse (`below`, ≤).
-- **Configuration intuitive** : saisie du seuil et du sens via un formulaire interactif accessible depuis le bouton **Alertes** du terminal de marché.
-- **Anti-spam & réarmement** : délai de rappel paramétrable (défaut 60 min, minimum 15 min) et réarmement automatique dès que le cours repasse de l'autre côté du seuil.
-- **Gestion complète** : consultation, activation/désactivation et suppression de tes alertes directement dans l'interface Discord.
+- **Configuration simplifiée** : saisie directe du seuil et du sens via le formulaire interactif (sans délai de rappel superflu).
+- **Usage unique & Zéro spam** : dès que l'alerte se déclenche et t'est envoyée en message privé, elle est automatiquement supprimée de la base de données.
+- **Gestion complète** : consultation, activation/désactivation et suppression de tes alertes en attente directement dans l'interface Discord.
 
-## :zap: **Ventes automatiques de Rootium (`/market` & `!market autosell`)**
+## :zap: **Ordres Automatiques Unifiés : Achat & Vente (`/market` & `/network`)**
 
-Automatise la prise de profit sur tes gains de minage avec des règles de vente intelligentes :
-- **Règles configurables (jusqu'à 3 par joueur)** : déclenchement selon un seuil en USD (`above` à la hausse ou `below` à la baisse).
-- **Montant fixe ou pourcentage du solde** : choisis de vendre une quantité précise (ex: `100 RTM`) ou une part de ton portefeuille (ex: `50 %` ou `tout`).
-- **Plafond de sécurité & récurrence** : configure un plafond maximal par vente et choisis entre un ordre unique (`once`) ou récurrent (`repeat` avec intervalle de sécurité).
-- **Exécution transactionnelle garantie** : chaque vente est convertie automatiquement au cours officiel validé du cycle, inscrite dans le journal `#blockchain` et confirmée par un reçu détaillé en message privé.
-- *Rappel : le Rootium et ses ventes sont des mécaniques virtuelles internes au jeu sans interaction avec des marchés réels.*
+Automatise tes investissements et tes prises de profit avec des ordres intelligents programmables :
+- **Un seul bouton unifié `[⚡ Ordres auto]`** : accessible sur le terminal de marché `/market` ainsi que sur la page Marché du réseau `/network`.
+- **Achat et Vente configurables (jusqu'à 3 ordres)** : choisis l'action (`buy` pour convertir des USD en RTM ou `sell` pour convertir des RTM en USD), le seuil cible en USD (`above` ≥ ou `below` ≤), et la quantité (montant fixe, pourcentage `%` ou `all`).
+- **Gestion intuitive** : badges clairs `🛒 [ACHAT]` et `💰 [VENTE]` dans l'aperçu, menu d'activation/désactivation et de suppression en un clic.
+- **Exécution transactionnelle garantie** : exécuté atomiquement au cours validé du cycle, sans historique encombrant en base de données.
+- **Notifications privées & Blockchain** : reçu détaillé envoyé en DM dès l'exécution de l'ordre (achat ou vente) et journalisation publique dans `#blockchain` (`AUTO BUY` ou `AUTO SELL`).
 
-# :rocket: Beta Update N°3
+## :zap: **Commandes rapides d'Achat et de Vente**
 
-## :shield: **Système de dégâts critiques**
+Pour les traders réactifs, des raccourcis dédiés permettent d'opérer instantanément :
+- **Vente rapide** :
+  - `!sell <montant|all> [confirm]` (alias `!vente`, `!cv`)
+  - Commande slash `/sell <amount> [confirm]`
+- **Achat rapide** :
+  - `!buyrtm <montant|all> [confirm]` (alias `!achat`, `!mbuy`)
+  - `!buy rtm <montant|all> [confirm]` (délégation automatique depuis la commande d'achat classique)
 
-Désormais lorsqu'une attaque atteint plus de 60% des modules visés, l'attaque est stoppée et la procédure de **dégâts critiques** se déclenche.
+## :wrench: **Optimisation Base de Données & Corrections**
 
-La perte est alors plafonnée à **60% des modules de la catégorie visée**, afin d'éviter une destruction trop importante. 
+- **Nettoyage SQL** : suppression des tables et historiques superflus (`rtm_auto_sell_runs`), l'idempotence des ordres automatiques étant désormais intégrée directement à la table des règles (`last_run_market_ts`).
+- **Continuité & Fiabilité du Cours de Marché** : correction définitive du redémarrage accidentel au cours d'amorçage après le rattrapage historique. Tout nouveau cycle s'enchaîne désormais strictement sur la dernière bougie historique (`price_after`). Un système d'auto-réparation assainit et recalcule automatiquement toute rupture de continuité au démarrage du bot.
+- **Synchronisation du cours** : correction de la synchronisation entre le texte de l'embed et le graphique, garantissant l'affichage immédiat du cours variable en temps réel sans blocage sur la valeur d'amorçage.
+- **Correction d'exception** : résolution de l'erreur `VisualState.CONFIRMATION` lors des validations interactives de conversion de marché.
+- *Rappel : le Rootium et ses échanges sont des mécaniques virtuelles internes au jeu sans interaction avec des marchés réels.*
 
-Suite à ce déclenchement, l'infrastructure de la cible est **verrouillée pendant 48h** et le joueur ne peut plus attaquer, être attaqué ou lancer de scan pendant cette durée.
+## :stopwatch: **Lisibilité des Événements Réseau (`/event` & `!event`)**
 
-## :robot: **Système de macros (`/macro` & `!macro`)**
-
-Ajout d'un système de macro qui permet d'exécuter plusieurs commandes en une seule. Pour cela, il faut créer vos propres macros avec la commande `/macro-create` ou `!macro create`.
-
-Il est possible de créer jusqu'à **3 macros par joueur**, contenant chacune **1 à 5 étapes**.
-
-L'exécution se fait avec `/macro nom:<nom>` ou `!macro <nom>` et le mode détaillé reste disponible avec `!macro <nom> d`.
-
-## :office: **Les Firewalls deviennent des Infrastructures (`/upgrade`)**
-
-Les Firewalls sont remplacés par les **Infrastructures de contrôle**. Cette évolution change les intitulés dans le bot et introduit six niveaux d’infrastructure :
-
-**Smartphone bricolé → PC assemblé → Station de travail → Serveur dédié → Salle des serveurs → Datacenter**
-
-Les multiplicateurs de récompenses sur les events, le `/hourly` et les contrats ont été augmentés et passent de ×1 au niveau 0 à ×15 au niveau 5 :
-
-**×1, ×1.75, ×3, ×5.25, ×9 et ×15.**
+- **Clarté des statuts indisponibles** : les événements en attente ou en recharge affichent désormais explicitement l'état `Indisponible` accompagné du pictogramme dédié Root OS **`root_temps_rouge`** (horloge rouge `#FF5A5F`), permettant d'identifier immédiatement d'un coup d'œil les défis actifs par rapport à ceux en cours de cooldown.
+- **Précision temporelle** : conservation des horodatages dynamiques Discord et des durées restantes pour savoir exactement quand chaque événement redevient disponible.
 
 
-## :desktop: **Refonte graphique complète du `/network` et des autres commandes**
-
-## :briefcase: **Refonte des contrats (`/contract`)**
-
-Le système de contrats bénéficie d'une **refonte de son interface**, avec des offres plus lisibles et une présentation inspirée d'un tableau de missions réel.
-
-Les contrats sont désormais présentés sous forme de cartes avec leur entreprise, leur durée et leur rémunération.
-
-Les **4 contrats proposés** sont tirés dynamiquement parmi différentes entreprises.
-
-## :gear: **Équilibrage de la compilation de point d'ATK (`/compile`)**
-
-Les trois méthodes de compilation ont été rééquilibrées afin de proposer des choix plus distincts, les prix ont été réduits légèrement afin de permettre que toutes les méthodes de compilation soient utiles. 

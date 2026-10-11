@@ -43,8 +43,6 @@ from utils.logger import Logger
 from utils.network_display import (
     build_farm_container,
     build_farm_embed,
-    build_hardware_container,
-    build_hardware_embed,
     build_market_container,
     build_market_embed,
     build_operations_container,
@@ -191,7 +189,7 @@ class NetworkActionView(discord.ui.DesignerView):
         self.avatar_url = author.display_avatar.url if author and hasattr(author, 'display_avatar') else None
 
         self.last_result = result
-        self.current_view = initial_view  # 'overview', 'farm', 'hardware', 'operations', 'market'
+        self.current_view = 'operations' if initial_view == 'hardware' else initial_view  # 'overview', 'farm', 'operations', 'market'
         self.market_period = '24h'
         self.market_state = None
         self.market_chart_path = None
@@ -280,13 +278,6 @@ class NetworkActionView(discord.ui.DesignerView):
         )
         farm_btn.callback = self._on_switch_farm
 
-        mat_btn = discord.ui.Button(
-            label="Matériel" if is_fr else "Hardware",
-            emoji=get_button_emoji("root_materiel") or "⚙️",
-            style=discord.ButtonStyle.secondary,
-        )
-        mat_btn.callback = self._on_switch_hardware
-
         ops_btn = discord.ui.Button(
             label="Opérations" if is_fr else "Operations",
             emoji=get_button_emoji("root_operations") or "⚔️",
@@ -307,16 +298,7 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            container.add_row(home_btn, mat_btn, ops_btn, market_btn)
-            container.add_row(claim_btn, refresh_btn)
-
-        elif self.current_view == 'hardware':
-            container, file = build_hardware_container(
-                self.last_result,
-                locale=locale,
-                display_name=self.display_name,
-            )
-            container.add_row(home_btn, farm_btn, ops_btn, market_btn)
+            container.add_row(home_btn, ops_btn, market_btn)
             container.add_row(claim_btn, refresh_btn)
 
         elif self.current_view == 'operations':
@@ -325,8 +307,8 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            container.add_row(home_btn, farm_btn, mat_btn, market_btn)
-            container.add_row(claim_btn, refresh_btn)
+            container.add_row(home_btn, farm_btn, market_btn)
+            container.add_row(refresh_btn)
 
         elif self.current_view == 'market':
             container, file = build_market_container(
@@ -376,10 +358,16 @@ class NetworkActionView(discord.ui.DesignerView):
             )
             btn_auto_sell.callback = self._on_market_auto_sell
 
-            container.add_row(home_btn, farm_btn, mat_btn, ops_btn)
+            back_btn = discord.ui.Button(
+                label="Retour" if is_fr else "Back",
+                emoji=get_button_emoji("root_retour") or "↩️",
+                style=discord.ButtonStyle.secondary,
+            )
+            back_btn.callback = self._on_switch_overview
+
             container.add_row(*p_btns)
             container.add_row(btn_buy, btn_sell, btn_alerts, btn_auto_sell)
-            container.add_row(claim_btn, refresh_btn)
+            container.add_row(back_btn, refresh_btn)
 
         else:
             # Vue standard : Accueil (Overview)
@@ -388,7 +376,7 @@ class NetworkActionView(discord.ui.DesignerView):
                 locale=locale,
                 display_name=self.display_name,
             )
-            container.add_row(farm_btn, mat_btn, ops_btn, market_btn)
+            container.add_row(farm_btn, ops_btn, market_btn)
             container.add_row(claim_btn, refresh_btn)
 
         self._container = container
@@ -428,20 +416,6 @@ class NetworkActionView(discord.ui.DesignerView):
                     await interaction.message.edit(view=self)
             except Exception:
                 logger.exception("Erreur lors du passage à la vue ferme network")
-
-    async def _on_switch_hardware(self, interaction: discord.Interaction):
-        """Bascule vers la vue Matériel."""
-        async with self.lock:
-            await interaction.response.defer()
-            self.current_view = 'hardware'
-            self._rebuild_components()
-            try:
-                if self.current_file:
-                    await interaction.message.edit(view=self, file=self.current_file, attachments=[])
-                else:
-                    await interaction.message.edit(view=self)
-            except Exception:
-                logger.exception("Erreur lors du passage à la vue matériel network")
 
     async def _on_switch_operations(self, interaction: discord.Interaction):
         """Bascule vers la vue Opérations."""
@@ -541,12 +515,18 @@ class NetworkActionView(discord.ui.DesignerView):
         self.market_period = period
         if market_cog:
             state = await market_cog.service.get_market_state() or {}
-            self.market_state = state
-            price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
             now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
             seconds_back = PERIODS.get(period, 24 * 3600)
             since = now_utc - timedelta(seconds=seconds_back)
             series = await market_cog.service.get_market_series(since)
+            if series:
+                price = Decimal(str(series[-1]['price_after']))
+                state['price_usd'] = price
+                if series[-1].get('market_ts'):
+                    state['observed_at'] = series[-1]['market_ts']
+            else:
+                price = Decimal(str(state.get('price_usd') or MathConfig.rtm_to_usd_rate()))
+            self.market_state = state
             source = state.get('source', 'seed')
             display_source = "Index Marché" if "binance" in str(source).lower() or "crypto" in str(source).lower() or source in ('seed', None, '') else str(source)
             series_for_chart = series if series else [{'market_ts': now_utc, 'price_after': price}]
@@ -688,7 +668,7 @@ class Network(BaseGameCog):
         view_aliases = {
             'overview': 'overview', 'accueil': 'overview', 'home': 'overview',
             'farm': 'farm', 'ferme': 'farm',
-            'hardware': 'hardware', 'materiel': 'hardware', 'mat': 'hardware',
+            'hardware': 'operations', 'materiel': 'operations', 'mat': 'operations',
             'operations': 'operations', 'ops': 'operations',
             'market': 'market', 'marche': 'market', 'mk': 'market',
         }
@@ -705,9 +685,7 @@ class Network(BaseGameCog):
 
         if view_name == 'farm':
             embed, _ = build_farm_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
-        elif view_name == 'hardware':
-            embed, _ = build_hardware_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)
-        elif view_name == 'operations':
+        elif view_name in ('operations', 'hardware'):
             embed, _, _ = build_operations_embed(result, locale=locale, display_name=author_name, page=page, avatar_url=avatar_url)
         elif view_name == 'market':
             embed, _ = build_market_embed(result, locale=locale, display_name=author_name, avatar_url=avatar_url)

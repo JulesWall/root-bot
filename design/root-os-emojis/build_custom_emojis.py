@@ -31,6 +31,14 @@ ICONS = {
     },
 }
 
+VARIANTS = {
+    "root_temps_rouge": {
+        "usage": "Horloge rouge",
+        "color": "#FF5A5F",
+        "source": "root_temps",
+    },
+}
+
 
 def make_canvas(color: str) -> tuple[Image.Image, ImageDraw.ImageDraw]:
     image = Image.new("RGBA", (SIZE * SCALE, SIZE * SCALE), (0, 0, 0, 0))
@@ -106,11 +114,42 @@ def build_preview(manifest: list[dict]) -> None:
     image.save(ROOT / "apercu.png", optimize=True)
 
 
+def build_color_variant(name: str, spec: dict) -> dict:
+    source_svg = (SOURCES / f"{spec['source']}.svg").read_text(encoding="utf-8")
+    source_color = next(item["color"] for item in manifest_items if item["name"] == spec["source"])
+    (SOURCES / f"{name}.svg").write_text(
+        source_svg.replace(source_color, spec["color"]).replace(
+            'stroke="currentColor"', f'stroke="{spec["color"]}"'
+        ),
+        encoding="utf-8",
+    )
+
+    with Image.open(PNGS / f"{spec['source']}.png") as source:
+        image = source.convert("RGBA")
+    alpha = image.getchannel("A")
+    recolored = Image.new("RGBA", image.size, spec["color"])
+    recolored.putalpha(alpha)
+    out = PNGS / f"{name}.png"
+    recolored.save(out, optimize=True)
+    return {
+        "name": name,
+        "usage": spec["usage"],
+        "color": spec["color"],
+        "file": f"png/{name}.png",
+        "bytes": out.stat().st_size,
+        "source": f"Color variant of {spec['source']}; original Lucide shape preserved",
+        "size": 128,
+    }
+
+
 def main() -> None:
     SOURCES.mkdir(exist_ok=True)
     PNGS.mkdir(exist_ok=True)
     with (ROOT / "manifest.json").open(encoding="utf-8") as file:
         manifest = json.load(file)
+    global manifest_items
+    manifest = [item for item in manifest if item["name"] != "root_terminal_rouge"]
+    manifest_items = manifest
     rejected_drafts = {"root_contrat", "root_macro", "root_intrusion"}
     manifest = [item for item in manifest if item["name"] not in rejected_drafts]
     known = {item["name"] for item in manifest}
@@ -131,6 +170,12 @@ def main() -> None:
             "source": "Original ROOT OS icon, built from the matching SVG source in this pack",
             "size": 128,
         }
+        if name in known:
+            manifest = [record if item["name"] == name else item for item in manifest]
+        else:
+            manifest.append(record)
+    for name, spec in VARIANTS.items():
+        record = build_color_variant(name, spec)
         if name in known:
             manifest = [record if item["name"] == name else item for item in manifest]
         else:

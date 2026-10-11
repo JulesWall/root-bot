@@ -9172,7 +9172,9 @@ class TestEventCommandAndSorting(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent_embeds), 1)
         _, content = sent_embeds[0]
         self.assertIn("Code PIN", content)
-        self.assertIn(f"• Statut : ⏳ Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R> (10min))", content)
+        from utils.root_emojis import get_emoji
+        expected_status = f"• Statut : {get_emoji('root_temps_rouge', True)}**Indisponible** · Disponible à **<t:{future_ts}:T>** (<t:{future_ts}:R> (10min))"
+        self.assertIn(expected_status, content)
         self.assertNotIn("dans dans", content)
 
     async def test_event_send_includes_firewall_multiplier_banner(self):

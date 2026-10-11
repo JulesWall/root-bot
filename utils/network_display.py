@@ -568,7 +568,9 @@ def build_operations_embed(
     else:
         def_module_lines.append(f"**Total modules** : `{tot_def_count}` · `{tot_bdef} DEF`")
 
+    max_tier_unlocked = max(1, min(5, level + 1))
     def_module_lines.append(f"{get_emoji('root_firewall', True)}**{'Infrastructure' if is_fr else 'Infrastructure'}** : `{ndef} DEF` · **{'Total général' if is_fr else 'Total defense'}** : `{tdef} DEF`")
+    def_module_lines.append(f"{get_emoji('root_materiel', True)}**{'Accès boutique' if is_fr else 'Shop access'}** : `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}` *(Infrastructure {level})*")
 
     embed.add_field(
         name=f"{get_emoji('root_firewall', True)}{'Modules de défense' if is_fr else 'Defense modules'}",
@@ -1028,6 +1030,8 @@ def build_operations_container(
 
     c.add_text('\n'.join(lines))
     c.add_separator(divider=True)
+    max_tier_unlocked = max(1, min(5, level + 1))
+    c.add_text(f"{get_emoji('root_materiel', True)}**{'Boutique modules via' if is_fr else 'Modules shop via'}** `/buy` · `T1` {'à' if is_fr else 'to'} `T{max_tier_unlocked}` *(Infrastructure {level})*")
     c.add_text(f"{get_emoji('root_terminal', True)}**{'Poste de combat opérationnel' if is_fr else 'Combat station operational'}** · {'Prêt pour engagement et riposte' if is_fr else 'Ready for engagement and retaliation'}")
 
     return c, file

@@ -121,3 +121,45 @@ class MarketFeed:
             selected['source'] = f"{settings['exchange']}:{settings['quote_currency']}"
         return selected
 
+    async def fetch_history(self, since_ms: int) -> dict[str, dict[int, list]]:
+        """Récupère l'historique des bougies depuis `since_ms` pour les trois actifs.
+
+        Retourne `{symbole: {open_ts_ms: [ts, o, h, l, c, v]}}`.
+        Seules les bougies entièrement clôturées sont conservées.
+        """
+        settings = MathConfig.market_settings()
+        await self.open()
+        symbols = settings['symbols']
+        interval_ms = int(settings['interval_seconds']) * 1000
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+        async def _fetch_symbol(sym: str) -> tuple[str, dict[int, list]]:
+            candles_by_ts: dict[int, list] = {}
+            curr_since = since_ms
+            max_pages = 20
+            for _ in range(max_pages):
+                if curr_since >= now_ms:
+                    break
+                try:
+                    batch = await self._exchange.fetch_ohlcv(
+                        sym, settings['timeframe'], since=curr_since, limit=1000
+                    )
+                except Exception as exc:
+                    raise MarketFeedError(f"Lecture historique impossible pour {sym} : {exc}") from exc
+                if not batch:
+                    break
+                for c in batch:
+                    c_ts = int(c[0])
+                    if c_ts + interval_ms <= now_ms:
+                        candles_by_ts[c_ts] = c
+                last_ts = max(int(c[0]) for c in batch)
+                if last_ts <= curr_since:
+                    break
+                curr_since = last_ts + interval_ms
+                if len(batch) < 1000:
+                    break
+            return sym, candles_by_ts
+
+        results = await asyncio.gather(*(_fetch_symbol(sym) for sym in symbols))
+        return {sym: candles for sym, candles in results}
+

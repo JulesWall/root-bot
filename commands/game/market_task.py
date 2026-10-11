@@ -6,7 +6,7 @@ variations et compose le cours du RTM avec le cours précédent.
 
 - Aucun appel à l'exchange en dehors de cette tâche (jamais depuis un callback Discord).
 - Échec ou donnée périmée : le cours n'est pas modifié, le flux est marqué « retardé ».
-- Redémarrage : un seul cycle (la dernière paire de bougies) est appliqué, sans rattrapage.
+- Redémarrage : rattrapage automatique des créneaux de 15 minutes manquants sur 7 jours.
 """
 
 import logging
@@ -127,7 +127,6 @@ class MarketTask(BaseGameCog):
 
                 direction = alert['direction']
                 threshold = Decimal(str(alert['threshold_usd']))
-                cooldown = int(alert.get('cooldown_minutes', 60))
 
                 lang = await fetch_user_language(discord_id) or 'fr'
                 dir_label = (
@@ -144,10 +143,9 @@ class MarketTask(BaseGameCog):
                     rate=rate_str,
                     dir_label=dir_label,
                     threshold=threshold_str,
-                    cooldown=cooldown,
                 )
 
-                state = VisualState.REUSSITE if direction == 'above' else VisualState.ATTENTION
+                state = VisualState.SUCCESS if direction == 'above' else VisualState.ATTENTION
                 embed = RootEmbed(
                     action='market',
                     title=text.get_for_lang(lang, 'g_market_alerts_dm_title'),
@@ -176,6 +174,7 @@ class MarketTask(BaseGameCog):
 
         for run in auto_sells:
             discord_id = int(run['discord_id'])
+            action = run.get('action', 'sell')
             rtm_amt = run['rtm_amount']
             usd_amt = run['usd_amount']
             rate = run['rate']
@@ -186,7 +185,7 @@ class MarketTask(BaseGameCog):
                     from_id=discord_id,
                     to_address="0xROOTIUM_DEX",
                     rtm_amount=rtm_amt,
-                    tx_type='AUTO SELL',
+                    tx_type='AUTO BUY' if action == 'buy' else 'AUTO SELL',
                     usd_amount=usd_amt,
                 )
             except Exception:
@@ -211,9 +210,12 @@ class MarketTask(BaseGameCog):
                     else text.get_for_lang(lang, 'g_market_auto_sell_dm_once')
                 )
 
+                dm_key = 'g_market_auto_buy_triggered_dm' if action == 'buy' else 'g_market_auto_sell_triggered_dm'
+                title_key = 'g_market_auto_buy_dm_title' if action == 'buy' else 'g_market_auto_sell_dm_title'
+
                 content = text.get_for_lang(
                     lang,
-                    'g_market_auto_sell_triggered_dm',
+                    dm_key,
                     rtm=text.format_rtm(rtm_amt),
                     usd=text.format_usd(usd_amt),
                     rate=text.format_usd(rate),
@@ -224,30 +226,74 @@ class MarketTask(BaseGameCog):
 
                 embed = RootEmbed(
                     action='market',
-                    title=text.get_for_lang(lang, 'g_market_auto_sell_dm_title'),
+                    title=text.get_for_lang(lang, title_key),
                     content=content,
-                    state=VisualState.REUSSITE,
+                    state=VisualState.SUCCESS,
                     locale=lang,
                     footer="ROOT OS · Marché",
                 )
                 await user.send(embed=embed)
                 logger.info(
-                    "[Market] Reçu de vente auto envoyé en DM au joueur %s (%s RTM -> %s USD)",
-                    discord_id, rtm_amt, usd_amt,
+                    "[Market] Reçu d'ordre auto (%s) envoyé en DM au joueur %s (RTM: %s, USD: %s)",
+                    action, discord_id, rtm_amt, usd_amt,
                 )
             except discord.Forbidden:
-                logger.info("[Market] DM de vente auto bloqué pour le joueur %s (MP fermés)", discord_id)
+                logger.info("[Market] DM d'ordre auto bloqué pour le joueur %s (MP fermés)", discord_id)
             except Exception:
                 logger.warning(
-                    "[Market] Échec d'envoi du reçu de vente auto pour le joueur %s",
+                    "[Market] Échec d'envoi du DM d'ordre auto pour le joueur %s",
                     discord_id, exc_info=True,
                 )
 
     @market_loop.before_loop
     async def before_market_loop(self):
-        """Attend Discord puis charge le cours persistant avant le premier cycle."""
+        """Attend Discord, charge le cours persistant et rattrape l'historique avant le premier cycle."""
         await self.bot.wait_until_ready()
         await self.service.init_market()
+        await self._catch_up_history()
+
+    async def _catch_up_history(self):
+        """Rattrape les créneaux de 15 minutes manquants sur 7 jours au démarrage."""
+        try:
+            settings = MathConfig.market_settings()
+            if not settings.get('enabled'):
+                return
+
+            result = await self.service.catch_up_market(self.feed)
+            if not result:
+                return
+
+            status = result.get('status')
+            if status in ('applied', 'up_to_date'):
+                interval = int(settings['interval_seconds'])
+                now = time.time()
+                self._done_slot = int(now // interval) * interval
+
+            if status == 'applied':
+                count = result.get('inserted', 0)
+                latest_price = result.get('latest_price')
+                latest_ts = result.get('latest_ts')
+
+                logger.info(
+                    "[Market] Rattrapage terminé : %d créneau(x) calculé(s) et inséré(s) (cours: %s USD)",
+                    count, latest_price,
+                )
+
+                alerts = result.get('triggered_alerts') or []
+                if alerts and latest_price:
+                    await self._notify_alerts(alerts, latest_price)
+
+                if latest_ts and latest_price:
+                    try:
+                        auto_sells = await self.service.process_auto_sells(latest_ts, latest_price)
+                        if auto_sells:
+                            await self._notify_auto_sells(auto_sells, latest_price)
+                    except Exception:
+                        logger.exception("[Market] Erreur lors du traitement des ventes automatiques post-rattrapage")
+            elif status == 'up_to_date':
+                logger.info("[Market] Historique de marché complet sur 7 jours, aucun rattrapage nécessaire.")
+        except Exception:
+            logger.exception("[Market] Erreur inattendue lors du rattrapage de marché au démarrage")
 
     @tasks.loop(hours=24)
     async def purge_loop(self):

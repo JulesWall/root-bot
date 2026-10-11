@@ -16,6 +16,7 @@ from game.events_manager import EventsManager
 from lang.game_en import descriptions as EN
 from lang.game_fr import descriptions as FR
 from utils import text
+from utils.root_emojis import get_emoji
 from utils.time_format import format_duration
 
 
@@ -102,7 +103,14 @@ class Event(BaseGameCog):
 
                 dur_sec = event_info.get("remaining_seconds", 0) or max(0, ts - int(discord.utils.utcnow().timestamp()))
                 dur_str = format_duration(dur_sec)
-                lines.append(text.get(ctx, "g_event_status_cooldown", timestamp=ts, remaining=dur_str, duration=dur_str))
+                lines.append(text.get(
+                    ctx,
+                    "g_event_status_cooldown",
+                    emoji=get_emoji("root_temps_rouge", True),
+                    timestamp=ts,
+                    remaining=dur_str,
+                    duration=dur_str,
+                ))
 
                 if event_info.get("last_found_by"):
                     user_id = event_info["last_found_by"]

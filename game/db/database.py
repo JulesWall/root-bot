@@ -112,6 +112,11 @@ class Transaction:
         self.cursor.execute(sql, args)
         return self.cursor.lastrowid
 
+    def executemany(self, sql: str, seq_of_args) -> int:
+        """Exécute une requête d'écriture pour une séquence de paramètres."""
+        self.cursor.executemany(sql, seq_of_args)
+        return self.cursor.rowcount
+
     def one(self, sql: str, args=()) -> dict | None:
         """Exécute une requête et retourne la première ligne trouvée ou None."""
         self.cursor.execute(sql, args)

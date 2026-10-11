@@ -20,8 +20,8 @@
     "reputation_bonus_per_point": 0.005
   },
   "conversion": {
-    "rtm_to_usd": 39876,
-    "pvp_reference_rate": 43567
+    "rtm_to_usd": 41234,
+    "pvp_reference_rate": 40000
   },
   "market": {
     "enabled": true,
@@ -34,11 +34,12 @@
     "retry_seconds": 60,
     "max_staleness_seconds": 1500,
     "fetch_limit": 6,
-    "start_price": 39876,
+    "start_price": 41234,
     "price_decimal_places": 8,
     "max_change_pct": null,
     "history_retention_days": 90,
     "fee_pct": 1.0,
+    "volatility_multiplier": 2.5,
     "alerts_enabled": true,
     "alerts_max_per_player": 5,
     "alerts_default_cooldown_minutes": 60,

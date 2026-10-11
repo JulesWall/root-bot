@@ -2,7 +2,7 @@
 
 import sys
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -39,8 +39,27 @@ class ComputeCycleTests(unittest.TestCase):
         up = {s: (Decimal(100), Decimal(110)) for s in SYMS}
         first = compute_cycle(Decimal(1000), up, SETTINGS)['price_after']
         second = compute_cycle(first, up, SETTINGS)['price_after']
-        self.assertEqual(first, Decimal('1100'))
-        self.assertEqual(second, Decimal('1210'))
+        # Avec multiplicateur 2.5 par défaut : +10% devient +25%
+        self.assertEqual(first, Decimal('1250'))
+        self.assertEqual(second, Decimal('1562.5'))
+
+    def test_volatility_multiplier_custom(self):
+        up = {s: (Decimal(100), Decimal(110)) for s in SYMS}
+        # Multiplicateur 1.0
+        res1 = compute_cycle(Decimal(1000), up, {**SETTINGS, 'volatility_multiplier': 1.0})
+        self.assertEqual(res1['avg_pct'], Decimal('10'))
+        self.assertEqual(res1['price_after'], Decimal('1100'))
+
+        # Multiplicateur 3.0
+        res3 = compute_cycle(Decimal(1000), up, {**SETTINGS, 'volatility_multiplier': 3.0})
+        self.assertEqual(res3['avg_pct'], Decimal('30'))
+        self.assertEqual(res3['price_after'], Decimal('1300'))
+
+        # Mouvement baissier (-10% * 2.5 = -25%)
+        down = {s: (Decimal(100), Decimal(90)) for s in SYMS}
+        res_down = compute_cycle(Decimal(1000), down, SETTINGS)
+        self.assertEqual(res_down['avg_pct'], Decimal('-25'))
+        self.assertEqual(res_down['price_after'], Decimal('750'))
 
     def test_missing_asset_rejected(self):
         with self.assertRaises(ValueError):
@@ -56,7 +75,8 @@ class ComputeCycleTests(unittest.TestCase):
         res = compute_cycle(Decimal(1000), up, {**SETTINGS, 'max_change_pct': 5})
         self.assertTrue(res['capped'])
         self.assertEqual(res['price_after'], Decimal('1050'))
-        self.assertEqual(res['avg_pct'], Decimal('50'))
+        # +50% * 2.5 = +125%
+        self.assertEqual(res['avg_pct'], Decimal('125'))
 
     def test_formulas_stay_ast_only(self):
         with self.assertRaises(ValueError):
@@ -125,7 +145,8 @@ class ApplyCycleTests(unittest.TestCase):
         tx = self._tx(None)
         res = MarketState.apply_cycle(tx, datetime(2026, 1, 1, 12, 0), self.CLOSES, 'test')
         self.assertEqual(res['status'], 'applied')
-        self.assertEqual(res['price'], Decimal('1100.00000000'))
+        # +10% de base * 2.5 = +25% -> 1000 * 1.25 = 1250
+        self.assertEqual(res['price'], Decimal('1250.00000000'))
         tx.acquire_lock.assert_called_once_with('rtm_market')
 
     def test_apply_cycle_idempotent_same_timestamp(self):
@@ -145,6 +166,23 @@ class ApplyCycleTests(unittest.TestCase):
         res = MarketState.apply_cycle(tx, datetime(2026, 1, 1, 12, 0), self.CLOSES, 'test')
         self.assertIn('triggered_alerts', res)
         self.assertIsInstance(res['triggered_alerts'], list)
+
+    def test_apply_cycle_uses_latest_history_price_after(self):
+        tx = MagicMock()
+        # rtm_market_state a l'ancien taux d'amorçage à 35000
+        state = {'price_usd': Decimal('35000'), 'status': 'live'}
+        # Mais rtm_market_history a une bougie plus récente à 39500
+        latest_history = {'market_ts': datetime(2026, 1, 1, 11, 45), 'price_after': Decimal('39500')}
+        tx.one.side_effect = lambda sql, args=(): (
+            latest_history if 'rtm_market_history' in sql else state
+        )
+        tx.all.return_value = []
+        res = MarketState.apply_cycle(tx, datetime(2026, 1, 1, 12, 0), self.CLOSES, 'test')
+        self.assertEqual(res['status'], 'applied')
+        self.assertEqual(res['price_before'], Decimal('39500'))
+        # Avec +10% de base * 2.5 = +25% de variation, le prix doit être 49375 et non 43750 (qui aurait été 35000 * 1.25)
+        self.assertEqual(res['price_after'], Decimal('49375.00000000'))
+
 
 
 class ConvertMarketRateTests(unittest.TestCase):
@@ -232,7 +270,8 @@ class MathConfigMarketTests(unittest.TestCase):
 
     def test_pvp_reference_rate_independent_of_market(self):
         MathConfig.set_market_rate('99999')
-        self.assertEqual(MathConfig.pvp_reference_rate(), Decimal('43567'))
+        expected = Decimal(str(MathConfig.load().get('conversion', {}).get('pvp_reference_rate', 40000)))
+        self.assertEqual(MathConfig.pvp_reference_rate(), expected)
 
     def test_market_settings_have_three_symbols(self):
         self.assertEqual(len(MathConfig.market_settings()['symbols']), 3)
@@ -322,45 +361,19 @@ class FakeAlertTx:
                 'discord_id': int(args[0]),
                 'direction': str(args[1]),
                 'threshold_usd': Decimal(str(args[2])),
-                'cooldown_minutes': int(args[3]),
                 'enabled': 1,
-                'armed': 1,
-                'last_notified_at': None,
             })
             return aid
         elif "DELETE FROM RTM_PRICE_ALERTS" in sql_u:
             aid = int(args[0])
             self.alerts = [a for a in self.alerts if a['id'] != aid]
             return 1
-        elif "UPDATE RTM_PRICE_ALERTS SET ARMED = 1" in sql_u:
-            price = Decimal(str(args[0]))
-            now_val = args[2] if len(args) > 2 else self.now
-            for a in self.alerts:
-                if a['enabled'] == 1 and a['armed'] == 0:
-                    if (a['direction'] == 'above' and price < a['threshold_usd']) or \
-                       (a['direction'] == 'below' and price > a['threshold_usd']):
-                        a['armed'] = 1
-                    elif a.get('last_notified_at'):
-                        diff = (now_val - a['last_notified_at']).total_seconds() / 60
-                        if diff >= a['cooldown_minutes']:
-                            a['armed'] = 1
-            return 1
-        elif "UPDATE RTM_PRICE_ALERTS SET ARMED = 0" in sql_u:
-            now_val = args[0]
+        elif "UPDATE RTM_PRICE_ALERTS SET ENABLED =" in sql_u:
+            new_en = int(args[0])
             aid = int(args[1])
             for a in self.alerts:
                 if a['id'] == aid:
-                    a['armed'] = 0
-                    a['last_notified_at'] = now_val
-            return 1
-        elif "UPDATE RTM_PRICE_ALERTS SET ENABLED =" in sql_u:
-            new_en = int(args[0])
-            new_ar = int(args[1])
-            aid = int(args[2])
-            for a in self.alerts:
-                if a['id'] == aid:
                     a['enabled'] = new_en
-                    a['armed'] = new_ar
             return 1
         return 0
 
@@ -388,11 +401,11 @@ class FakeAlertTx:
         if "WHERE DISCORD_ID = %S" in sql_u:
             uid = int(args[0])
             return [dict(a) for a in self.alerts if a['discord_id'] == uid]
-        elif "WHERE ENABLED = 1 AND ARMED = 1" in sql_u:
+        elif "WHERE ENABLED = 1" in sql_u:
             price = Decimal(str(args[0]))
             res = []
             for a in self.alerts:
-                if a['enabled'] == 1 and a['armed'] == 1:
+                if a['enabled'] == 1:
                     if a['direction'] == 'above' and price >= a['threshold_usd']:
                         res.append(dict(a))
                     elif a['direction'] == 'below' and price <= a['threshold_usd']:
@@ -416,15 +429,12 @@ class MarketAlertsTests(unittest.TestCase):
             discord_id=123,
             direction='above',
             threshold_usd=Decimal('50000'),
-            cooldown_minutes=60,
             current_price=Decimal('40000'),
         )
         self.assertEqual(alert['id'], 1)
         self.assertEqual(alert['direction'], 'above')
         self.assertEqual(alert['threshold_usd'], Decimal('50000'))
-        self.assertEqual(alert['cooldown_minutes'], 60)
         self.assertEqual(alert['enabled'], 1)
-        self.assertEqual(alert['armed'], 1)
 
     def test_create_alert_limit_reached(self):
         from game.db.market_alerts import MarketAlerts
@@ -477,12 +487,11 @@ class MarketAlertsTests(unittest.TestCase):
         self.assertEqual(toggled['enabled'], 0)
         toggled2 = MarketAlerts.toggle(self.tx, discord_id=123, alert_id=alert['id'])
         self.assertEqual(toggled2['enabled'], 1)
-        self.assertEqual(toggled2['armed'], 1)
 
-    def test_trigger_above_and_rearm(self):
+    def test_trigger_above_and_delete(self):
         from datetime import timedelta
         from game.db.market_alerts import MarketAlerts
-        MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('50000'), cooldown_minutes=60)
+        MarketAlerts.create(self.tx, discord_id=123, direction='above', threshold_usd=Decimal('50000'))
 
         # Prix à 45000 -> pas de déclenchement
         trig = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('45000'), self.tx.now)
@@ -493,20 +502,15 @@ class MarketAlertsTests(unittest.TestCase):
         self.assertEqual(len(trig), 1)
         self.assertEqual(trig[0]['discord_id'], 123)
 
-        # Cycle suivant à 52000 -> l'alerte est désarmée, pas de re-déclenchement intempestif
+        # L'alerte a été supprimée de la BDD (usage unique)
+        alerts = MarketAlerts.list_for(self.tx, 123)
+        self.assertEqual(len(alerts), 0)
+
+        # Cycle suivant à 52000 -> aucun déclenchement intempestif
         trig2 = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('52000'), self.tx.now + timedelta(minutes=15))
         self.assertEqual(len(trig2), 0)
 
-        # Le cours redescend à 48000 -> réarmement automatique !
-        MarketAlerts.evaluate_and_trigger(self.tx, Decimal('48000'), self.tx.now + timedelta(minutes=30))
-        alerts = MarketAlerts.list_for(self.tx, 123)
-        self.assertEqual(alerts[0]['armed'], 1)
-
-        # Le cours remonte à 53000 -> nouveau déclenchement !
-        trig3 = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('53000'), self.tx.now + timedelta(minutes=45))
-        self.assertEqual(len(trig3), 1)
-
-    def test_trigger_below(self):
+    def test_trigger_below_and_delete(self):
         from game.db.market_alerts import MarketAlerts
         MarketAlerts.create(self.tx, discord_id=123, direction='below', threshold_usd=Decimal('30000'))
 
@@ -514,10 +518,11 @@ class MarketAlertsTests(unittest.TestCase):
         trig = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('35000'), self.tx.now)
         self.assertEqual(len(trig), 0)
 
-        # Prix chute à 29000 -> déclenchement !
+        # Prix chute à 29000 -> déclenchement et suppression !
         trig = MarketAlerts.evaluate_and_trigger(self.tx, Decimal('29000'), self.tx.now)
         self.assertEqual(len(trig), 1)
         self.assertEqual(trig[0]['threshold_usd'], Decimal('30000'))
+        self.assertEqual(len(MarketAlerts.list_for(self.tx, 123)), 0)
 
 
 class FakeAutoSellTx:
@@ -546,16 +551,18 @@ class FakeAutoSellTx:
             self.rules.append({
                 'id': rid,
                 'discord_id': int(args[0]),
-                'direction': str(args[1]),
-                'threshold_usd': Decimal(str(args[2])),
-                'mode': str(args[3]),
-                'amount_rtm': Decimal(str(args[4])) if args[4] is not None else None,
-                'percent': Decimal(str(args[5])) if args[5] is not None else None,
-                'max_rtm_per_run': Decimal(str(args[6])) if args[6] is not None else None,
-                'cooldown_minutes': int(args[7]),
-                'repeat_mode': str(args[8]),
+                'action': str(args[1]),
+                'direction': str(args[2]),
+                'threshold_usd': Decimal(str(args[3])),
+                'mode': str(args[4]),
+                'amount_rtm': Decimal(str(args[5])) if args[5] is not None else None,
+                'percent': Decimal(str(args[6])) if args[6] is not None else None,
+                'max_rtm_per_run': Decimal(str(args[7])) if args[7] is not None else None,
+                'cooldown_minutes': int(args[8]),
+                'repeat_mode': str(args[9]),
                 'enabled': 1,
                 'last_run_at': None,
+                'last_run_market_ts': None,
                 'created_at': self.now,
             })
             return rid
@@ -581,6 +588,14 @@ class FakeAutoSellTx:
             new_en, rid = int(args[0]), int(args[1])
             for r in self.rules:
                 if r['id'] == rid:
+                    r['enabled'] = new_en
+            return 1
+        elif "UPDATE RTM_AUTO_SELL_RULES SET LAST_RUN_AT = %S, LAST_RUN_MARKET_TS = %S, ENABLED = %S WHERE ID = %S" in sql_u or ("UPDATE RTM_AUTO_SELL_RULES" in sql_u and "LAST_RUN_MARKET_TS" in sql_u):
+            last_run, last_market_ts, new_en, rid = args[0], args[1], int(args[2]), int(args[3])
+            for r in self.rules:
+                if r['id'] == rid:
+                    r['last_run_at'] = last_run
+                    r['last_run_market_ts'] = last_market_ts
                     r['enabled'] = new_en
             return 1
         elif "UPDATE RTM_AUTO_SELL_RULES SET LAST_RUN_AT = %S, ENABLED = 0" in sql_u:
@@ -609,6 +624,13 @@ class FakeAutoSellTx:
         if "COUNT(*)" in sql_u:
             uid = int(args[0])
             return {'cnt': sum(1 for r in self.rules if r['discord_id'] == uid)}
+        elif "SELECT ID FROM RTM_AUTO_SELL_RULES" in sql_u and "ACTION = %S" in sql_u:
+            uid, action, direction, thresh, mode = int(args[0]), str(args[1]), str(args[2]), Decimal(str(args[3])), str(args[4])
+            for r in self.rules:
+                if (r['discord_id'] == uid and r.get('action', 'sell') == action and r['direction'] == direction
+                        and r['threshold_usd'] == thresh and r['mode'] == mode):
+                    return {'id': r['id']}
+            return None
         elif "SELECT ID FROM RTM_AUTO_SELL_RULES WHERE DISCORD_ID = %S AND DIRECTION = %S AND THRESHOLD_USD = %S AND MODE = %S" in sql_u:
             uid, direction, thresh, mode = int(args[0]), str(args[1]), Decimal(str(args[2])), str(args[3])
             for r in self.rules:
@@ -816,8 +838,8 @@ class AutoSellTests(unittest.TestCase):
         self.assertEqual(res['new_dollars'], Decimal('1000.00') + Decimal('990000.00'))
         # Règle 'once' désactivée
         self.assertEqual(self.tx.rules[0]['enabled'], 0)
-        # Run enregistré
-        self.assertEqual(len(self.tx.runs), 1)
+        # Cycle de marché mémorisé sur la règle (idempotence)
+        self.assertEqual(self.tx.rules[0]['last_run_market_ts'], market_ts)
 
     def test_execute_rule_partial_balance(self):
         from game.db.auto_sell import AutoSellDB
@@ -878,7 +900,7 @@ class AutoSellTests(unittest.TestCase):
             self.tx, rule, Decimal('50000'), datetime(2026, 1, 1, 12, 0), self.tx.now,
         )
         self.assertIsNone(res)
-        self.assertEqual(len(self.tx.runs), 0)
+        self.assertIsNone(self.tx.rules[0]['last_run_market_ts'])
 
     def test_execute_rule_idempotence_same_cycle(self):
         from game.db.auto_sell import AutoSellDB
@@ -894,7 +916,25 @@ class AutoSellTests(unittest.TestCase):
         # Seconde exécution pour le MÊME cycle -> bloqué par idempotence !
         res2 = AutoSellDB.execute_rule(self.tx, rule, Decimal('50000'), mts, self.tx.now)
         self.assertIsNone(res2)
-        self.assertEqual(len(self.tx.runs), 1)
+        self.assertEqual(self.tx.rules[0]['last_run_market_ts'], mts)
+
+    def test_execute_rule_auto_buy(self):
+        from game.db.auto_sell import AutoSellDB
+        # Joueur a 1000 USD, cours à 50000 USD
+        # Achat de 0.01 RTM -> brut = 500 USD, frais 1% = 5 USD, total = 505 USD
+        rule = AutoSellDB.create(
+            self.tx, discord_id=123, action='buy', direction='below',
+            threshold_usd=Decimal('50000'), mode='fixed', amount_rtm=Decimal('0.01'),
+            repeat_mode='once',
+        )
+        mts = datetime(2026, 1, 1, 12, 0)
+        res = AutoSellDB.execute_rule(self.tx, rule, Decimal('50000'), mts, self.tx.now)
+        self.assertIsNotNone(res)
+        self.assertEqual(res['action'], 'buy')
+        self.assertEqual(res['rtm_amount'], Decimal('0.01000'))
+        self.assertEqual(res['new_rootium'], Decimal('100.01000'))
+        self.assertEqual(res['new_dollars'], Decimal('495.00'))  # 1000 - 505
+        self.assertEqual(self.tx.rules[0]['enabled'], 0)
 
 
 class MarketTradeAndBlockchainTests(unittest.TestCase):
@@ -1085,7 +1125,334 @@ class MarketTradeAndBlockchainTests(unittest.TestCase):
         asyncio.run(_run())
 
 
+class TimestampAndSendTests(unittest.TestCase):
+    def test_to_timestamp_formats(self):
+        from commands.game.market import _to_timestamp
+        from datetime import datetime, timezone
+
+        # None -> returns an int close to now
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        self.assertAlmostEqual(_to_timestamp(None), now_ts, delta=5)
+
+        # int
+        self.assertEqual(_to_timestamp(1767268810), 1767268810)
+
+        # float
+        self.assertEqual(_to_timestamp(1767268810.75), 1767268810)
+
+        # string representation of number
+        self.assertEqual(_to_timestamp("1767268810"), 1767268810)
+
+        # datetime naive
+        dt_naive = datetime(2026, 1, 1, 12, 0, 0)
+        self.assertEqual(_to_timestamp(dt_naive), int(dt_naive.replace(tzinfo=timezone.utc).timestamp()))
+
+        # datetime aware
+        dt_aware = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertEqual(_to_timestamp(dt_aware), int(dt_aware.timestamp()))
+
+    def test_send_handles_int_market_updated_ts(self):
+        import asyncio
+        from commands.game.market import Market
+        bot = MagicMock()
+        cog = Market(bot)
+
+        mock_ctx = MagicMock()
+        mock_ctx.locale = 'fr'
+        mock_ctx.author.id = 12345
+        mock_ctx.user = None
+        mock_ctx.respond = AsyncMock()
+
+        result = {
+            'action': 'sell',
+            'market_updated_ts': 1767268810,
+            'market_status': 'live',
+            'rtm_amount': Decimal('1.5'),
+            'rate': Decimal('100.0'),
+            'fee_pct': Decimal('1'),
+            'fee_usd': Decimal('1.5'),
+            'gross_usd': Decimal('150.0'),
+            'usd_amount': Decimal('148.5'),
+            'convert_quote': True,
+        }
+
+        async def _run():
+            # Should not raise AttributeError: 'int' object has no attribute 'replace'
+            await cog._send(mock_ctx, 'convert', result)
+            mock_ctx.respond.assert_called_once()
+
+        asyncio.run(_run())
+
+
+class BuildCatchupCyclesTests(unittest.TestCase):
+    def setUp(self):
+        self.settings = {
+            'symbols': SYMS,
+            'interval_seconds': 900,
+            'price_decimal_places': 8,
+            'max_change_pct': None,
+            'volatility_multiplier': 1.0,
+        }
+        self.base_ts = 1700000000
+        self.t0 = datetime.fromtimestamp(self.base_ts, tz=timezone.utc).replace(tzinfo=None)
+        self.t1 = datetime.fromtimestamp(self.base_ts + 900, tz=timezone.utc).replace(tzinfo=None)
+        self.t2 = datetime.fromtimestamp(self.base_ts + 1800, tz=timezone.utc).replace(tzinfo=None)
+
+    def _mock_candles(self):
+        candles = {}
+        for s in SYMS:
+            candles[s] = {
+                (self.base_ts - 900) * 1000: [None, None, None, None, 100, None],
+                self.base_ts * 1000: [None, None, None, None, 110, None],
+                (self.base_ts + 900) * 1000: [None, None, None, None, 121, None],
+                (self.base_ts + 1800) * 1000: [None, None, None, None, 133.1, None],
+            }
+        return candles
+
+    def test_no_missing_slots_returns_empty(self):
+        from game.db.market import build_catchup_cycles
+        slots = [self.t0, self.t1]
+        existing = {self.t0: {'price_after': Decimal('1000')}, self.t1: {'price_after': Decimal('1100')}}
+        cycles = build_catchup_cycles(slots, existing, {}, Decimal('1000'), self.settings)
+        self.assertEqual(cycles, [])
+
+    def test_forward_catchup_fills_gaps(self):
+        from game.db.market import build_catchup_cycles
+        slots = [self.t0, self.t1, self.t2]
+        existing = {self.t0: {'price_after': Decimal('1000')}}
+        candles = self._mock_candles()
+        cycles = build_catchup_cycles(slots, existing, candles, Decimal('1000'), self.settings)
+        self.assertEqual(len(cycles), 2)
+        self.assertEqual(cycles[0]['market_ts'], self.t1)
+        self.assertEqual(cycles[0]['price_before'], Decimal('1000'))
+        self.assertEqual(cycles[0]['price_after'], Decimal('1100.00000000'))
+        self.assertEqual(cycles[1]['market_ts'], self.t2)
+        self.assertEqual(cycles[1]['price_before'], Decimal('1100.00000000'))
+        self.assertEqual(cycles[1]['price_after'], Decimal('1210.00000000'))
+
+    def test_forward_catchup_applies_volatility_multiplier_2_5(self):
+        from game.db.market import build_catchup_cycles
+        slots = [self.t0, self.t1]
+        existing = {self.t0: {'price_after': Decimal('1000')}}
+        candles = self._mock_candles()
+        # Avec multiplicateur 2.5 par défaut : +10% devient +25% -> 1000 * 1.25 = 1250
+        settings_2_5 = {**self.settings, 'volatility_multiplier': 2.5}
+        cycles = build_catchup_cycles(slots, existing, candles, Decimal('1000'), settings_2_5)
+        self.assertEqual(len(cycles), 1)
+        self.assertEqual(cycles[0]['price_after'], Decimal('1250.00000000'))
+        self.assertEqual(cycles[0]['avg_pct'], Decimal('25.000000'))
+
+    def test_backward_catchup_connects_to_first_existing(self):
+        from game.db.market import build_catchup_cycles
+        slots = [self.t0, self.t1]
+        existing = {self.t1: {'price_before': Decimal('1100'), 'price_after': Decimal('1210')}}
+        candles = self._mock_candles()
+        cycles = build_catchup_cycles(slots, existing, candles, Decimal('1000'), self.settings, row_before=None)
+        self.assertEqual(len(cycles), 1)
+        self.assertEqual(cycles[0]['market_ts'], self.t0)
+        self.assertEqual(cycles[0]['price_after'], Decimal('1100'))
+        self.assertEqual(cycles[0]['price_before'], Decimal('1000.00000000'))
+
+
+class MarketStateCatchupDbTests(unittest.TestCase):
+    def test_save_catchup_cycles_inserts_and_updates_state(self):
+        tx = MagicMock()
+        tx.one.return_value = {'id': 1, 'price_usd': Decimal('1000'), 'market_ts': datetime(2026, 1, 1, 11, 45)}
+        cycles = [{
+            'market_ts': datetime(2026, 1, 1, 12, 0),
+            'price_before': Decimal('1000'),
+            'price_after': Decimal('1100'),
+            'btc_pct': Decimal('10'),
+            'eth_pct': Decimal('10'),
+            'sol_pct': Decimal('10'),
+            'avg_pct': Decimal('10'),
+            'capped': False,
+        }]
+        res = MarketState.save_catchup_cycles(tx, cycles, 'test_src')
+        self.assertEqual(res['status'], 'applied')
+        self.assertEqual(res['inserted'], 1)
+        self.assertEqual(res['latest_price'], Decimal('1100'))
+        tx.acquire_lock.assert_called_once_with('rtm_market')
+        tx.executemany.assert_called_once()
+        self.assertTrue(any("UPDATE rtm_market_state" in str(c) for c in tx.execute.call_args_list))
+
+    def test_save_catchup_cycles_empty_noop(self):
+        tx = MagicMock()
+        res = MarketState.save_catchup_cycles(tx, [], 'test_src')
+        self.assertEqual(res['status'], 'noop')
+        self.assertEqual(res['inserted'], 0)
+
+
+class RootServiceCatchupTests(unittest.TestCase):
+    def test_catch_up_disabled_returns_disabled(self):
+        service = MagicMock()
+        import asyncio
+        with patch('game.math_config.MathConfig.market_settings', return_value={'enabled': False}):
+            from game.root_service import RootService
+            res = asyncio.run(RootService.catch_up_market(service, MagicMock()))
+            self.assertEqual(res['status'], 'disabled')
+
+    def test_catch_up_up_to_date_when_all_exist(self):
+        import asyncio
+        from game.root_service import RootService
+        service = MagicMock()
+        service.database = MagicMock()
+
+        async def mock_run(fn, *a, **k):
+            now_dt = datetime.now(timezone.utc)
+            now_sec = int(now_dt.timestamp())
+            latest_closed_sec = (now_sec // 900) * 900 - 900
+            start_sec = latest_closed_sec - (7 * 86400)
+            rows = []
+            curr = start_sec
+            while curr <= latest_closed_sec:
+                dt = datetime.fromtimestamp(curr, tz=timezone.utc).replace(tzinfo=None)
+                rows.append({'market_ts': dt, 'price_after': Decimal('40000')})
+                curr += 900
+            return rows
+
+        service.database.run = mock_run
+        feed = MagicMock()
+        res = asyncio.run(RootService.catch_up_market(service, feed))
+        self.assertEqual(res['status'], 'up_to_date')
+        self.assertEqual(res['inserted'], 0)
+
+    def test_catch_up_heals_discontinuity(self):
+        import asyncio
+        from game.root_service import RootService
+        service = MagicMock()
+        service.database = MagicMock()
+
+        executed_deletes = []
+        now_dt = datetime.now(timezone.utc)
+        now_sec = int(now_dt.timestamp())
+        latest_closed_sec = (now_sec // 900) * 900 - 900
+        start_sec = latest_closed_sec - (7 * 86400)
+        t1 = datetime.fromtimestamp(start_sec, tz=timezone.utc).replace(tzinfo=None)
+        t2 = datetime.fromtimestamp(start_sec + 900, tz=timezone.utc).replace(tzinfo=None)
+
+        corrupted_rows = [
+            {'market_ts': t1, 'price_before': Decimal('39000'), 'price_after': Decimal('39500')},
+            {'market_ts': t2, 'price_before': Decimal('35000'), 'price_after': Decimal('35100')},
+        ]
+        cleaned_rows = [
+            {'market_ts': t1, 'price_before': Decimal('39000'), 'price_after': Decimal('39500')},
+        ]
+
+        async def mock_run(fn, *a, **k):
+            tx = MagicMock()
+            def fake_execute(sql, params=None):
+                if 'DELETE FROM rtm_market_history' in sql:
+                    executed_deletes.append(params[0])
+            tx.execute = fake_execute
+            tx.one.return_value = None
+            if callable(fn):
+                fn(tx)
+            if executed_deletes:
+                return cleaned_rows
+            return corrupted_rows
+
+        service.database.run = mock_run
+        feed = MagicMock()
+        feed.fetch_history = AsyncMock(return_value={})
+        service.get_market_state = AsyncMock(return_value={'price_usd': Decimal('39500')})
+
+        with patch('game.db.market.build_catchup_cycles', return_value=[]):
+            res = asyncio.run(RootService.catch_up_market(service, feed))
+        self.assertIn(t2, executed_deletes)
+
+
+class MarketTaskCatchupTests(unittest.TestCase):
+    def test_task_catch_up_invokes_service_and_notifies(self):
+        import asyncio
+        from commands.game.market_task import MarketTask
+        bot = MagicMock()
+        bot.root_service = MagicMock()
+        bot.root_service.catch_up_market = AsyncMock(return_value={
+            'status': 'applied',
+            'inserted': 5,
+            'latest_price': Decimal('45000'),
+            'latest_ts': datetime(2026, 1, 1, 12, 0),
+            'triggered_alerts': [{'discord_id': 123, 'direction': 'above', 'threshold_usd': 40000}],
+        })
+        bot.root_service.process_auto_sells = AsyncMock(return_value=[])
+
+        task = MarketTask(bot)
+        task._notify_alerts = AsyncMock()
+        asyncio.run(task._catch_up_history())
+
+        bot.root_service.catch_up_market.assert_called_once()
+        task._notify_alerts.assert_called_once()
+        bot.root_service.process_auto_sells.assert_called_once_with(
+            datetime(2026, 1, 1, 12, 0), Decimal('45000')
+        )
+
+
+class NetworkViewsNavigationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.cog = MagicMock()
+        self.ctx = MagicMock()
+        self.ctx.author.id = 12345
+        self.ctx.author.display_name = "Alice"
+        self.result = {
+            'discord_id': 12345,
+            'firewall_level': 2,
+            'stats': {},
+            'mining_state': {},
+            'dollars': 500,
+            'rootium': 10,
+        }
+
+    async def test_operations_view_has_no_claim_and_no_hardware_btn(self):
+        from commands.game.network import NetworkActionView
+        view = NetworkActionView(self.cog, self.ctx, self.result, initial_view='operations')
+        btn_labels = [item.label for item in view._container.walk_items() if hasattr(item, 'label')]
+        self.assertNotIn("Récolter", btn_labels)
+        self.assertNotIn("Claim", btn_labels)
+        self.assertNotIn("Matériel", btn_labels)
+        self.assertNotIn("Hardware", btn_labels)
+        self.assertTrue(any(l in ("Accueil", "Home") for l in btn_labels))
+        self.assertTrue(any(l in ("Ferme", "Farm") for l in btn_labels))
+        self.assertTrue(any(l in ("Marché", "Market") for l in btn_labels))
+        self.assertTrue(any(l in ("Actualiser", "Refresh") for l in btn_labels))
+
+    async def test_market_view_has_no_tab_buttons_and_has_back_button(self):
+        from commands.game.network import NetworkActionView
+        view = NetworkActionView(self.cog, self.ctx, self.result, initial_view='market')
+        btn_labels = [item.label for item in view._container.walk_items() if hasattr(item, 'label')]
+        self.assertNotIn("Accueil", btn_labels)
+        self.assertNotIn("Home", btn_labels)
+        self.assertNotIn("Ferme", btn_labels)
+        self.assertNotIn("Farm", btn_labels)
+        self.assertNotIn("Opérations", btn_labels)
+        self.assertNotIn("Operations", btn_labels)
+        self.assertNotIn("Matériel", btn_labels)
+        self.assertNotIn("Hardware", btn_labels)
+        self.assertNotIn("Récolter", btn_labels)
+        self.assertNotIn("Claim", btn_labels)
+        self.assertTrue(any(l in ("Retour", "Back") for l in btn_labels))
+        self.assertTrue(any(l in ("Actualiser", "Refresh") for l in btn_labels))
+
+    async def test_hardware_view_redirects_to_operations(self):
+        from commands.game.network import NetworkActionView
+        view = NetworkActionView(self.cog, self.ctx, self.result, initial_view='hardware')
+        self.assertEqual(view.current_view, 'operations')
+
+    async def test_overview_and_farm_have_no_hardware_btn(self):
+        from commands.game.network import NetworkActionView
+        view_ov = NetworkActionView(self.cog, self.ctx, self.result, initial_view='overview')
+        labels_ov = [item.label for item in view_ov._container.walk_items() if hasattr(item, 'label')]
+        self.assertNotIn("Matériel", labels_ov)
+        self.assertNotIn("Hardware", labels_ov)
+
+        view_farm = NetworkActionView(self.cog, self.ctx, self.result, initial_view='farm')
+        labels_farm = [item.label for item in view_farm._container.walk_items() if hasattr(item, 'label')]
+        self.assertNotIn("Matériel", labels_farm)
+        self.assertNotIn("Hardware", labels_farm)
+
+
 if __name__ == '__main__':
     unittest.main()
+
 
 

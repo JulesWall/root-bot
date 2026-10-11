@@ -7,7 +7,7 @@ pour garantir l'intégrité comptable et l'idempotence exacte par cycle.
 """
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 import logging
 from typing import Optional
 
@@ -18,20 +18,78 @@ from game.db.players import Player, PlayerData
 logger = logging.getLogger(__name__)
 
 
+_columns_ensured = False
+
+
 class AutoSellDB:
-    """Gestion des règles et exécutions de vente automatique de RTM."""
+    """Gestion des règles et exécutions d'ordres automatiques (achat & vente) de RTM."""
+
+    @staticmethod
+    def _ensure_schema(tx):
+        """Vérifie et applique automatiquement les colonnes manquantes (auto-migration)."""
+        global _columns_ensured
+        if _columns_ensured:
+            return
+        try:
+            cols_rows = tx.all("SHOW COLUMNS FROM rtm_auto_sell_rules")
+            cols = {r['Field'] for r in cols_rows} if cols_rows else set()
+            if cols:
+                if 'action' not in cols:
+                    try:
+                        tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN action ENUM('sell','buy') NOT NULL DEFAULT 'sell' AFTER discord_id")
+                    except Exception:
+                        pass
+                if 'last_run_market_ts' not in cols:
+                    try:
+                        tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN last_run_market_ts DATETIME(0) NULL DEFAULT NULL AFTER last_run_at")
+                    except Exception:
+                        pass
+            _columns_ensured = True
+        except Exception:
+            pass
 
     @staticmethod
     def list_for(tx, discord_id: int) -> list[dict]:
-        """Retourne toutes les règles de vente automatique d'un joueur."""
-        return tx.all(
-            "SELECT id, discord_id, direction, threshold_usd, mode, amount_rtm, "
-            "percent, max_rtm_per_run, cooldown_minutes, repeat_mode, enabled, "
-            "last_run_at, created_at "
-            "FROM rtm_auto_sell_rules WHERE discord_id = %s "
-            "ORDER BY created_at ASC",
-            (int(discord_id),),
-        )
+        """Retourne toutes les règles d'ordres automatiques d'un joueur."""
+        AutoSellDB._ensure_schema(tx)
+        try:
+            return tx.all(
+                "SELECT id, discord_id, action, direction, threshold_usd, mode, amount_rtm, "
+                "percent, max_rtm_per_run, cooldown_minutes, repeat_mode, enabled, "
+                "last_run_at, created_at "
+                "FROM rtm_auto_sell_rules WHERE discord_id = %s "
+                "ORDER BY created_at ASC",
+                (int(discord_id),),
+            )
+        except Exception as err:
+            if 'action' in str(err).lower() or '1054' in str(err):
+                # Tentative d'auto-migration immédiate
+                try:
+                    tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN action ENUM('sell','buy') NOT NULL DEFAULT 'sell' AFTER discord_id")
+                    tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN last_run_market_ts DATETIME(0) NULL DEFAULT NULL AFTER last_run_at")
+                    return tx.all(
+                        "SELECT id, discord_id, action, direction, threshold_usd, mode, amount_rtm, "
+                        "percent, max_rtm_per_run, cooldown_minutes, repeat_mode, enabled, "
+                        "last_run_at, created_at "
+                        "FROM rtm_auto_sell_rules WHERE discord_id = %s "
+                        "ORDER BY created_at ASC",
+                        (int(discord_id),),
+                    )
+                except Exception:
+                    pass
+                # Repli sans colonne action
+                rows = tx.all(
+                    "SELECT id, discord_id, direction, threshold_usd, mode, amount_rtm, "
+                    "percent, max_rtm_per_run, cooldown_minutes, repeat_mode, enabled, "
+                    "last_run_at, created_at "
+                    "FROM rtm_auto_sell_rules WHERE discord_id = %s "
+                    "ORDER BY created_at ASC",
+                    (int(discord_id),),
+                )
+                for r in rows:
+                    r['action'] = 'sell'
+                return rows
+            raise
 
     @staticmethod
     def count_for(tx, discord_id: int) -> int:
@@ -58,6 +116,7 @@ class AutoSellDB:
         discord_id: int,
         direction: str,
         threshold_usd: Decimal | float | int | str,
+        action: str = 'sell',
         mode: str = 'fixed',
         amount_rtm: Decimal | float | int | str | None = None,
         percent: Decimal | float | int | str | None = None,
@@ -66,8 +125,12 @@ class AutoSellDB:
         repeat_mode: str = 'once',
         current_price: Optional[Decimal] = None,
     ) -> dict:
-        """Crée une nouvelle règle de vente automatique personnelle."""
+        """Crée un nouvel ordre automatique (achat ou vente) personnel."""
         tx.acquire_lock(f"player:{int(discord_id)}")
+
+        action_clean = str(action).lower().strip()
+        if action_clean not in ('sell', 'buy'):
+            action_clean = 'sell'
 
         dir_clean = str(direction).lower().strip()
         if dir_clean not in ('above', 'below'):
@@ -142,29 +205,80 @@ class AutoSellDB:
             except (InvalidOperation, TypeError, ValueError):
                 pass
 
+        AutoSellDB._ensure_schema(tx)
+
         # Vérification des doublons stricts
-        existing = tx.one(
-            "SELECT id FROM rtm_auto_sell_rules "
-            "WHERE discord_id = %s AND direction = %s AND threshold_usd = %s AND mode = %s",
-            (int(discord_id), dir_clean, threshold, mode_clean),
-        )
+        try:
+            existing = tx.one(
+                "SELECT id FROM rtm_auto_sell_rules "
+                "WHERE discord_id = %s AND action = %s AND direction = %s AND threshold_usd = %s AND mode = %s",
+                (int(discord_id), action_clean, dir_clean, threshold, mode_clean),
+            )
+        except Exception as err:
+            if 'action' in str(err).lower() or '1054' in str(err):
+                try:
+                    tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN action ENUM('sell','buy') NOT NULL DEFAULT 'sell' AFTER discord_id")
+                    tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN last_run_market_ts DATETIME(0) NULL DEFAULT NULL AFTER last_run_at")
+                    existing = tx.one(
+                        "SELECT id FROM rtm_auto_sell_rules "
+                        "WHERE discord_id = %s AND action = %s AND direction = %s AND threshold_usd = %s AND mode = %s",
+                        (int(discord_id), action_clean, dir_clean, threshold, mode_clean),
+                    )
+                except Exception:
+                    existing = tx.one(
+                        "SELECT id FROM rtm_auto_sell_rules "
+                        "WHERE discord_id = %s AND direction = %s AND threshold_usd = %s AND mode = %s",
+                        (int(discord_id), dir_clean, threshold, mode_clean),
+                    )
+            else:
+                raise
         if existing:
             raise GameError('market_auto_sell_duplicate')
 
-        rule_id = tx.execute(
-            "INSERT INTO rtm_auto_sell_rules "
-            "(discord_id, direction, threshold_usd, mode, amount_rtm, percent, max_rtm_per_run, "
-            "cooldown_minutes, repeat_mode, enabled, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, UTC_TIMESTAMP(6))",
-            (
-                int(discord_id), dir_clean, threshold, mode_clean, amount_rtm_val,
-                percent_val, max_cap_val, cooldown, repeat_clean,
-            ),
-        )
+        try:
+            rule_id = tx.execute(
+                "INSERT INTO rtm_auto_sell_rules "
+                "(discord_id, action, direction, threshold_usd, mode, amount_rtm, percent, max_rtm_per_run, "
+                "cooldown_minutes, repeat_mode, enabled, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, UTC_TIMESTAMP(6))",
+                (
+                    int(discord_id), action_clean, dir_clean, threshold, mode_clean, amount_rtm_val,
+                    percent_val, max_cap_val, cooldown, repeat_clean,
+                ),
+            )
+        except Exception as err:
+            if 'action' in str(err).lower() or '1054' in str(err):
+                try:
+                    tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN action ENUM('sell','buy') NOT NULL DEFAULT 'sell' AFTER discord_id")
+                    tx.execute("ALTER TABLE rtm_auto_sell_rules ADD COLUMN last_run_market_ts DATETIME(0) NULL DEFAULT NULL AFTER last_run_at")
+                    rule_id = tx.execute(
+                        "INSERT INTO rtm_auto_sell_rules "
+                        "(discord_id, action, direction, threshold_usd, mode, amount_rtm, percent, max_rtm_per_run, "
+                        "cooldown_minutes, repeat_mode, enabled, created_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, UTC_TIMESTAMP(6))",
+                        (
+                            int(discord_id), action_clean, dir_clean, threshold, mode_clean, amount_rtm_val,
+                            percent_val, max_cap_val, cooldown, repeat_clean,
+                        ),
+                    )
+                except Exception:
+                    rule_id = tx.execute(
+                        "INSERT INTO rtm_auto_sell_rules "
+                        "(discord_id, direction, threshold_usd, mode, amount_rtm, percent, max_rtm_per_run, "
+                        "cooldown_minutes, repeat_mode, enabled, created_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, UTC_TIMESTAMP(6))",
+                        (
+                            int(discord_id), dir_clean, threshold, mode_clean, amount_rtm_val,
+                            percent_val, max_cap_val, cooldown, repeat_clean,
+                        ),
+                    )
+            else:
+                raise
 
         return {
             'id': rule_id,
             'discord_id': int(discord_id),
+            'action': action_clean,
             'direction': dir_clean,
             'threshold_usd': threshold,
             'mode': mode_clean,
@@ -245,90 +359,114 @@ class AutoSellDB:
         market_ts: datetime,
         now_dt: datetime,
     ) -> dict | None:
-        """Exécute une règle de vente automatique de façon atomique et idempotente.
-
-        Retourne un dictionnaire de résultat si la vente a été effectuée,
-        ou None si la règle n'a pas pu être exécutée (solde nul, déjà exécutée pour ce cycle).
-        """
+        """Exécute un ordre automatique (achat ou vente) de façon atomique et idempotente."""
         rule_id = int(rule['id'])
         discord_id = int(rule['discord_id'])
+        action = str(rule.get('action') or 'sell').lower().strip()
+        if action not in ('sell', 'buy'):
+            action = 'sell'
 
         # 1. Vérification d'idempotence stricte pour ce cycle de marché
-        existing_run = tx.one(
-            "SELECT id FROM rtm_auto_sell_runs WHERE rule_id = %s AND market_ts = %s",
-            (rule_id, market_ts),
-        )
-        if existing_run:
+        last_market_ts = rule.get('last_run_market_ts')
+        if last_market_ts == market_ts:
             return None
 
-        # 2. Lecture du solde du joueur
+        # 2. Lecture des soldes du joueur
         player = PlayerData.get(tx, discord_id)
-        balance = Decimal(str(player.get('rootium') or 0))
-        if balance <= Decimal('0'):
-            return None
+        balance_rtm = Decimal(str(player.get('rootium') or 0))
+        balance_usd = Decimal(str(player.get('dollars') or 0))
 
-        # 3. Calcul du montant à vendre
         settings = MathConfig.load()
         rtm_places = int(settings.get('rtm_decimal_places', 5))
         rtm_quantum = Decimal('1').scaleb(-rtm_places)
-
         mode = rule.get('mode', 'fixed')
-        if mode == 'percent':
-            pct = Decimal(str(rule.get('percent') or 100))
-            raw_amount = balance * (pct / Decimal('100'))
+
+        if action == 'buy':
+            if balance_usd <= Decimal('0'):
+                return None
+
+            fee_pct = MathConfig.market_fee_pct()
+            if mode == 'percent':
+                pct = Decimal(str(rule.get('percent') or 100))
+                budget_usd = balance_usd * (pct / Decimal('100'))
+                gross_usd = budget_usd / (Decimal('1') + (fee_pct / Decimal('100')))
+                raw_amount = gross_usd / current_price
+            else:
+                raw_amount = Decimal(str(rule.get('amount_rtm') or 0))
+
+            max_cap = rule.get('max_rtm_per_run')
+            if max_cap:
+                cap = Decimal(str(max_cap))
+                if cap > Decimal('0'):
+                    raw_amount = min(raw_amount, cap)
+
+            amount = raw_amount.quantize(rtm_quantum, rounding=ROUND_DOWN)
+            if amount <= Decimal('0'):
+                return None
+
+            try:
+                convert_result = Player.convert(
+                    tx,
+                    discord_id,
+                    action='buy',
+                    amount=amount,
+                    confirm=True,
+                    rate=current_price,
+                )
+            except GameError:
+                return None
+
         else:
-            raw_amount = Decimal(str(rule.get('amount_rtm') or 0))
-            raw_amount = min(raw_amount, balance)
+            if balance_rtm <= Decimal('0'):
+                return None
 
-        max_cap = rule.get('max_rtm_per_run')
-        if max_cap:
-            cap = Decimal(str(max_cap))
-            if cap > Decimal('0'):
-                raw_amount = min(raw_amount, cap)
+            if mode == 'percent':
+                pct = Decimal(str(rule.get('percent') or 100))
+                raw_amount = balance_rtm * (pct / Decimal('100'))
+            else:
+                raw_amount = Decimal(str(rule.get('amount_rtm') or 0))
+                raw_amount = min(raw_amount, balance_rtm)
 
-        amount = raw_amount.quantize(rtm_quantum)
-        if amount <= Decimal('0') or amount > balance:
-            return None
+            max_cap = rule.get('max_rtm_per_run')
+            if max_cap:
+                cap = Decimal(str(max_cap))
+                if cap > Decimal('0'):
+                    raw_amount = min(raw_amount, cap)
 
-        # 4. Exécution de la conversion via le service métier standard Player.convert
-        convert_result = Player.convert(
-            tx,
-            discord_id,
-            amount=amount,
-            confirm=True,
-            rate=current_price,
-        )
+            amount = raw_amount.quantize(rtm_quantum)
+            if amount <= Decimal('0') or amount > balance_rtm:
+                return None
 
-        # 5. Enregistrement immuable du run (idempotence garantie par la clé unique uq_rule_cycle)
-        tx.execute(
-            "INSERT INTO rtm_auto_sell_runs "
-            "(rule_id, discord_id, market_ts, rate_usd, rtm_amount, usd_amount, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (
-                rule_id,
-                discord_id,
-                market_ts,
-                current_price,
-                amount,
-                convert_result['usd_amount'],
-                now_dt,
-            ),
-        )
+            try:
+                convert_result = Player.convert(
+                    tx,
+                    discord_id,
+                    action='sell',
+                    amount=amount,
+                    confirm=True,
+                    rate=current_price,
+                )
+            except GameError:
+                return None
 
-        # 6. Mise à jour de la règle (désactivation si repeat_mode == 'once', mise à jour de last_run_at)
         repeat_mode = rule.get('repeat_mode', 'once')
-        if repeat_mode == 'once':
+        new_enabled = 0 if repeat_mode == 'once' else 1
+        try:
             tx.execute(
-                "UPDATE rtm_auto_sell_rules SET last_run_at = %s, enabled = 0 WHERE id = %s",
-                (now_dt, rule_id),
+                "UPDATE rtm_auto_sell_rules SET last_run_at = %s, last_run_market_ts = %s, enabled = %s WHERE id = %s",
+                (now_dt, market_ts, new_enabled, rule_id),
             )
-        else:
+        except Exception:
             tx.execute(
-                "UPDATE rtm_auto_sell_rules SET last_run_at = %s WHERE id = %s",
-                (now_dt, rule_id),
+                "UPDATE rtm_auto_sell_rules SET last_run_at = %s, enabled = %s WHERE id = %s",
+                (now_dt, new_enabled, rule_id),
             )
+        rule['last_run_at'] = now_dt
+        rule['last_run_market_ts'] = market_ts
+        rule['enabled'] = new_enabled
 
         return {
+            'action': action,
             'rule_id': rule_id,
             'discord_id': discord_id,
             'direction': rule['direction'],

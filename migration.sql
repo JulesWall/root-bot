@@ -65,19 +65,16 @@ CREATE TABLE IF NOT EXISTS rtm_market_history (
     created_at    DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration SQL : Alertes de cours du RTM
+-- Migration SQL : Alertes de cours du RTM (usage unique)
 CREATE TABLE IF NOT EXISTS rtm_price_alerts (
-    id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    discord_id       BIGINT UNSIGNED NOT NULL,
-    direction        ENUM('above','below') NOT NULL,
-    threshold_usd    DECIMAL(24,8) NOT NULL,
-    cooldown_minutes INT UNSIGNED NOT NULL DEFAULT 60,
-    enabled          TINYINT(1) NOT NULL DEFAULT 1,
-    armed            TINYINT(1) NOT NULL DEFAULT 1,
-    last_notified_at DATETIME(6) NULL,
-    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    discord_id    BIGINT UNSIGNED NOT NULL,
+    direction     ENUM('above','below') NOT NULL,
+    threshold_usd DECIMAL(24,8) NOT NULL,
+    enabled       TINYINT(1) NOT NULL DEFAULT 1,
+    created_at    DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     UNIQUE KEY uq_alert (discord_id, direction, threshold_usd),
-    INDEX idx_alert_enabled (enabled, armed),
+    INDEX idx_alert_enabled (enabled),
     FOREIGN KEY (discord_id) REFERENCES players(discord_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -121,3 +118,27 @@ ALTER TABLE economy_hourly ADD COLUMN market_buys BIGINT UNSIGNED NOT NULL DEFAU
 ALTER TABLE economy_hourly ADD COLUMN market_bought_rtm DECIMAL(38,5) NOT NULL DEFAULT 0;
 ALTER TABLE economy_hourly ADD COLUMN market_spent_usd DECIMAL(38,2) NOT NULL DEFAULT 0;
 ALTER TABLE economy_hourly ADD COLUMN market_fees_usd DECIMAL(38,2) NOT NULL DEFAULT 0;
+
+-- Migration SQL : Ordres automatiques (Achat & Vente) et suppression de l'historique transactionnel superflu
+ALTER TABLE rtm_auto_sell_rules ADD COLUMN action ENUM('sell','buy') NOT NULL DEFAULT 'sell' AFTER discord_id;
+ALTER TABLE rtm_auto_sell_rules ADD COLUMN last_run_market_ts DATETIME(0) NULL DEFAULT NULL AFTER last_run_at;
+DROP TABLE IF EXISTS rtm_auto_sell_runs;
+
+-- Migration SQL : Nettoyage des éventuelles ruptures de continuité et synchronisation du marché
+DELETE h1 FROM rtm_market_history h1
+JOIN rtm_market_history h2 ON h2.market_ts = DATE_SUB(h1.market_ts, INTERVAL 15 MINUTE)
+WHERE ABS(h1.price_before - h2.price_after) > 10.0;
+
+UPDATE rtm_market_state s
+JOIN (
+    SELECT price_after, market_ts, source 
+    FROM rtm_market_history 
+    ORDER BY market_ts DESC 
+    LIMIT 1
+) h
+SET s.price_usd = h.price_after, s.market_ts = h.market_ts, s.source = h.source, s.status = 'live', s.observed_at = UTC_TIMESTAMP(6)
+WHERE s.id = 1;
+
+-- Migration SQL : Suppression du délai de rappel pour les alertes de cours (alertes à usage unique supprimées dès déclenchement)
+ALTER TABLE rtm_price_alerts DROP COLUMN cooldown_minutes;
+
